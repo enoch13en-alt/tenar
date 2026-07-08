@@ -1,0 +1,1970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TENAR</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Arial, sans-serif;
+         background: #f4f5f7; color: #1c2330; height: 100vh; display: flex; }
+  #side { width: 310px; background: #1c2330; color: #e6e9ef; padding: 16px;
+          overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  #side h1 { font-size: 16px; margin: 0; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+       color: #aab4c6; margin: 4px 0; }
+  .btn { background: #3b6fe0; color: #fff; border: 0; border-radius: 6px;
+         padding: 9px; width: 100%; cursor: pointer; font-size: 13px;
+         transition: transform .06s ease, filter .12s ease, opacity .12s ease; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: scale(.97); filter: brightness(.92); }
+  .btn.alt { background: #2a3344; }
+  .btn.gold { background: #b9772a; }
+  /* click ripple / flash for instant feedback on any button */
+  .btn.flash { animation: btnflash .35s ease; }
+  @keyframes btnflash { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.45); }
+                        100% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
+  /* busy state: dim, block re-clicks, show inline spinner */
+  .btn.busy { opacity: .7; cursor: progress; pointer-events: none; }
+  .btn .spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px;
+         vertical-align: -1px; border: 2px solid rgba(255,255,255,.35);
+         border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  select, input[type=text] { width: 100%; padding: 8px; border-radius: 6px;
+         border: 1px solid #2a3344; background: #11151d; color: #e6e9ef; font-size: 13px; }
+  .row { display: flex; gap: 6px; }
+  #drop { border: 2px dashed #3b4a63; border-radius: 8px; padding: 14px;
+          text-align: center; font-size: 12px; color: #aab4c6; cursor: pointer; }
+  #drop.over { border-color: #3b6fe0; color: #cdd5e6; }
+  #docs { font-size: 12.5px; line-height: 1.5; }
+  #docs div { padding: 3px 0; border-bottom: 1px solid #2a3344; word-break: break-word; }
+  #status, #nameStatus { font-size: 11px; color: #aab4c6; min-height: 13px; }
+  #cost { font-size: 11px; color: #6fcf97; }
+  textarea { width: 100%; background: #11151d; color: #e6e9ef; border: 1px solid #2a3344;
+             border-radius: 6px; padding: 8px; font-family: ui-monospace, monospace;
+             font-size: 12px; resize: vertical; }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #courseBar { padding: 10px 24px; background: #fff; border-bottom: 1px solid #e3e6ec;
+               font-size: 13px; color: #495260; }
+  #courseBar b { color: #1c2330; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px; display: flex;
+          flex-direction: column; gap: 18px; }
+  .msg { max-width: 820px; }
+  .q { align-self: flex-end; background: #3b6fe0; color: #fff; padding: 10px 14px;
+       border-radius: 12px 12px 2px 12px; white-space: pre-wrap; }
+  .a { align-self: flex-start; background: #fff; padding: 16px 20px;
+       border-radius: 12px 12px 12px 2px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+       line-height: 1.7; font-size: 15.5px; color: #14181f; }
+  .a .ans-h { font-weight: 700; color: #0f1319; margin: 16px 0 6px; }
+  .a h3.ans-h { font-size: 17px; } .a h4.ans-h { font-size: 15px; } .a h5.ans-h { font-size: 14px; color:#2b3444; }
+  .ans-p { margin: 9px 0; } .ans-ul { margin: 8px 0 8px 22px; } .ans-ul li { margin: 4px 0; }
+  .ans-hr { border: 0; border-top: 1px solid #e3e6ec; margin: 10px 0; }
+  .sources { margin-top: 12px; border-top: 1px solid #e3e6ec; padding-top: 10px; }
+  .sources h4 { margin: 0 0 6px; font-size: 12.5px; color: #3a4250;
+                text-transform: uppercase; letter-spacing: .05em; }
+  .cite { font-size: 13.5px; margin: 7px 0; padding: 9px 12px; background: #f4f6fb;
+          border-left: 3px solid #3b6fe0; border-radius: 4px; }
+  .cite .pin { font-weight: 600; color: #1f47b0; display: block; margin-bottom: 3px; }
+  .cite .quote { color: #313a48; font-style: italic; }
+  .meta { font-size: 12px; color: #495260; margin-top: 8px; }
+  .cmark { position: relative; cursor: help; color: #fff; background: #3b6fe0;
+           font-size: 10px; border-radius: 4px; padding: 1px 5px; margin: 0 3px;
+           vertical-align: super; user-select: none; }
+  .cmark:hover { background: #2954c8; }
+  .cmark.web { background: #1f8a5b; }
+  .cmark.web:hover { background: #176e48; }
+  .cite .pin .srclink, .tip .srclink { color: #8fb4ff; }
+  .cite .pin a { text-decoration: underline; }
+  .cmark .tip { display: none; position: absolute; left: 0; top: 1.6em; width: 360px;
+                max-height: 260px; overflow-y: auto; background: #1c2330; color: #e6e9ef;
+                padding: 11px 13px; border-radius: 8px; font-size: 12.5px; line-height: 1.5;
+                white-space: normal; font-style: normal; z-index: 20;
+                box-shadow: 0 6px 22px rgba(0,0,0,.35); }
+  .cmark:hover .tip { display: block; }
+  .cmark .tip b { color: #8fb4ff; }
+  .cmark .tip hr { border: 0; border-top: 1px solid #3a4660; margin: 7px 0; }
+  /* hamburger + drawer backdrop (hidden on desktop) */
+  #navToggle { display: none; position: fixed; top: 10px; left: 10px; z-index: 60;
+               width: 42px; height: 42px; border: 0; border-radius: 10px;
+               background: #1c2330; color: #fff; font-size: 20px; cursor: pointer;
+               box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+  #navBackdrop { display: none; position: fixed; inset: 0; z-index: 40;
+                 background: rgba(0,0,0,.5); }
+  @media (max-width: 760px) {
+    #navToggle { display: block; }
+    /* sidebar becomes an off-canvas drawer */
+    #side { position: fixed; top: 0; left: 0; bottom: 0; width: 84vw; max-width: 320px;
+            z-index: 50; transform: translateX(-100%);
+            transition: transform .25s ease; box-shadow: 2px 0 24px rgba(0,0,0,.4); }
+    body.nav-open #side { transform: translateX(0); }
+    body.nav-open #navBackdrop { display: block; }
+    #main { width: 100%; }
+    #courseBar { padding: 12px 14px 12px 60px; font-size: 13px; }
+    #courseBar label { float: none !important; display: block; margin-top: 6px; }
+    #chat { padding: 14px; }
+    .msg { max-width: 100%; }
+    #composer { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    #composer #q { flex: 1 1 100%; order: -1; }
+    .modal .card, .card { max-width: 94vw !important; }
+  }
+  #composer { display: flex; gap: 10px; padding: 16px 24px; background: #fff;
+              border-top: 1px solid #e3e6ec; }
+  #q { flex: 1; padding: 13px; border: 1px solid #cfd5e0; border-radius: 8px; font-size: 15px; }
+  .hidden { display: none; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+           display: none; align-items: center; justify-content: center; z-index: 5; }
+  .modal .card { background: #1c2330; padding: 22px; border-radius: 10px;
+                 width: 680px; max-width: 92vw; max-height: 86vh; overflow-y: auto; color: #e6e9ef; }
+  .modal h3 { margin: 0 0 4px; }
+  .modal p { font-size: 12px; color: #aab4c6; margin: 0 0 12px; }
+  .nameRow { margin-bottom: 10px; }
+  .nameRow label { font-size: 11px; color: #aab4c6; display: block; }
+  .rowbtn { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .issue { background: #11151d; border: 1px solid #2a3344; border-radius: 6px;
+           padding: 10px; margin: 8px 0; }
+  .issue.done { border-left: 3px solid #6fcf97; }
+  .issue h5 { margin: 0 0 4px; font-size: 13px; }
+  .issue .why { font-size: 12px; color: #aab4c6; }
+  .issue .ans { font-size: 12px; color: #cdd5e6; margin-top: 8px; white-space: pre-wrap;
+                max-height: 180px; overflow: auto; border-top: 1px solid #2a3344; padding-top: 6px; }
+  .fact { font-size: 12px; margin: 3px 0; }
+  .fact b { color: #8fb4ff; }
+  #examDoc { background: #fff; border: 1px solid #e3e6ec; color: #1c2330;
+             border-radius: 6px; padding: 16px; font-size: 13px; line-height: 1.6;
+             max-height: 52vh; overflow: auto; }
+  #examDoc .ans-h { font-weight: 700; margin: 12px 0 4px; }
+  .btn.mini { width: auto; padding: 5px 10px; margin-top: 6px; font-size: 12px; }
+  .mm-skel { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
+  .mm-skel span { background:#2a3344; color:#cdd5e6; font-size:11px; padding:3px 8px;
+                  border-radius:12px; }
+  .mm-step { border-left:3px solid #3b6fe0; padding:8px 0 8px 12px; margin:0 0 10px 4px; }
+  .mm-move { font-weight:600; font-size:14px; color:#1c2330; }
+  .mm-detail { font-size:13px; color:#242c37; margin:3px 0 6px; }
+  .mm-auth { background:#f4f6fb; border-left:3px solid #b9772a; border-radius:4px;
+             padding:8px 11px; margin:5px 0; font-size:13.5px; }
+  .mm-auth .src { font-weight:600; color:#2954c8; }
+  .mm-auth .prov { color:#8a5a1a; }
+  .mm-auth .why { color:#242c37; font-style:italic; display:block; margin-top:2px; }
+  .fup { display: flex; gap: 6px; margin-top: 10px; }
+  .fup input { flex: 1; padding: 6px 8px; font-size: 12px; border-radius: 5px;
+               border: 1px solid #2a3344; background: #0d1017; color: #e6e9ef; }
+  .fupItem { margin-top: 8px; border-top: 1px dashed #2a3344; padding-top: 6px; }
+  .fupq { font-size: 12px; color: #8fb4ff; font-weight: 600; margin-bottom: 3px; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+         margin-right: 4px; background: #2a3344; color: #eef1f7; white-space: nowrap; }
+  .tag.constitution { background: #6b3fa0; }
+  .tag.statute { background: #1f6feb; }
+  .tag.case { background: #b9772a; }
+  .tag.treaty { background: #2f7d6b; }
+  .tag.book { background: #555f70; }
+  .tag.article { background: #3a6ea5; }
+  .tag.report { background: #444c5c; }
+  .tag.web { background: #1f8a5b; }
+  #mix { font-size: 11px; color: #aab4c6; margin-bottom: 6px; line-height: 1.9; }
+  .nameRow select { background: #11151d; color: #e6e9ef; border: 1px solid #2a3344;
+                    border-radius: 5px; padding: 4px; }
+</style>
+</head>
+<body>
+<button id="navToggle" aria-label="Menu">☰</button>
+<div id="navBackdrop"></div>
+<div id="side">
+  <h1>⚖️ TENAR</h1>
+
+  <h2>Course</h2>
+  <select id="course"></select>
+  <button class="btn alt" id="newCourse">＋ New course</button>
+
+  <h2>Add documents</h2>
+  <div id="drop">Drop PDF or Word files here<br>or click to choose</div>
+  <input type="file" id="file" multiple accept=".pdf,.docx,.txt,.md" class="hidden">
+  <button class="btn" id="uploadBtn">📎 Upload PDF / Word</button>
+  <button class="btn" id="reindex">↻ Re-index</button>
+  <div id="status"></div>
+
+  <h2>Document names</h2>
+  <button class="btn gold" id="aiName">🤖 Name documents (AI)</button>
+  <button class="btn alt" id="editNames">✎ Edit names</button>
+  <div id="nameStatus"></div>
+
+  <h2>Documents in this course</h2>
+  <div id="mix"></div>
+  <div id="docs">none yet</div>
+
+  <h2>Study tools</h2>
+  <button class="btn gold" id="openExam">📝 Exam Coach</button>
+  <button class="btn gold" id="openWeekly">📅 Weekly Update</button>
+  <button class="btn gold" id="openUpdates">🔄 Legal updates (web)</button>
+  <button class="btn gold" id="openMap">🧭 Decode a question</button>
+  <button class="btn gold" id="openPolish">✍️ Polish my draft</button>
+  <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
+
+  <div style="margin-top:auto; display:flex; flex-direction:column; gap:8px;">
+    <div id="who" style="font-size:11px;color:#aab4c6"></div>
+    <div id="planLine" style="font-size:11px;color:#aab4c6;line-height:1.6"></div>
+    <button class="btn alt" id="openPlan">⚙ Plan &amp; usage</button>
+    <button class="btn alt" id="logoutBtn" style="font-size:12px">Log out</button>
+    <div id="cost"></div>
+    <button class="btn alt" id="openSettings">⚙ Edit how it answers</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="courseBar">Asking within course: <b id="courseLabel">—</b>
+    <label style="float:right; cursor:pointer;" title="Adds compared country practice & key cases with verified web links. Costs more per answer.">
+      <input type="checkbox" id="webToggle" checked> 🌐 Comparative + web links
+    </label>
+  </div>
+  <div id="chat"></div>
+  <div id="composer">
+    <select id="fmt" title="Output format" style="width:auto; padding:0 8px; border-radius:8px; border:1px solid #cfd5e0;">
+      <option value="essay">Essay</option>
+      <option value="memo">Memo</option>
+      <option value="report">Report</option>
+    </select>
+    <input id="q" placeholder="Ask a question about this course's documents…" autofocus>
+    <button class="btn" id="send" style="width:auto">Ask</button>
+    <button class="btn gold" id="findCases" style="width:auto" title="Find decided cases that can be applied to this question — each verified online with a link (uses one web credit).">⚖️ Cases</button>
+  </div>
+</div>
+
+<!-- settings (answer style) -->
+<div class="modal" id="settings">
+  <div class="card">
+    <h3>How the bot answers</h3>
+    <p>This instruction is followed for every answer. Edit, save, and the next
+       answer obeys. (Applies to all courses.)</p>
+    <textarea id="prompt" style="height:220px"></textarea>
+    <div class="rowbtn">
+      <button class="btn" id="savePrompt">Save</button>
+      <button class="btn alt" id="resetPrompt" style="width:auto">Reset to default</button>
+      <button class="btn alt" id="closeSettings" style="width:auto">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- name editor -->
+<div class="modal" id="namesModal">
+  <div class="card">
+    <h3>Document names (used in citations)</h3>
+    <p>Fix any title/author here. Click 🤖 Name documents first to auto-fill,
+       then correct anything that's off. Saved across all courses.</p>
+    <div id="nameList"></div>
+    <div class="rowbtn">
+      <button class="btn" id="saveNames">Save all</button>
+      <button class="btn alt" id="closeNames" style="width:auto">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Exam Coach -->
+<div class="modal" id="examModal">
+  <div class="card" style="width:760px">
+    <h3>📝 Exam Coach</h3>
+    <p>Paste an exam question or case study. It maps the facts, breaks the work
+       into issues grounded in this course, gathers the law for each, then
+       assembles one OSCOLA-referenced answer. Facts come only from your
+       question; law only from your course.</p>
+    <div id="examCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <textarea id="examQ" style="height:120px" placeholder="Paste the exam question / case study here — or upload it below…"></textarea>
+    <input type="file" id="examFile" accept=".pdf,.docx,.txt,.md" class="hidden">
+    <div id="focusBox" style="margin:6px 0 4px">
+      <div style="font-size:12px;color:#aab4c6;margin-bottom:4px">
+        🎯 Key focus areas <span style="color:#6b7488">— areas the answer must cover in depth (optional)</span>
+      </div>
+      <div id="focusList"></div>
+      <button class="btn alt mini" id="addFocus" style="width:auto;margin-top:2px">＋ Add focus area</button>
+    </div>
+    <div class="rowbtn">
+      <button class="btn alt" id="examUpload" style="width:auto">📎 Upload exam (PDF/Word)</button>
+      <label style="color:#aab4c6;font-size:12px">Output:
+        <select id="examLen" style="width:auto;display:inline-block">
+          <option value="exam">Exam answer (concise)</option>
+          <option value="essay">Coursework essay (full)</option>
+          <option value="memo">Legal memorandum</option>
+          <option value="report">Formal report</option>
+        </select>
+      </label>
+      <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
+        <input type="checkbox" id="examWeb"> Comparative (web)
+      </label>
+      <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
+        <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
+      </label>
+      <button class="btn" id="examBreak" style="width:auto">Break it down</button>
+      <button class="btn alt" id="examClose" style="width:auto">Close</button>
+    </div>
+    <div id="examStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="examOut"></div>
+  </div>
+</div>
+
+<!-- weekly update -->
+<div class="modal" id="weeklyModal">
+  <div class="card" style="width:820px">
+    <h3>📅 Weekly Update</h3>
+    <p>Reads your course outline, lists each week and its topic, then writes an
+       exam-standard summary of a week — exactly what you should have known by the
+       end of it, grounded in this course's documents.</p>
+    <div id="weeklyCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <div class="rowbtn" style="align-items:center">
+      <label style="color:#aab4c6;font-size:12px">Outline:
+        <select id="weeklyDoc" style="width:auto;display:inline-block;min-width:200px"></select>
+      </label>
+      <button class="btn" id="weeklyFind" style="width:auto">Find weeks</button>
+      <button class="btn alt mini" id="weeklyRefresh" style="width:auto" title="Re-read the outline">↻ Re-read</button>
+      <button class="btn alt" id="weeklyClose" style="width:auto">Close</button>
+    </div>
+    <div id="weeklyStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="weeklyList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
+    <div id="weeklyOut"></div>
+  </div>
+</div>
+
+<!-- legal updates (web) -->
+<div class="modal" id="updatesModal">
+  <div class="card" style="width:820px">
+    <h3>🔄 Legal updates <span style="font-size:12px;color:#8b93a7">(web scan)</span></h3>
+    <p>Goes online to flag recent changes in the law for this course — new or amended
+       statutes, revoked regulations, recent cases, treaty changes — each with a source
+       link. <b style="color:#e0b050">It's a flag-for-verification tool, not authority:</b>
+       confirm each item against the official gazette / primary source before relying on it.</p>
+    <div id="updatesCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <div class="rowbtn" style="align-items:center">
+      <button class="btn" id="updatesGo" style="width:auto">🔎 Check the web now</button>
+      <button class="btn gold" id="updatesSave" style="width:auto;display:none">💾 Save to course &amp; include in answers</button>
+      <button class="btn alt" id="updatesClose" style="width:auto">Close</button>
+    </div>
+    <div id="pasteRow" style="display:none;margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center;
+         border-top:1px solid #2a3344;padding-top:10px">
+      <span style="font-size:12px;color:#8b93a7;flex:1 1 100%">Or paste an official link (a law's PDF / page) and add it straight in — no download:</span>
+      <input id="pasteTitle" placeholder="Law name (optional)" style="flex:1 1 180px">
+      <input id="pasteUrl" placeholder="https://…official document / PDF link" style="flex:2 1 280px">
+      <button class="btn gold" id="pasteFetch" style="width:auto">⬇ Fetch this link &amp; add</button>
+    </div>
+    <div id="pasteRes" style="font-size:12px;color:#aab4c6;margin-top:6px"></div>
+    <div id="updatesStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="updatesOut"></div>
+  </div>
+</div>
+
+<!-- polish my draft -->
+<div class="modal" id="polishModal">
+  <div class="card" style="max-width:820px">
+    <h3>✍️ Polish my draft</h3>
+    <p style="font-size:12.5px;color:#aab4c6">Paste your OWN written work. It's rewritten to the
+       house writing standard (clarity + persuasion) — your arguments, facts, citations and
+       footnotes are preserved exactly; nothing is invented. Then export to PDF/Word.</p>
+    <textarea id="polishIn" style="height:180px" placeholder="Paste your draft here — include your [n] footnote markers, a 'Footnotes' section and a 'Bibliography' if you have them…"></textarea>
+    <div class="rowbtn">
+      <label style="color:#aab4c6;font-size:12px">Format:
+        <select id="polishFmt" style="width:auto;display:inline-block">
+          <option value="essay">Essay</option>
+          <option value="report">Report</option>
+          <option value="memo">Memo</option>
+        </select>
+      </label>
+      <button class="btn" id="polishGo" style="width:auto">Polish &amp; format</button>
+      <button class="btn alt" id="polishClose" style="width:auto">Close</button>
+    </div>
+    <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="polishOut"></div>
+  </div>
+</div>
+
+<!-- advisory (for lawyers) -->
+<div class="modal" id="advisoryModal">
+  <div class="card" style="max-width:860px">
+    <h3>⚖️ Advisory — your matters</h3>
+    <p style="font-size:12.5px;color:#aab4c6">Your own <b>private</b> workspaces. Create a matter,
+       upload its documents, and draft a work-product grounded in them — every claim cited to the
+       document and page, nothing invented. Not shared with anyone; separate from student courses.</p>
+    <div class="rowbtn" style="margin-bottom:8px">
+      <label style="color:#aab4c6;font-size:12px">Matter:
+        <select id="advMatter" style="width:auto;display:inline-block;min-width:180px"></select>
+      </label>
+      <button class="btn alt mini" id="advNewMatter" style="width:auto">＋ New matter</button>
+      <button class="btn alt mini" id="advUpload" style="width:auto">📎 Upload documents</button>
+      <button class="btn alt mini" id="advReindex" style="width:auto">↻ Index</button>
+      <input type="file" id="advFile" accept=".pdf,.docx,.txt,.md" multiple class="hidden">
+      <span id="advDocs" style="font-size:12px;color:#8b93a7"></span>
+    </div>
+    <textarea id="advIn" style="height:150px" placeholder="Instructions — e.g. 'Analyse this share purchase agreement for the buyer, research the enforceability of the non-compete, and draft an advice note on the risks and how to renegotiate them.'"></textarea>
+    <div class="rowbtn">
+      <label style="color:#aab4c6;font-size:12px">Deliverable:
+        <select id="advDeliv" style="width:auto;display:inline-block">
+          <option value="advice">Advice note / opinion</option>
+          <option value="memo">Memorandum</option>
+          <option value="submission">Court submission / skeleton</option>
+          <option value="contract_review">Contract review / mark-up</option>
+          <option value="report">Report</option>
+        </select>
+      </label>
+      <label style="color:#aab4c6;font-size:12px" title="Adds verified web case-law/other-jurisdiction research (uses one comparative credit).">
+        <input type="checkbox" id="advWeb"> Comparative research (web)
+      </label>
+      <button class="btn" id="advGo" style="width:auto">Draft it</button>
+      <button class="btn alt" id="advClose" style="width:auto">Close</button>
+    </div>
+    <div id="advStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="advOut"></div>
+  </div>
+</div>
+
+<!-- plan & usage -->
+<div class="modal" id="planModal">
+  <div class="card">
+    <h3>Plan &amp; usage</h3>
+    <p>Current plan, allowances and this period's usage. (Admin view — in the
+       product each user account is on one plan; the caps below are enforced.)</p>
+    <label style="color:#aab4c6;font-size:12px">Plan</label>
+    <select id="planSel">
+      <optgroup label="Students">
+        <option value="free">Free — $0</option>
+        <option value="single">Single Course — $40/sem</option>
+        <option value="semester">Semester Bundle — $120/sem</option>
+        <option value="dissertation">Dissertation — $249</option>
+        <option value="full_llm">Full LLM — $599/degree</option>
+      </optgroup>
+      <optgroup label="Practitioners (lawyers)">
+        <option value="single_matter">Single Matter — $99</option>
+        <option value="solo">Solo — $149/mo</option>
+        <option value="practice">Practice — $299/mo</option>
+        <option value="firm">Firm — $129/seat/mo</option>
+      </optgroup>
+    </select>
+    <div id="planUsage" style="margin-top:14px"></div>
+    <div class="rowbtn">
+      <button class="btn" id="buyComp" style="width:auto">+10 comparative credits</button>
+      <button class="btn" id="buyExam" style="width:auto">+5 Exam credits</button>
+      <button class="btn alt" id="resetUsage" style="width:auto">Reset period</button>
+      <button class="btn alt" id="closePlan" style="width:auto">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Question Decoder (mind map) -->
+<div class="modal" id="mapModal">
+  <div class="card" style="width:760px">
+    <h3>🧭 Decode a question</h3>
+    <p>Paste the question and pick the format. You'll get a step-by-step map of
+       how to build the answer — each step with the exact authorities, their
+       page, and why they're needed (grounded in this course). Premium.</p>
+    <div id="mapCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <textarea id="mapQ" style="height:110px" placeholder="Paste the question here…"></textarea>
+    <div class="rowbtn">
+      <label style="color:#aab4c6;font-size:12px">Format:
+        <select id="mapFmt" style="width:auto;display:inline-block">
+          <option value="essay">Essay</option>
+          <option value="memo">Memo</option>
+          <option value="report">Report</option>
+        </select>
+      </label>
+      <button class="btn" id="mapGo" style="width:auto">Decode</button>
+      <button class="btn alt" id="mapClose" style="width:auto">Close</button>
+    </div>
+    <div id="mapStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="mapOut"></div>
+  </div>
+</div>
+
+<!-- generic output (OSCOLA etc.) -->
+<div class="modal" id="outModal">
+  <div class="card" style="width:640px">
+    <h3 id="outTitle">Output</h3>
+    <div id="outBody" style="white-space:pre-wrap;font-size:13px;line-height:1.5;max-height:60vh;overflow:auto;background:#11151d;padding:12px;border-radius:6px"></div>
+    <div class="rowbtn">
+      <button class="btn" id="outCopy" style="width:auto">Copy</button>
+      <button class="btn alt" id="outClose" style="width:auto">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const chat = $("#chat");
+let COURSE = localStorage.getItem("course") || "";
+
+/* ---- button loaders: instant press-flash + spinner while a click's request runs ----
+   Every action button triggers a fetch, so we (1) flash the button on click for
+   instant feedback and (2) attach a spinner to the button that fired a request,
+   clearing it when the request settles. No per-handler wiring needed. */
+let PENDING_BTN = null, PENDING_T = 0;
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash");
+  PENDING_BTN = b; PENDING_T = Date.now();
+}, true);
+function btnBusyStart(b) {
+  if (!b || !b.isConnected) return;
+  b._busy = (b._busy || 0) + 1;
+  if (b._busy === 1) {
+    b._label = b.innerHTML;
+    b.classList.add("busy");
+    b.insertAdjacentHTML("afterbegin", '<span class="spin"></span>');
+  }
+}
+function btnBusyEnd(b) {
+  if (!b || !b._busy) return;
+  b._busy--;
+  if (b._busy === 0) {
+    b.classList.remove("busy");
+    const s = b.querySelector(".spin"); if (s) s.remove();
+  }
+}
+// background polls we should NOT hang a spinner on
+const _SILENT = ["/api/docs", "/api/me", "/api/plan"];
+const _fetch = window.fetch.bind(window);
+window.fetch = function(...args) {
+  const url = (typeof args[0] === "string" ? args[0] : (args[0] && args[0].url)) || "";
+  let b = null;
+  if (PENDING_BTN && Date.now() - PENDING_T < 1500 && !_SILENT.some(u => url.includes(u))) {
+    b = PENDING_BTN;
+    PENDING_BTN = null;          // claim once: only this click's request spins
+  }
+  if (b) btnBusyStart(b);
+  const p = _fetch(...args);
+  if (b) p.then(() => btnBusyEnd(b), () => btnBusyEnd(b));
+  return p;
+};
+const esc = s => (s||"").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function downloadDocx(text, title) {
+  const res = await fetch("/api/export", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title})});
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = (title || "answer") + ".docx"; a.click();
+  URL.revokeObjectURL(url);
+}
+function linkify(escaped) {
+  return escaped.replace(/(https?:\/\/[^\s<]+)/g, u => {
+    let tail = "";
+    while (/[.,);\]]$/.test(u)) { tail = u.slice(-1) + tail; u = u.slice(0, -1); }
+    return '<a href="' + u + '" target="_blank" rel="noopener" class="srclink">'
+         + u + '</a>' + tail;
+  });
+}
+// Render markdown → clean HTML so raw ###/*** never show; presentation-grade.
+function mdInline(s){
+  s = esc(s);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  return linkify(s);
+}
+function mdToHtml(raw){
+  const lines = (raw||"").split("\n");
+  let html = "", inList = false;
+  const closeList = () => { if(inList){ html += "</ul>"; inList = false; } };
+  for (const ln of lines){
+    const t = ln.trim();
+    if (!t){ closeList(); continue; }
+    if (/^([-*_]\s*){3,}$/.test(t)){ closeList(); html += "<hr class='ans-hr'>"; continue; }
+    let m;
+    if (m = t.match(/^(#{1,6})\s+(.*)/)){
+      closeList();
+      const lvl = m[1].length, tag = lvl<=1?"h3":(lvl===2?"h4":"h5");
+      html += "<"+tag+" class='ans-h'>" + mdInline(m[2].replace(/[*#]+$/,'').trim()) + "</"+tag+">";
+      continue;
+    }
+    if (m = t.match(/^[-*•]\s+(.*)/)){
+      if(!inList){ html += "<ul class='ans-ul'>"; inList = true; }
+      html += "<li>" + mdInline(m[1]) + "</li>"; continue;
+    }
+    closeList();
+    html += "<p class='ans-p'>" + mdInline(t) + "</p>";
+  }
+  closeList();
+  return html;
+}
+function citeHTML(c) {
+  const head = c.url
+    ? '🌐 <a href="' + esc(c.url) + '" target="_blank" rel="noopener" class="srclink">'
+        + esc(c.title) + '</a>'
+    : '📄 ' + esc(c.title);
+  return '<span class="pin">' + head + '</span>' +
+         (c.quote ? '<span class="quote">“' + esc(c.quote) + '”</span>' : '');
+}
+
+function bubble(cls, html) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls; d.innerHTML = html;
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d;
+}
+
+async function loadCourses() {
+  const r = await (await fetch("/api/courses")).json();
+  const sel = $("#course");
+  sel.innerHTML = r.courses.map(c => `<option>${esc(c)}</option>`).join("");
+  if (!r.courses.includes(COURSE)) COURSE = r.courses[0];
+  sel.value = COURSE;
+  $("#courseLabel").textContent = COURSE;
+  localStorage.setItem("course", COURSE);
+  refresh();
+}
+$("#course").onchange = () => {
+  COURSE = $("#course").value; localStorage.setItem("course", COURSE);
+  $("#courseLabel").textContent = COURSE; chat.innerHTML = ""; refresh();
+};
+$("#newCourse").onclick = async () => {
+  const name = prompt("Name this course (e.g. Contract Law, Nuclear Energy):");
+  if (!name) return;
+  await fetch("/api/courses", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name})});
+  COURSE = name; localStorage.setItem("course", COURSE); await loadCourses();
+};
+
+const TLAB = {constitution:"Const", statute:"Statute", case:"Case", treaty:"Treaty",
+              book:"Book", article:"Article", report:"Report", web:"Web", other:"Other"};
+const tag = t => '<span class="tag ' + (t||'report') + '">' + (TLAB[t]||t||'Report') + '</span>';
+
+async function refresh() {
+  const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
+  if (r.auth) { location.href = "/"; return; }   // session dropped → login
+  $("#docs").innerHTML = r.docs.length
+    ? r.docs.map(d => "<div>" + tag(d.type) + esc(d.name) + "</div>").join("") : "none yet";
+  $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
+    ? Object.entries(r.mix).sort((a,b)=>b[1]-a[1]).map(([t,n]) => tag(t)+n).join(" ") : "";
+  $("#status").textContent = r.status + (r.indexing ? " ⏳" : "");
+  $("#nameStatus").textContent = r.name_status || "";
+  $("#cost").textContent = "Total spent: $" + (r.total_cost_usd || 0).toFixed(4);
+  if (r.plan) applyPlan(r.plan);
+}
+
+let PLAN = null;
+function applyPlan(p) {
+  PLAN = p;
+  const u = p.usage, l = p.limits, c = p.credits;
+  const cap = (k, credit) => l[k] + (credit ? (c[k] || 0) : 0);
+  $("#planLine").innerHTML =
+    "<b style='color:#cdd5e6'>" + esc(p.label) + "</b><br>"
+    + "Q " + u.questions + "/" + l.questions
+    + " · 🌐 " + u.comparative + "/" + cap("comparative", true)
+    + " · Exam " + u.exam_sessions + "/" + cap("exam_sessions", true);
+  // reflect web availability on the toggle
+  const wt = $("#webToggle");
+  if (wt) {
+    if (!p.web) { wt.checked = false; wt.disabled = true;
+      wt.parentElement.style.opacity = .5;
+      wt.parentElement.title = "Comparative/web not on the " + p.label + " plan"; }
+    else { wt.disabled = false; wt.parentElement.style.opacity = 1; }
+  }
+}
+setInterval(refresh, 2500);
+
+async function ask() {
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#q").value = ""; bubble("q", esc(q));
+  const web = $("#webToggle").checked;
+  const wait = bubble("a", web
+    ? "<em>Searching your documents + the web for comparative law… (takes longer)</em>"
+    : "<em>Searching this course's documents…</em>");
+  try {
+    const r = await (await fetch("/api/ask", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({question: q, course: COURSE, web, format: $("#fmt").value})})).json();
+    let html;
+    if (r.segments && r.segments.length) {
+      html = r.segments.map(seg => {
+        let t = mdToHtml(seg.text);
+        if (seg.cites && seg.cites.length) {
+          const tip = seg.cites.map(citeHTML).join('<hr>');
+          const anyWeb = seg.cites.some(c => c.url);
+          t += '<span class="cmark' + (anyWeb ? ' web' : '') + '">'
+             + (anyWeb ? '🌐 web' : '🔍 source')
+             + '<span class="tip">' + tip + '</span></span>';
+        }
+        return t;
+      }).join("");
+    } else { html = mdToHtml(r.answer); }
+    if (r.sources && r.sources.length)
+      html += '<div class="sources"><h4>Sources</h4>' +
+        r.sources.map(s => '<div class="cite">' + citeHTML(s) + '</div>').join("") + '</div>';
+    if (r.cost)
+      html += '<div class="meta">This answer: $' + r.cost.this_query_usd + '  ·  ' +
+        r.cost.input_tokens + ' in / ' + r.cost.output_tokens +
+        ' out  ·  running total $' + r.cost.total_usd + '</div>';
+    if (r.sources && r.sources.length)
+      html += '<button class="btn alt mini oscolaBtn">📑 Copy as OSCOLA</button>';
+    if (r.answer && !r.limit)
+      html += '<button class="btn alt mini wordBtn">⬇ Word</button>';
+    wait.innerHTML = html; chat.scrollTop = chat.scrollHeight;
+    const ob = wait.querySelector('.oscolaBtn');
+    if (ob) ob.onclick = () => oscolaExport(r.sources);
+    const wb = wait.querySelector('.wordBtn');
+    if (wb) wb.onclick = () => downloadDocx(r.answer, "Answer");
+  } catch (e) { wait.innerHTML = "Error: " + esc(String(e)); }
+}
+$("#send").onclick = ask;
+$("#q").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+
+async function findCases() {
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#q").value = "";
+  bubble("q", "⚖️ Applicable cases for: " + esc(q));
+  const wait = bubble("a", "<em>Searching for decided cases on point and verifying each online…</em>");
+  try {
+    const r = await (await fetch("/api/cases", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({question: q, course: COURSE})})).json();
+    let html;
+    if (r.segments && r.segments.length) {
+      html = r.segments.map(seg => {
+        let t = mdToHtml(seg.text);
+        if (seg.cites && seg.cites.length) {
+          const tip = seg.cites.map(citeHTML).join('<hr>');
+          const anyWeb = seg.cites.some(c => c.url);
+          t += '<span class="cmark' + (anyWeb ? ' web' : '') + '">'
+             + (anyWeb ? '🌐 web' : '🔍 source')
+             + '<span class="tip">' + tip + '</span></span>';
+        }
+        return t;
+      }).join("");
+    } else { html = mdToHtml(r.answer || "No cases found."); }
+    const webSrc = (r.sources || []).filter(s => s.url);   // verified case links
+    if (webSrc.length)
+      html += '<div class="sources"><h4>Verified links</h4>' +
+        webSrc.map(s => '<div class="cite">' + citeHTML(s) + '</div>').join("") + '</div>';
+    if (r.cost)
+      html += '<div class="meta">This search: $' + r.cost.this_query_usd +
+        '  ·  running total $' + r.cost.total_usd + '</div>';
+    if (r.answer && !r.limit)
+      html += '<button class="btn alt mini wordBtn">⬇ Word</button>';
+    wait.innerHTML = html; chat.scrollTop = chat.scrollHeight;
+    const wb = wait.querySelector('.wordBtn');
+    if (wb) wb.onclick = () => downloadDocx(r.answer, "Applicable cases");
+  } catch (e) { wait.innerHTML = "Error: " + esc(String(e)); }
+}
+$("#findCases").onclick = findCases;
+
+// uploads
+const drop = $("#drop"), file = $("#file");
+drop.onclick = () => file.click();
+$("#uploadBtn").onclick = () => file.click();
+file.onchange = () => upload(file.files);
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => upload(e.dataTransfer.files));
+async function upload(files) {
+  const fd = new FormData(); fd.append("course", COURSE);
+  for (const f of files) fd.append("files", f);
+  $("#status").textContent = "uploading…";
+  await fetch("/api/upload", {method:"POST", body: fd});
+  await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: COURSE})});
+  refresh();
+}
+$("#reindex").onclick = async () => {
+  await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: COURSE})}); refresh();
+};
+
+// AI naming
+$("#aiName").onclick = async () => {
+  if (!confirm("Read the first pages of each document with AI to extract real "
+    + "titles & authors? (costs a few cents total)")) return;
+  await fetch("/api/extract_names", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: COURSE})});
+  $("#nameStatus").textContent = "starting…"; refresh();
+};
+
+// name editor
+async function openNames() {
+  const r = await (await fetch("/api/names?course=" + encodeURIComponent(COURSE))).json();
+  const opts = r.options || [], labels = r.labels || {};
+  $("#nameList").innerHTML = Object.entries(r.names).map(([f, n]) => {
+    const cur = (r.types || {})[f] || "report";
+    const sel = opts.map(o => '<option value="'+o+'"'+(o===cur?' selected':'')+'>'
+      + esc(labels[o]||o) + '</option>').join("");
+    return '<div class="nameRow"><label>'+esc(f)+'</label>'
+      + '<div style="display:flex;gap:6px">'
+      + '<input type="text" data-file="'+esc(f)+'" value="'+esc(n)+'" style="flex:1">'
+      + '<select data-tfile="'+esc(f)+'">'+sel+'</select></div></div>';
+  }).join("") || "<p>No documents in this course.</p>";
+  $("#namesModal").style.display = "flex";
+}
+$("#editNames").onclick = openNames;
+$("#closeNames").onclick = () => $("#namesModal").style.display = "none";
+$("#saveNames").onclick = async () => {
+  const names = {}, types = {};
+  document.querySelectorAll("#nameList input").forEach(inp => names[inp.dataset.file] = inp.value);
+  document.querySelectorAll("#nameList select").forEach(s => types[s.dataset.tfile] = s.value);
+  await fetch("/api/names", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({names, types})});
+  $("#namesModal").style.display = "none"; refresh();
+};
+
+// settings (answer style)
+$("#openSettings").onclick = async () => {
+  const r = await (await fetch("/api/prompt")).json();
+  $("#prompt").value = r.system_prompt; $("#prompt").dataset.default = r.default;
+  $("#settings").style.display = "flex";
+};
+$("#closeSettings").onclick = () => $("#settings").style.display = "none";
+$("#resetPrompt").onclick = () => $("#prompt").value = $("#prompt").dataset.default;
+$("#savePrompt").onclick = async () => {
+  await fetch("/api/prompt", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({system_prompt: $("#prompt").value})});
+  $("#settings").style.display = "none";
+};
+
+// ---- generic output modal (OSCOLA etc.) ----
+function showOut(title, text) {
+  $("#outTitle").textContent = title;
+  $("#outBody").innerHTML = mdToHtml(text);
+  $("#outBody").dataset.raw = text;
+  $("#outModal").style.display = "flex";
+}
+$("#outClose").onclick = () => $("#outModal").style.display = "none";
+$("#outCopy").onclick = () => {
+  navigator.clipboard.writeText($("#outBody").dataset.raw || "");
+  $("#outCopy").textContent = "Copied ✓";
+  setTimeout(() => $("#outCopy").textContent = "Copy", 1500);
+};
+
+async function oscolaExport(sources) {
+  showOut("OSCOLA references", "Formatting…");
+  const r = await (await fetch("/api/oscola", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({sources})})).json();
+  showOut("OSCOLA references", r.oscola || r.error || "no output");
+}
+
+// ---- Exam Coach ----
+let EXAM = {facts:[], assumptions:[], issues:[]};
+$("#openExam").onclick = () => {
+  $("#examCourse").textContent = "📚 Searching course: " + COURSE;
+  if (!$("#focusList").children.length) addFocusRow();   // start with one field
+  $("#examModal").style.display = "flex";
+};
+function addFocusRow(value) {
+  const row = document.createElement("div");
+  row.className = "focusRow";
+  row.style.cssText = "display:flex;gap:6px;margin-bottom:5px";
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.className = "focusInput";
+  inp.placeholder = "e.g. emergency response arrangements";
+  if (value) inp.value = value;
+  inp.style.flex = "1";
+  const rm = document.createElement("button");
+  rm.className = "btn alt mini"; rm.textContent = "✕";
+  rm.title = "Remove"; rm.style.cssText = "width:auto;margin-top:0;padding:5px 9px";
+  rm.onclick = () => row.remove();
+  // Enter in a focus field adds another, for fast entry
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addFocusRow(); }
+  });
+  row.appendChild(inp); row.appendChild(rm);
+  $("#focusList").appendChild(row);
+  inp.focus();
+}
+$("#addFocus").onclick = () => addFocusRow();
+function collectFocus() {
+  return Array.from(document.querySelectorAll(".focusInput"))
+    .map(i => i.value.trim()).filter(Boolean);
+}
+$("#examUpload").onclick = () => $("#examFile").click();
+$("#examFile").onchange = async () => {
+  const f = $("#examFile").files[0]; if (!f) return;
+  $("#examStatus").textContent = "Reading " + f.name + "…";
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const r = await (await fetch("/api/exam/extract", {method:"POST", body: fd})).json();
+    if (r.error) { $("#examStatus").textContent = r.error; return; }
+    $("#examQ").value = r.text;
+    $("#examStatus").textContent = "Loaded " + f.name + " (" + r.text.length
+      + " chars). Review it, then Break it down.";
+  } catch (e) { $("#examStatus").textContent = "Upload error: " + e; }
+};
+$("#examClose").onclick = () => $("#examModal").style.display = "none";
+
+$("#examBreak").onclick = async () => {
+  const q = $("#examQ").value.trim();
+  if (!q) return;
+  const focus = collectFocus();
+  $("#examStatus").textContent = "Mapping facts and breaking down the question…";
+  $("#examOut").innerHTML = "";
+  try {
+    const r = await (await fetch("/api/exam/breakdown", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, question: q, focus})})).json();
+    if (r.error) { $("#examStatus").textContent = r.error; return; }
+    EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
+            issues: (r.issues||[]).map(i => ({...i, answer:null, sources:[], done:false})),
+            question: q, focus, cost: (r.cost ? (r.cost.this_usd||0) : 0)};
+    $("#examStatus").textContent = "Broken down · exam session cost so far $" + EXAM.cost.toFixed(4);
+    renderExam();
+  } catch (e) { $("#examStatus").textContent = "Error: " + e; }
+};
+
+function renderExam() {
+  let h = "";
+  if (EXAM.facts.length) {
+    h += "<h4 style='margin:12px 0 4px'>Fact & data map</h4>";
+    h += EXAM.facts.map(f => '<div class="fact">• <b>'+esc(f.fact||'')+'</b> — '
+      + esc(f.characteristic||'') + ' → <i>' + esc(f.trigger||'') + '</i></div>').join("");
+  }
+  if (EXAM.assumptions.length)
+    h += "<h4 style='margin:12px 0 4px'>Assumptions to state</h4>"
+      + EXAM.assumptions.map(a => '<div class="fact">– '+esc(a)+'</div>').join("");
+  if (EXAM.issues.length) {
+    h += "<h4 style='margin:14px 0 4px'>Issues to answer</h4>";
+    h += EXAM.issues.map((it, idx) => {
+      let body;
+      if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
+      else if (it.answer) body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + followHTML(it, idx);
+      else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
+      return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+'</h5>'
+        + '<div class="why">'+esc(it.why||'')+(it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
+        + body + '</div>';
+    }).join("");
+    h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
+      + '<button class="btn gold" id="examCompile" style="width:auto">Compile final document</button></div>';
+    h += '<div id="examDocWrap"></div>';
+  }
+  $("#examOut").innerHTML = h;
+  $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
+    b.onclick = () => gatherIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".fupBtn").forEach(b =>
+    b.onclick = () => askFollowup(+b.dataset.i));
+  $("#examOut").querySelectorAll(".fupInput").forEach(inp =>
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") askFollowup(+inp.dataset.i); }));
+  const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
+  const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
+}
+
+function followHTML(it, idx) {
+  const fups = (it.followups || []).map(f =>
+    '<div class="fupItem"><div class="fupq">↳ ' + esc(f.q) + '</div>'
+    + '<div class="ans">' + linkify(esc(f.answer)) + '</div></div>').join("");
+  const box = it.fupLoading
+    ? '<div class="why" style="margin-top:8px">⏳ Answering follow-up…</div>'
+    : '<div class="fup"><input class="fupInput" data-i="' + idx
+      + '" placeholder="Ask a follow-up about this issue…">'
+      + '<button class="btn mini fupBtn" data-i="' + idx + '">Ask</button></div>';
+  return fups + box;
+}
+
+async function askFollowup(i) {
+  const inp = document.querySelector('.fupInput[data-i="' + i + '"]');
+  const q = inp ? inp.value.trim() : "";
+  if (!q) return;
+  const it = EXAM.issues[i];
+  it.followups = it.followups || [];
+  it.fupLoading = true; renderExam();
+  $("#examStatus").textContent = "Answering follow-up…";
+  try {
+    const r = await (await fetch("/api/ask", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, web: false,
+        question: 'In the context of this issue — "' + it.issue + '" — ' + q})})).json();
+    it.followups.push({q, answer: r.answer || r.error || "",
+      answer_annotated: r.answer_annotated || "", sources: r.sources || []});
+    $("#examStatus").textContent = r.cost ? ("Running total $"+r.cost.total_usd) : "";
+  } catch (e) { it.followups.push({q, answer: "Error: " + e, sources: []}); }
+  it.fupLoading = false; renderExam();
+}
+
+async function gatherIssue(i) {
+  const it = EXAM.issues[i];
+  if (it.loading || it.done) return;          // ignore repeat clicks
+  it.loading = true; renderExam();            // instant feedback
+  $("#examStatus").textContent = "Gathering law for issue " + (it.n||i+1) + "…";
+  try {
+    const r = await (await fetch("/api/ask", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, question: it.issue, web: false, brief: true})})).json();
+    it.answer = r.answer || r.error || "";
+    it.answer_annotated = r.answer_annotated || "";
+    it.sources = r.sources || [];
+    EXAM.cost = (EXAM.cost || 0) + (r.cost ? (r.cost.this_query_usd || 0) : 0);
+    $("#examStatus").textContent = "Exam session cost so far $" + EXAM.cost.toFixed(4);
+  } catch (e) { it.answer = "Error gathering: " + e; }
+  it.done = true; it.loading = false; renderExam();
+}
+async function gatherAll() {
+  $("#examStatus").textContent = "Gathering all issues (one at a time)…";
+  for (let i = 0; i < EXAM.issues.length; i++)
+    if (!EXAM.issues[i].done) await gatherIssue(i);
+  $("#examStatus").textContent = "All issues gathered. Ready to compile.";
+}
+async function compileExam() {
+  const done = EXAM.issues.filter(it => it.done && it.answer);
+  if (!done.length) { $("#examStatus").textContent = "Gather at least one issue first."; return; }
+  const btn = $("#examCompile");
+  if (btn) { btn.disabled = true; btn.textContent = "Compiling… (up to a minute)"; }
+  $("#examStatus").textContent = "Synthesising the final OSCOLA-referenced document…";
+  const usingWeb = $("#examWeb") && $("#examWeb").checked;
+  // live document area — text streams in here as it's written
+  $("#examDocWrap").innerHTML =
+    "<h4 style='margin:14px 0 4px'>Final document <span id='liveDot' style='color:#6fcf97'>● writing…</span></h4>"
+    + "<div id='examDoc' style='white-space:pre-wrap'></div>";
+  const docEl = $("#examDoc");
+  $("#examStatus").textContent = usingWeb
+    ? "Researching comparators + synthesising… (web compiles show at the end)"
+    : "Synthesising… the document is writing live below.";
+  const DELIM = "\x1e\x1eMETA\x1e\x1e";
+  const PING = "\x1e\x1ePING\x1e\x1e";     // server heartbeat — strip before display
+  let buf = "", meta = {};
+  // elapsed timer so the thinking phase (no text yet) still shows life
+  let secs = 0, gotText = false;
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    secs = Math.round((Date.now() - t0) / 1000);
+    if (!gotText) $("#examStatus").textContent =
+      "🧠 Reasoning through the issues… " + secs + "s — the text streams in below as soon as it starts writing"
+      + (usingWeb ? " (web compiles appear at the end)" : "");
+  }, 1000);
+  try {
+    const resp = await fetch("/api/exam/assemble", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({
+        question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
+        web: usingWeb, focus: EXAM.focus || [],
+        max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
+        answers: done.map(it => ({
+          issue: it.issue,
+          answer: it.answer + (it.followups || []).map(f =>
+            "\n\nFurther point (" + f.q + "):\n" + f.answer).join(""),
+          answer_annotated: (it.answer_annotated || it.answer)
+            + (it.followups || []).map(f =>
+            "\n\nFurther point (" + f.q + "):\n" + (f.answer_annotated || f.answer)).join(""),
+          sources: (it.followups || []).reduce((a, f) =>
+            a.concat(f.sources || []), (it.sources || []).slice())
+        }))
+      })});
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const {done: rdone, value} = await reader.read();
+      if (rdone) break;
+      buf += dec.decode(value, {stream: true});
+      buf = buf.split(PING).join("");                    // drop heartbeats
+      const body = buf.split(DELIM)[0];                  // strip trailing meta
+      docEl.textContent = body;                          // live plain-text view
+      if (!gotText && body.trim()) {                     // first real text arrived
+        gotText = true;
+        $("#examStatus").textContent = "✍️ Writing live…";
+      }
+      if (gotText) docEl.scrollIntoView({block: "end"});
+    }
+  } catch (e) {
+    clearInterval(timer);
+    $("#examStatus").textContent = "Compile error: " + e;
+    if (btn) { btn.disabled = false; btn.textContent = "Compile final document"; }
+    return;
+  }
+  clearInterval(timer);
+  if (btn) { btn.disabled = false; btn.textContent = "Compile final document"; }
+  const parts = buf.split(DELIM);
+  const document = (parts[0] || "").trim();
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  const dot = $("#liveDot"); if (dot) dot.remove();
+  if (meta.error) { $("#examStatus").textContent = meta.error; return; }
+  // final formatted render
+  docEl.style.whiteSpace = "normal";
+  docEl.innerHTML = mdToHtml(document);
+  EXAM.cost = (EXAM.cost || 0) + (meta.cost ? (meta.cost.this_usd || 0) : 0);
+  $("#examStatus").textContent = meta.cost
+    ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $"
+       + EXAM.cost.toFixed(4) + " · total spent $" + meta.cost.total_usd)
+    : "Compiled.";
+  renderExportBar(docEl, document, "Exam answer",
+    EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "");
+}
+
+// cover-page defaults persist across exports (so you set your name once)
+function coverDefaults() {
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem("coverMeta") || "{}"); } catch (e) {}
+  const now = new Date();
+  d.today = now.toLocaleString("en-GB", {month: "long", year: "numeric"});
+  return d;
+}
+// insert a cover-details form + Copy / Word / PDF buttons after `afterEl`,
+// scoped to one container so the Exam and Polish exports don't collide
+let _barSeq = 0;
+function renderExportBar(afterEl, doc, wordName, defaultTitle) {
+  const cv = coverDefaults();
+  const box = document.createElement("div");
+  box.className = "exportBar";
+  const fld = (k, ph, val) => "<input data-k='"+k+"' placeholder='"+ph+"' value='"+esc(val||"")
+    +"' style='width:100%;margin:2px 0;padding:5px;font-size:12px'>";
+  const canPdf = !(PLAN && PLAN.pdf === false);   // PDF export is a paid feature
+  const coverBlock = canPdf
+    ? "<details style='margin-top:10px;border:1px solid #2a3344;border-radius:6px;padding:8px'>"
+      + "<summary style='cursor:pointer;font-size:12px;color:#aab4c6'>📄 PDF cover details (for the title page)</summary>"
+      + "<div style='margin-top:6px'>"
+      + fld("title","Title", cv.title || defaultTitle)
+      + fld("subtitle","Subtitle (optional)", cv.subtitle)
+      + fld("author","Your name", cv.author)
+      + fld("sid","Student ID (optional)", cv.sid)
+      + fld("degree","Degree / programme", cv.degree)
+      + fld("institution","University / institution", cv.institution)
+      + fld("instructed","Instructed by (optional)", cv.instructed)
+      + fld("date","Date", cv.date || cv.today)
+      + "</div></details>"
+    : "";
+  const pdfBtn = canPdf
+    ? "<button class='btn mini gold bPdf' style='margin-left:6px'>⬇ PDF (with cover)</button>"
+    : "<span style='margin-left:6px;font-size:11px;color:#8b93a7'>⬇ PDF (cover + footnotes) — <b style='color:#b9772a'>upgrade to unlock</b></span>";
+  const deepBtn = canPdf
+    ? "<button class='btn mini bDeepen' style='margin-left:6px' "
+      + "title='Steel-man the thesis, one comparator in depth, resolve the sharpest "
+      + "trade-offs — moves it toward the top band'>🔬 Deepen</button>"
+    : "";
+  box.innerHTML = coverBlock
+    + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
+    + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
+    + pdfBtn + deepBtn + "</div>";
+  afterEl.insertAdjacentElement("afterend", box);
+  const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
+  box.querySelector(".bCopy").onclick = e => {
+    navigator.clipboard.writeText(doc);
+    e.target.textContent = "Copied ✓";
+    setTimeout(() => e.target.textContent = "Copy document", 1500);
+  };
+  box.querySelector(".bWord").onclick = () => downloadDocx(doc, val("title") || wordName);
+  const pdfEl = box.querySelector(".bPdf");
+  if (pdfEl) pdfEl.onclick = async e => {
+    const meta = {
+      title: val("title") || wordName, subtitle: val("subtitle"), author: val("author"),
+      sid: val("sid") ? "Student ID: " + val("sid").replace(/^Student ID:\s*/i,"") : "",
+      degree: val("degree"), institution: val("institution"),
+      instructed: val("instructed"), date: val("date")
+    };
+    const save = {...meta}; delete save.title; delete save.subtitle;
+    localStorage.setItem("coverMeta", JSON.stringify(save));
+    e.target.textContent = "Building PDF…";
+    try {
+      const res = await fetch("/api/exam/pdf", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({document: doc, meta})});
+      if (!res.ok) { const er = await res.json().catch(()=>({})); alert(er.error || "PDF build failed"); }
+      else {
+        const blob = await res.blob(); const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = (meta.title || "document").replace(/[^\w -]/g,"").slice(0,40) + ".pdf";
+        a.click(); URL.revokeObjectURL(url);
+      }
+    } catch (err) { alert("PDF error: " + err); }
+    e.target.textContent = "⬇ PDF (with cover)";
+  };
+  const deepEl = box.querySelector(".bDeepen");
+  if (deepEl) deepEl.onclick = () => deepenDoc(box, doc, wordName, defaultTitle, deepEl);
+}
+
+// Deepen a competent answer to "examined argument" standard. Streams the upgraded
+// document (heartbeated on the server); the '=== WHAT CHANGED ===' tail is split
+// off so the exportable document stays clean, and shown separately.
+async function deepenDoc(anchorEl, doc, wordName, defaultTitle, btn) {
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e";
+  const MARK = "=== WHAT CHANGED ===";
+  // one deepened block per click; drop any previous one from this bar
+  const prev = anchorEl.parentNode.querySelector(".deepenOut");
+  if (prev) prev.remove();
+  const box = document.createElement("div");
+  box.className = "deepenOut";
+  box.style.cssText = "margin-top:14px;border-top:1px solid #2a3344;padding-top:12px";
+  box.innerHTML = "<h4 style='margin:0 0 6px'>🔬 Deepened version "
+    + "<span id='dDot' style='color:#6fcf97;font-size:12px'>● thinking…</span></h4>"
+    + "<div id='dDoc' style='white-space:pre-wrap'></div>";
+  anchorEl.insertAdjacentElement("afterend", box);
+  const dDoc = box.querySelector("#dDoc"), dDot = box.querySelector("#dDot");
+  if (btn) { btn.disabled = true; btn.textContent = "Deepening…"; }
+  let buf = "", meta = {}, gotText = false;
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    if (!gotText && dDot) dDot.textContent = "● thinking… " + Math.round((Date.now()-t0)/1000) + "s";
+  }, 1000);
+  try {
+    const resp = await fetch("/api/deepen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: doc})});
+    if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error || "request failed"); }
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      buf = buf.split(PING).join("");                       // drop heartbeats
+      const body = buf.split(DELIM)[0].split(MARK)[0];      // document part, live
+      dDoc.textContent = body;
+      if (!gotText && body.trim()) { gotText = true; if (dDot) dDot.textContent = "● writing…"; }
+    }
+  } catch (e) {
+    clearInterval(timer); if (dDot) dDot.remove();
+    dDoc.textContent = "Deepen error: " + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; }
+    return;
+  }
+  clearInterval(timer);
+  const parts = buf.split(DELIM);
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  if (dDot) dDot.remove();
+  if (meta.error) { dDoc.textContent = meta.error; if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; } return; }
+  const seg = (parts[0] || "").split(MARK);
+  const upgraded = seg[0].trim(), changed = (seg[1] || "").trim();
+  dDoc.style.whiteSpace = "normal";
+  dDoc.innerHTML = mdToHtml(upgraded);
+  let tail = dDoc;
+  if (changed) {
+    const c = document.createElement("details");
+    c.style.cssText = "margin-top:8px;font-size:13px;color:#aab4c6";
+    c.innerHTML = "<summary style='cursor:pointer'>What changed &amp; why</summary>"
+      + "<div style='white-space:pre-wrap;margin-top:6px'>" + esc(changed) + "</div>";
+    dDoc.insertAdjacentElement("afterend", c);
+    tail = c;
+  }
+  renderExportBar(tail, upgraded, wordName + " (deepened)", defaultTitle);
+  if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; }
+}
+
+// ---- polish my draft ----
+$("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; };
+$("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
+async function polishDraft() {
+  const text = $("#polishIn").value.trim();
+  if (!text) { $("#polishStatus").textContent = "Paste your draft first."; return; }
+  const btn = $("#polishGo"); btn.disabled = true; btn.textContent = "Polishing…";
+  $("#polishOut").innerHTML = "<h4 style='margin:12px 0 4px'>Polished draft "
+    + "<span id='pDot' style='color:#6fcf97'>● writing…</span></h4>"
+    + "<div id='polishDoc' style='white-space:pre-wrap'></div>";
+  const docEl = $("#polishDoc");
+  let secs = 0, gotText = false; const t0 = Date.now();
+  const timer = setInterval(() => { secs = Math.round((Date.now()-t0)/1000);
+    if (!gotText) $("#polishStatus").textContent = "🧠 Editing for clarity… " + secs + "s"; }, 1000);
+  const DELIM = "\x1e\x1eMETA\x1e\x1e"; let buf = "", meta = {};
+  try {
+    const resp = await fetch("/api/polish", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text, format: $("#polishFmt").value})});
+    const reader = resp.body.getReader(); const dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const b = buf.split(DELIM)[0]; docEl.textContent = b;
+      if (!gotText && b.trim()) { gotText = true; $("#polishStatus").textContent = "✍️ Writing live…"; }
+    }
+  } catch (e) { clearInterval(timer); $("#polishStatus").textContent = "Error: " + e;
+    btn.disabled = false; btn.textContent = "Polish & format"; return; }
+  clearInterval(timer); btn.disabled = false; btn.textContent = "Polish & format";
+  const parts = buf.split(DELIM); const out = (parts[0]||"").trim();
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) {}
+  const dot = $("#pDot"); if (dot) dot.remove();
+  if (meta.error) { $("#polishStatus").textContent = meta.error; return; }
+  docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(out);
+  $("#polishStatus").textContent = meta.cost
+    ? ("Done · this polish cost $" + (meta.cost.this_usd||0) + " · total $" + meta.cost.total_usd)
+    : "Done.";
+  renderExportBar(docEl, out, "Polished draft", "");
+}
+$("#polishGo").onclick = polishDraft;
+
+// ---- advisory (for lawyers): private matter workspaces ----
+$("#openAdvisory").onclick = async () => {
+  $("#advisoryModal").style.display = "flex";
+  await loadMatters();
+};
+$("#advClose").onclick = () => { $("#advisoryModal").style.display = "none"; };
+async function loadMatters(selectId) {
+  const r = await (await fetch("/api/matters")).json();
+  const sel = $("#advMatter");
+  sel.innerHTML = (r.matters || []).map(m =>
+    "<option value='" + m.id + "'>" + esc(m.name) + "</option>").join("");
+  if (!(r.matters || []).length) {
+    sel.innerHTML = "<option value=''>— create a matter to begin —</option>";
+    $("#advDocs").textContent = "";
+    return;
+  }
+  if (selectId) sel.value = selectId;
+  advDocsCount();
+}
+$("#advMatter").onchange = advDocsCount;
+async function advDocsCount() {
+  const mid = $("#advMatter").value;
+  if (!mid) { $("#advDocs").textContent = ""; return; }
+  try {
+    const r = await (await fetch("/api/docs?course=" + encodeURIComponent(mid))).json();
+    $("#advDocs").textContent = (r.docs ? r.docs.length : 0) + " document(s) · "
+      + (r.chunks || 0) + " chunks" + (r.indexing ? " · indexing…" : "");
+  } catch (e) { $("#advDocs").textContent = ""; }
+}
+$("#advNewMatter").onclick = async () => {
+  const name = prompt("Name this matter (e.g. 'Smith v Jones' or 'Acme SPA review'):");
+  if (!name || !name.trim()) return;
+  const r = await (await fetch("/api/matters", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({name})})).json();
+  if (r.error) { alert(r.error); return; }
+  await loadMatters(r.matter.id);
+};
+$("#advUpload").onclick = () => {
+  if (!$("#advMatter").value) { alert("Create or select a matter first."); return; }
+  $("#advFile").click();
+};
+$("#advFile").onchange = async () => {
+  const mid = $("#advMatter").value; const files = $("#advFile").files;
+  if (!mid || !files.length) return;
+  $("#advDocs").textContent = "Uploading " + files.length + " file(s)…";
+  const fd = new FormData(); fd.append("course", mid);
+  for (const f of files) fd.append("files", f);
+  const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
+  if (r.error) { alert(r.error); return; }
+  $("#advFile").value = "";
+  await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: mid})});
+  $("#advDocs").textContent = "Indexing " + (r.saved ? r.saved.length : 0) + " document(s)… (a moment)";
+  setTimeout(advDocsCount, 4000);
+};
+$("#advReindex").onclick = async () => {
+  const mid = $("#advMatter").value; if (!mid) return;
+  await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: mid})});
+  $("#advDocs").textContent = "Indexing…"; setTimeout(advDocsCount, 4000);
+};
+const DELIVER_NAMES = {advice:"Advice note", memo:"Memorandum",
+  submission:"Submission", contract_review:"Contract review", report:"Report"};
+async function draftAdvisory() {
+  const mid = $("#advMatter").value;
+  if (!mid) { $("#advStatus").textContent = "Create a matter and upload documents first."; return; }
+  const instructions = $("#advIn").value.trim();
+  if (!instructions) { $("#advStatus").textContent = "Describe what you need drafted."; return; }
+  const deliverable = $("#advDeliv").value, web = $("#advWeb").checked;
+  const btn = $("#advGo"); btn.disabled = true; btn.textContent = "Drafting…";
+  $("#advOut").innerHTML = "<h4 style='margin:12px 0 4px'>Draft "
+    + "<span id='aDot' style='color:#6fcf97'>● writing…</span></h4>"
+    + "<div id='advDoc' style='white-space:pre-wrap'></div>";
+  const docEl = $("#advDoc");
+  let secs = 0, gotText = false; const t0 = Date.now();
+  const timer = setInterval(() => { secs = Math.round((Date.now()-t0)/1000);
+    if (!gotText) $("#advStatus").textContent = "🧠 Analysing the matter & drafting… " + secs + "s"
+      + (web ? " (web research shows at the end)" : ""); }, 1000);
+  const DELIM = "\x1e\x1eMETA\x1e\x1e"; let buf = "", meta = {};
+  try {
+    const resp = await fetch("/api/advisory", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: mid, instructions, deliverable, web})});
+    const reader = resp.body.getReader(); const dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const b = buf.split(DELIM)[0]; docEl.textContent = b;
+      if (!gotText && b.trim()) { gotText = true; $("#advStatus").textContent = "✍️ Writing live…"; }
+    }
+  } catch (e) { clearInterval(timer); $("#advStatus").textContent = "Error: " + e;
+    btn.disabled = false; btn.textContent = "Draft it"; return; }
+  clearInterval(timer); btn.disabled = false; btn.textContent = "Draft it";
+  const parts = buf.split(DELIM); const out = (parts[0]||"").trim();
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) {}
+  const dot = $("#aDot"); if (dot) dot.remove();
+  if (meta.error) { $("#advStatus").textContent = meta.error; return; }
+  docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(out);
+  $("#advStatus").textContent = meta.cost
+    ? ("Drafted · this cost $" + (meta.cost.this_usd||0) + " · total $" + meta.cost.total_usd)
+    : "Drafted.";
+  renderExportBar(docEl, out, DELIVER_NAMES[deliverable] || "Draft", "");
+}
+$("#advGo").onclick = draftAdvisory;
+
+// ---- plan & usage ----
+function renderPlanUsage(p) {
+  $("#planSel").value = p.plan;
+  const u = p.usage, l = p.limits, c = p.credits;
+  const row = (label, used, cap, extra) =>
+    '<div style="margin:6px 0;font-size:13px">' + label + ': <b>' + used + '</b> / '
+    + (cap >= 999999 ? '∞' : cap) + (extra ? ' (+' + extra + ' credits)' : '') + '</div>';
+  const head = "<div style='color:#aab4c6;font-size:12px;margin-bottom:4px'>This period (resets monthly):</div>";
+  if (p.practitioner) {
+    $("#planUsage").innerHTML = head
+      + row("Matters", p.matters_used, p.matters, 0)
+      + row("Advisory drafts", u.drafts, l.drafts, c.drafts)
+      + row("Matter Q&A", u.questions, l.questions, 0)
+      + row("Web research 🌐", u.comparative, l.comparative, c.comparative)
+      + "<div style='color:#aab4c6;font-size:12px;margin-top:6px'>Practitioner plan · private matters + Advisory · PDF/Word export.</div>";
+  } else {
+    $("#planUsage").innerHTML = head
+      + row("Questions", u.questions, l.questions, 0)
+      + row("Comparative 🌐", u.comparative, l.comparative, c.comparative)
+      + row("Exam Coach compiles", u.exam_sessions, l.exam_sessions, c.exam_sessions)
+      + row("OSCOLA exports", u.oscola, l.oscola, 0)
+      + "<div style='color:#aab4c6;font-size:12px;margin-top:6px'>Web answers: "
+      + (p.web ? "included" : "not on this plan") + " · Courses: " + p.courses + "</div>";
+  }
+}
+async function openPlan() {
+  const p = await (await fetch("/api/plan")).json();
+  renderPlanUsage(p); $("#planModal").style.display = "flex";
+}
+$("#openPlan").onclick = openPlan;
+$("#closePlan").onclick = () => $("#planModal").style.display = "none";
+$("#planSel").onchange = async () => {
+  const p = await (await fetch("/api/plan", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({plan: $("#planSel").value})})).json();
+  renderPlanUsage(p); applyPlan(p); refresh();
+};
+async function buyCredits(body) {
+  const p = await (await fetch("/api/credits", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)})).json();
+  renderPlanUsage(p);
+}
+$("#buyComp").onclick = () => buyCredits({comparative: 10});
+$("#buyExam").onclick = () => buyCredits({exam_sessions: 5});
+$("#resetUsage").onclick = async () => {
+  const p = await (await fetch("/api/plan/reset", {method:"POST"})).json();
+  renderPlanUsage(p); applyPlan(p);
+};
+
+// ---- Question Decoder (mind map) ----
+$("#openMap").onclick = () => {
+  $("#mapCourse").textContent = "📚 Using course: " + COURSE;
+  $("#mapOut").innerHTML = ""; $("#mapStatus").textContent = "";
+  $("#mapModal").style.display = "flex";
+};
+$("#mapClose").onclick = () => $("#mapModal").style.display = "none";
+$("#mapGo").onclick = async () => {
+  const q = $("#mapQ").value.trim(); if (!q) return;
+  MAP_QUESTION = q;
+  $("#mapStatus").textContent = "Decoding the question…"; $("#mapOut").innerHTML = "";
+  try {
+    const r = await (await fetch("/api/mindmap", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, question: q, format: $("#mapFmt").value})})).json();
+    if (r.error) { $("#mapStatus").textContent = r.error; return; }
+    $("#mapStatus").textContent = r.cost ? ("Decoded · cost $"+r.cost.this_usd) : "";
+    renderMap(r);
+  } catch (e) { $("#mapStatus").textContent = "Error: " + e; }
+};
+let MAP_TREE = null, MAP_QUESTION = "", COLLAPSED = new Set();
+function renderMap(r) {
+  LAST_MAP = r; COLLAPSED = new Set();
+  let head = "";
+  if (r.type) head += "<div style='font-size:12px;color:#6b7488;margin-bottom:6px'>Question type: <b>"
+    + esc(r.type) + "</b> · <span style='color:#aab4c6'>click ± to fold a branch, or a box to dig deeper</span></div>";
+  if (!(r.steps||[]).length) {
+    renderMapText(r, head);
+    const mw0 = $("#mapWord"); if (mw0) mw0.onclick = () => downloadDocx(mapToMarkdown(r), "Decode map");
+    return;
+  }
+  MAP_TREE = buildTree(r);
+  $("#mapOut").innerHTML = head
+    + "<div id='mapWrap' style='overflow:auto;max-height:54vh;border:1px solid #e3e6ec;border-radius:8px;background:#fbfcfe'></div>"
+    + "<div id='mapDetail'></div>"
+    + "<div style='margin-top:8px'><button class='btn mini' id='mapWord'>⬇ Word</button>"
+    + " <button class='btn mini alt' id='mapXmind'>⬇ XMind</button>"
+    + " <button class='btn mini alt' id='mapText'>View as text</button></div>";
+  drawMap();
+  $("#mapText").onclick = () => renderMapText(r, head);
+  $("#mapWord").onclick = () => downloadDocx(mapToMarkdown(r), "Decode map");
+  $("#mapXmind").onclick = downloadXmind;
+}
+function nodeToSimple(node){
+  const note = node.kind==='deep' ? node.full
+    : node.kind==='auth' ? node.why
+    : node.kind==='step' ? node.detail
+    : node.kind==='root' ? MAP_QUESTION : '';
+  return { title: node.text || "", note: note || "",
+           children: (node.children||[]).map(nodeToSimple) };
+}
+async function downloadXmind(){
+  if(!MAP_TREE) return;
+  const res = await fetch("/api/mindmap/xmind", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({tree: nodeToSimple(MAP_TREE), title: "Decode map"})});
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=url; a.download="decode-map.xmind"; a.click();
+  URL.revokeObjectURL(url);
+}
+function buildTree(r) {
+  const PAL=['#3b6fe0','#1f8a5b','#b9772a','#8e44ad','#c0392b','#16a085','#d35400','#2c3e50','#2980b9','#27ae60'];
+  const root={id:"r", kind:"root", text:r.type||"Question", children:[]};
+  (r.steps||[]).forEach((st,i)=>{
+    const step={id:"s"+i, kind:"step", color:PAL[i%PAL.length], move:st.move||"", detail:st.detail||"",
+                text:(st.n||(i+1))+". "+(st.move||""), children:[]};
+    (st.authorities||[]).forEach((a,j)=>{
+      let t="📄 "+(a.source||""); if(a.page) t+=" — p."+a.page; if(a.provision) t+=" · "+a.provision;
+      step.children.push({id:"s"+i+"a"+j, kind:"auth", color:step.color, text:t, sub:a.why||"",
+                          source:a.source||"", page:a.page||"", provision:a.provision||"", why:a.why||"", children:[]});
+    });
+    root.children.push(step);
+  });
+  return root;
+}
+function findNode(node, id){ if(node.id===id) return node; for(const c of (node.children||[])){ const f=findNode(c,id); if(f) return f; } return null; }
+function drawMap() {
+  const GAP=42, gapY=12, fs=13, lh=17, pad=8;
+  const W=d=> d===0?150 : d===1?220 : 300;
+  const xFor=d=>{let x=20;for(let k=0;k<d;k++)x+=W(k)+GAP;return x;};
+  let maxX=0;
+  const wrap=(t,cpl)=>{const words=(t||"").split(/\s+/),lines=[];let cur="";words.forEach(w=>{if((cur+" "+w).trim().length<=cpl)cur=(cur+" "+w).trim();else{if(cur)lines.push(cur);cur=w;}});if(cur)lines.push(cur);return lines.length?lines:[""];};
+  let cursorY=20;
+  const measure=(node,depth)=>{
+    node.w=W(depth); node.x=xFor(depth); maxX=Math.max(maxX,node.x+node.w);
+    node.lines=wrap(node.text,Math.floor(node.w/(fs*0.55)));
+    node.subLines=(node.kind==='auth'&&node.sub)?wrap(node.sub,Math.floor(node.w/(11*0.52))):[];
+    node.h=pad*2+node.lines.length*lh+node.subLines.length*14;
+    const kids=COLLAPSED.has(node.id)?[]:(node.children||[]);
+    node._kids=kids;
+    if(kids.length){ kids.forEach(c=>measure(c,depth+1)); const f=kids[0],l=kids[kids.length-1]; node.y=(f.y+l.y+l.h)/2-node.h/2; }
+    else { node.y=cursorY; cursorY+=node.h+gapY; }
+  };
+  measure(MAP_TREE,0);
+  let minY=Infinity;(function scan(n){minY=Math.min(minY,n.y);(n._kids||[]).forEach(scan);})(MAP_TREE);
+  const off=minY<15?15-minY:0;
+  const totalH=Math.max(cursorY,MAP_TREE.y+MAP_TREE.h)+off+20;
+  const totalW=maxX+30;
+  let body="";
+  const draw=(node)=>{
+    (node._kids||[]).forEach(c=>{
+      const px=node.x+node.w,py=node.y+node.h/2,cx=c.x,cy=c.y+c.h/2,mx=(px+cx)/2;
+      body+=`<path d="M${px},${py} C${mx},${py} ${mx},${cy} ${cx},${cy}" fill="none" stroke="${c.color||'#999'}" stroke-width="2.5"/>`;
+      draw(c);
+    });
+    const fill=node.kind==="root"?"#1c2330":(node.kind==="step"?node.color:(node.kind==="deep"?"#eef3fb":"#ffffff"));
+    const stroke=(node.kind==="auth"||node.kind==="deep")?node.color:"none";
+    const tc=(node.kind==="auth"||node.kind==="deep")?"#1c2330":"#ffffff";
+    body+=`<g data-id="${node.id}" style="cursor:pointer"><rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="9" fill="${fill}" stroke="${stroke}" stroke-width="1.8"/>`;
+    let ty=node.y+pad+12;
+    node.lines.forEach(ln=>{body+=`<text x="${node.x+10}" y="${ty}" font-size="${fs}" font-family="-apple-system,Segoe UI,Arial" font-weight="600" fill="${tc}">${escSvg(ln)}</text>`;ty+=lh;});
+    node.subLines.forEach(ln=>{body+=`<text x="${node.x+10}" y="${ty}" font-size="12.5" font-family="-apple-system,Segoe UI,Arial" font-style="italic" fill="#242c37">${escSvg(ln)}</text>`;ty+=14;});
+    body+=`</g>`;
+    if((node.children||[]).length){
+      const bx=node.x+node.w, by=node.y+node.h/2, cl=node.kind==='root'?'#1c2330':node.color;
+      body+=`<g data-toggle="${node.id}" style="cursor:pointer"><circle cx="${bx}" cy="${by}" r="8" fill="#fff" stroke="${cl}" stroke-width="1.5"/><text x="${bx}" y="${by+4}" font-size="13" text-anchor="middle" fill="${cl}" font-weight="700">${COLLAPSED.has(node.id)?"+":"−"}</text></g>`;
+    }
+  };
+  draw(MAP_TREE);
+  $("#mapWrap").innerHTML=`<svg width="${totalW}" height="${totalH}" xmlns="http://www.w3.org/2000/svg" style="display:block"><g transform="translate(0,${off})">${body}</g></svg>`;
+  $("#mapWrap").querySelectorAll('[data-toggle]').forEach(g=>g.addEventListener('click',e=>{
+    e.stopPropagation(); const id=g.getAttribute('data-toggle');
+    COLLAPSED.has(id)?COLLAPSED.delete(id):COLLAPSED.add(id); drawMap();
+  }));
+  $("#mapWrap").querySelectorAll('[data-id]').forEach(g=>g.addEventListener('click',()=>
+    showDetail(findNode(MAP_TREE, g.getAttribute('data-id')))));
+}
+function showDetail(node){
+  if(!node) return;
+  let h="<div style='margin-top:10px;padding:12px;border:1px solid #e3e6ec;border-radius:8px;background:#fff'>";
+  if(node.kind==='root'){ h+="<b>Question</b><div style='font-size:13px;margin-top:4px'>"+esc(MAP_QUESTION)+"</div>"; }
+  else if(node.kind==='step'){ h+="<b>"+esc(node.text)+"</b>"; if(node.detail) h+="<div style='font-size:13px;color:#242c37;margin-top:4px'>"+esc(node.detail)+"</div>"; }
+  else if(node.kind==='deep'){ h+="<b>Deeper analysis</b><div style='font-size:13px;line-height:1.55;max-height:38vh;overflow:auto;margin-top:4px'>"+mdToHtml(node.full||"")+"</div>"; if(node.sources&&node.sources.length) h+="<div style='font-size:11px;color:#55606f;margin-top:4px'>"+node.sources.slice(0,6).map(s=>"📄 "+esc(s.title)).join(" · ")+"</div>"; }
+  else { h+="<b>"+esc(node.source||'Authority')+(node.page?(' — p.'+esc(String(node.page))):'')+"</b>"; if(node.provision) h+="<div style='font-size:12px;color:#8a5a1a'>"+esc(node.provision)+"</div>"; if(node.why) h+="<div style='font-size:13px;color:#242c37;margin-top:4px'><i>"+esc(node.why)+"</i></div>"; }
+  if(node.kind!=='root') h+="<button class='btn mini' id='digBtn' style='margin-top:8px'>🔍 Dig deeper</button>";
+  h+="<div id='digOut' style='margin-top:8px'></div></div>";
+  $("#mapDetail").innerHTML=h;
+  const db=$("#digBtn"); if(db) db.onclick=()=>digDeeper(node);
+}
+function firstLine(s,n){
+  let t=(s||"").split("\n").map(x=>x.trim()).filter(Boolean)[0]||"";
+  t=t.replace(/^#+\s*/,"").replace(/\*\*/g,"");
+  return t.length>n ? t.slice(0,n)+"…" : t;
+}
+async function digDeeper(node){
+  let q;
+  if(node.kind==='step') q='In the context of this question — "'+MAP_QUESTION+'" — develop this step in full: "'+node.move+'". '+(node.detail||'');
+  else if(node.kind==='auth') q='In the context of this question — "'+MAP_QUESTION+'" — explain how '+(node.source||'this authority')+(node.provision?(' ('+node.provision+')'):'')+(node.page?(', p.'+node.page):'')+' is used to answer it. '+(node.why||'');
+  else q='Following up in the context of this question — "'+MAP_QUESTION+'": go deeper on — '+(node.text||'').replace('💡 ','');
+  $("#digOut").innerHTML="<em>Digging deeper… (grafting a new branch)</em>";
+  try{
+    const r=await(await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({course:COURSE, question:q, web:false, brief:true})})).json();
+    if(r.limit){ $("#digOut").textContent=r.answer; return; }
+    const ans=r.answer||r.error||"";
+    node.children=node.children||[];
+    const cnt=node.children.filter(c=>c.kind==='deep').length;
+    node.children.push({id:node.id+"d"+cnt, kind:'deep', color:node.color||'#607d8b',
+                        text:"💡 "+firstLine(ans,64), full:ans, sources:r.sources||[], children:[]});
+    COLLAPSED.delete(node.id);     // ensure the new branch is visible
+    drawMap();                     // the map grows
+    showDetail(node.children[node.children.length-1]);   // open the new node's full answer
+  }catch(e){ $("#digOut").textContent="Error: "+e; }
+}
+function escSvg(s){ return (s||"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function renderXmind(r) {
+  const PAL = ['#3b6fe0','#1f8a5b','#b9772a','#8e44ad','#c0392b','#16a085','#d35400','#2c3e50','#2980b9','#27ae60'];
+  const COLS = [{x:20,w:150},{x:210,w:220},{x:462,w:300}];
+  const gapY = 12, fs = 13, lh = 17, pad = 8;
+  const wrap = (t,cpl) => {
+    const words=(t||"").split(/\s+/), lines=[]; let cur="";
+    words.forEach(w=>{ if((cur+" "+w).trim().length<=cpl) cur=(cur+" "+w).trim();
+      else { if(cur) lines.push(cur); cur=w; } });
+    if(cur) lines.push(cur); return lines.length?lines:[""];
+  };
+  // build tree
+  const root = {text:r.type||"Question", kind:"root", children:[]};
+  (r.steps||[]).forEach((st,i)=>{
+    const step={text:(st.n||(i+1))+". "+(st.move||""), kind:"step", color:PAL[i%PAL.length], children:[]};
+    (st.authorities||[]).forEach(a=>{
+      let t="📄 "+(a.source||""); if(a.page) t+=" — p."+a.page; if(a.provision) t+=" · "+a.provision;
+      step.children.push({text:t, sub:a.why||"", kind:"auth", color:step.color, children:[]});
+    });
+    root.children.push(step);
+  });
+  let cursorY = 20;
+  const measure = (node, depth) => {
+    const col = COLS[Math.min(depth,2)]; node.x=col.x; node.w=col.w;
+    node.lines = wrap(node.text, Math.floor(col.w/(fs*0.55)));
+    node.subLines = node.sub ? wrap(node.sub, Math.floor(col.w/(11*0.52))) : [];
+    node.h = pad*2 + node.lines.length*lh + node.subLines.length*14;
+    if (node.children && node.children.length) {
+      node.children.forEach(c=>measure(c, depth+1));
+      const f=node.children[0], l=node.children[node.children.length-1];
+      node.y = (f.y + l.y + l.h)/2 - node.h/2;
+    } else { node.y = cursorY; cursorY += node.h + gapY; }
+  };
+  measure(root, 0);
+  let minY = Infinity; (function scan(n){ minY=Math.min(minY,n.y); (n.children||[]).forEach(scan); })(root);
+  const off = minY<15 ? 15-minY : 0;
+  const totalH = Math.max(cursorY, root.y+root.h) + off + 20;
+  const totalW = COLS[2].x + COLS[2].w + 30;
+  let body = "";
+  const draw = (node) => {
+    (node.children||[]).forEach(c=>{
+      const px=node.x+node.w, py=node.y+node.h/2, cx=c.x, cy=c.y+c.h/2, mx=(px+cx)/2;
+      body += `<path d="M${px},${py} C${mx},${py} ${mx},${cy} ${cx},${cy}" fill="none" stroke="${c.color||'#999'}" stroke-width="2.5"/>`;
+      draw(c);
+    });
+    const fill = node.kind==="root"?"#1c2330":(node.kind==="step"?node.color:"#ffffff");
+    const stroke = node.kind==="auth"?node.color:"none";
+    const tc = node.kind==="auth"?"#1c2330":"#ffffff";
+    body += `<rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="9" fill="${fill}" stroke="${stroke}" stroke-width="1.8"/>`;
+    let ty = node.y + pad + 12;
+    node.lines.forEach(ln=>{ body += `<text x="${node.x+10}" y="${ty}" font-size="${fs}" font-family="-apple-system,Segoe UI,Arial" font-weight="600" fill="${tc}">${escSvg(ln)}</text>`; ty+=lh; });
+    node.subLines.forEach(ln=>{ body += `<text x="${node.x+10}" y="${ty}" font-size="12.5" font-family="-apple-system,Segoe UI,Arial" font-style="italic" fill="#242c37">${escSvg(ln)}</text>`; ty+=14; });
+  };
+  draw(root);
+  return `<svg width="${totalW}" height="${totalH}" xmlns="http://www.w3.org/2000/svg" style="display:block">`
+       + `<g transform="translate(0,${off})">${body}</g></svg>`;
+}
+function renderMapText(r, head) {
+  let h = (head || "");
+  if (r.skeleton && r.skeleton.length)
+    h += "<div class='mm-skel'>" + r.skeleton.map(s => "<span>"+esc(s)+"</span>").join("") + "</div>";
+  h += (r.steps||[]).map(st => {
+    const auths = (st.authorities||[]).map(a =>
+      "<div class='mm-auth'><span class='src'>📄 " + esc(a.source||"") + "</span>"
+      + (a.page ? " — p." + esc(String(a.page)) : "")
+      + (a.provision ? " · <span class='prov'>" + esc(a.provision) + "</span>" : "")
+      + (a.why ? "<span class='why'>" + esc(a.why) + "</span>" : "") + "</div>").join("");
+    return "<div class='mm-step'><div class='mm-move'>" + (st.n||"") + ". " + esc(st.move||"")
+      + "</div>" + (st.detail ? "<div class='mm-detail'>"+esc(st.detail)+"</div>" : "") + auths + "</div>";
+  }).join("");
+  h += "<div style='margin-top:8px'><button class='btn mini' id='mapWord'>⬇ Word</button></div>";
+  $("#mapOut").innerHTML = h;
+  const mw = $("#mapWord"); if (mw) mw.onclick = () => downloadDocx(mapToMarkdown(LAST_MAP), "Decode map");
+}
+function mapToMarkmap(r) {
+  let md = "# " + (r.type || "Question") + "\n";
+  (r.steps||[]).forEach(st => {
+    md += "## " + (st.n||"") + ". " + (st.move||"") + "\n";
+    (st.authorities||[]).forEach(a => {
+      let t = "📄 " + (a.source||"");
+      if (a.page) t += " p." + a.page;
+      if (a.provision) t += " — " + a.provision;
+      md += "- " + t + "\n";
+      if (a.why) md += "  - " + a.why + "\n";
+    });
+  });
+  return md;
+}
+let LAST_MAP = null;
+function mapToMarkdown(r) {
+  let m = "# Decode map" + (r.type ? " — " + r.type : "") + "\n\n";
+  if (r.skeleton && r.skeleton.length)
+    m += "**Answer structure:** " + r.skeleton.join("  →  ") + "\n\n";
+  (r.steps||[]).forEach(st => {
+    m += "## " + (st.n||"") + ". " + (st.move||"") + "\n";
+    if (st.detail) m += st.detail + "\n";
+    (st.authorities||[]).forEach(a => {
+      let line = "• " + (a.source||"");
+      if (a.page) line += " — p." + a.page;
+      if (a.provision) line += " (" + a.provision + ")";
+      if (a.why) line += " — " + a.why;
+      m += line + "\n";
+    });
+    m += "\n";
+  });
+  return m;
+}
+
+$("#logoutBtn").onclick = async () => {
+  await fetch("/api/logout", {method:"POST"});
+  location.href = "/";
+};
+(async () => {
+  try {
+    const me = await (await fetch("/api/me")).json();
+    if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
+  } catch (e) {}
+})();
+
+loadCourses();
+
+// ---- weekly update ----
+$("#openWeekly").onclick = () => {
+  $("#weeklyCourse").textContent = "📚 Course: " + COURSE;
+  $("#weeklyList").innerHTML = ""; $("#weeklyOut").innerHTML = ""; $("#weeklyStatus").textContent = "";
+  $("#weeklyModal").style.display = "flex";
+  loadWeekly(false);
+};
+$("#weeklyClose").onclick = () => { $("#weeklyModal").style.display = "none"; };
+$("#weeklyFind").onclick = () => loadWeekly(false, $("#weeklyDoc").value);
+$("#weeklyRefresh").onclick = () => loadWeekly(true, $("#weeklyDoc").value);
+
+async function loadWeekly(refresh, doc) {
+  const st = $("#weeklyStatus");
+  st.textContent = refresh ? "Re-reading the outline…" : "Reading the outline…";
+  try {
+    const r = await fetch("/api/weeks", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, refresh: !!refresh, doc: doc || undefined})}).then(x=>x.json());
+    const sel = $("#weeklyDoc");
+    if (r.docs && r.docs.length) sel.innerHTML = r.docs.map(d =>
+      "<option value='"+esc(d.file)+"'" + (d.file===r.outline?" selected":"") + ">"+esc(d.name)+"</option>").join("");
+    if ((!r.weeks || !r.weeks.length)) { st.textContent = r.error || "No weeks found."; renderWeeks([]); return; }
+    st.textContent = (r.cached ? "Saved schedule." : "Found "+r.weeks.length+" weeks.")
+      + (r.outline ? "  ·  from: "+r.outline : "");
+    renderWeeks(r.weeks);
+  } catch (e) { st.textContent = "Couldn't read the outline: " + e; }
+}
+
+// outline labels already say "Week 1"/"Lecture I"/"Weeks 2 & 3" — only prefix
+// "Week " when the label is a bare number
+function weekLabel(w) {
+  const s = String(w.week || "").trim();
+  return /[a-z]/i.test(s) ? s : ("Week " + s);
+}
+function renderWeeks(weeks) {
+  const box = $("#weeklyList"); box.innerHTML = "";
+  weeks.forEach(w => {
+    const b = document.createElement("button");
+    b.className = "btn alt"; b.style.cssText = "text-align:left;width:100%";
+    b.innerHTML = "<b>" + esc(weekLabel(w)) + "</b> — " + esc(w.topic);
+    b.onclick = () => loadWeekSummary(w);
+    box.appendChild(b);
+  });
+}
+
+async function loadWeekSummary(w) {
+  const out = $("#weeklyOut");
+  out.innerHTML = "<h4 style='margin:14px 0 4px'>" + esc(weekLabel(w)) + " — " + esc(w.topic)
+    + " <span id='wDot' style='color:#6fcf97;font-size:12px'>● writing…</span></h4>"
+    + "<div id='wDoc' style='white-space:pre-wrap'></div>";
+  out.scrollIntoView({block:"start"});
+  const wDoc = $("#wDoc"), DELIM = "\x1e\x1eMETA\x1e\x1e";
+  let buf = "", meta = {};
+  try {
+    const resp = await fetch("/api/week", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic})});
+    if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error||"failed"); }
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      wDoc.textContent = buf.split(DELIM)[0];
+    }
+  } catch (e) { const d=$("#wDot"); if(d) d.remove(); wDoc.textContent = "Error: " + e.message; return; }
+  const parts = buf.split(DELIM);
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  const d=$("#wDot"); if(d) d.remove();
+  if (meta.error) { wDoc.textContent = meta.error; return; }
+  wDoc.style.whiteSpace = "normal";
+  wDoc.innerHTML = mdToHtml(parts[0].trim());
+  renderExportBar(wDoc, parts[0].trim(), COURSE + " — " + weekLabel(w), weekLabel(w) + " — " + w.topic);
+}
+
+// ---- legal updates (web) ----
+let UPDATES_TEXT = "";
+$("#openUpdates").onclick = () => {
+  $("#updatesCourse").textContent = "📚 Course: " + COURSE;
+  $("#updatesOut").innerHTML = ""; $("#updatesStatus").textContent = "";
+  $("#updatesSave").style.display = "none"; UPDATES_TEXT = "";
+  $("#pasteRes").textContent = "";
+  const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
+  $("#pasteRow").style.display = allowed ? "flex" : "none";   // add-by-URL is admin/owner only
+  $("#updatesModal").style.display = "flex";
+};
+$("#pasteFetch").onclick = async () => {
+  const url = $("#pasteUrl").value.trim();
+  const title = $("#pasteTitle").value.trim() || url;
+  if (!url) { $("#pasteRes").textContent = "Paste an official link first."; return; }
+  const b = $("#pasteFetch"); b.disabled = true; b.textContent = "Fetching…"; $("#pasteRes").textContent = "";
+  try {
+    const r = await fetch("/api/updates/fetch", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, laws: [{title, url}]})}).then(x => x.json());
+    if (r.error) { $("#pasteRes").textContent = r.error; }
+    else {
+      const x = (r.results || [])[0] || {};
+      $("#pasteRes").innerHTML = x.ok
+        ? "✅ Added “" + esc(x.title) + "” → " + esc(x.file) + " — re-indexing; it'll be citeable shortly."
+        : "❌ " + esc(x.why || "could not fetch that link — try downloading it and using Upload.");
+      if (x.ok) { $("#pasteUrl").value = ""; $("#pasteTitle").value = ""; if (typeof loadDocs === "function") loadDocs(); }
+    }
+  } catch (e) { $("#pasteRes").textContent = "Error: " + e; }
+  b.disabled = false; b.textContent = "⬇ Fetch this link & add";
+};
+$("#updatesClose").onclick = () => { $("#updatesModal").style.display = "none"; };
+
+$("#updatesGo").onclick = async () => {
+  const btn = $("#updatesGo"), out = $("#updatesOut"), st = $("#updatesStatus");
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e";
+  btn.disabled = true; btn.textContent = "Searching…"; $("#updatesSave").style.display = "none";
+  out.innerHTML = "<div id='upDoc' style='white-space:pre-wrap'></div>";
+  const upDoc = $("#upDoc");
+  let buf = "", meta = {}, gotText = false;
+  const t0 = Date.now();
+  const timer = setInterval(() => { if (!gotText)
+    st.textContent = "🌐 Searching official/legal sources for recent changes… " + Math.round((Date.now()-t0)/1000) + "s (this can take a couple of minutes)"; }, 1000);
+  try {
+    const resp = await fetch("/api/updates", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE})});
+    if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error || "request failed"); }
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      buf = buf.split(PING).join("");
+      const body = buf.split(DELIM)[0];
+      upDoc.textContent = body;
+      if (!gotText && body.trim()) { gotText = true; st.textContent = "✍️ Compiling updates…"; }
+    }
+  } catch (e) {
+    clearInterval(timer); st.textContent = "Update scan error: " + e.message;
+    btn.disabled = false; btn.textContent = "🔎 Check the web now"; return;
+  }
+  clearInterval(timer);
+  const parts = buf.split(DELIM);
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  if (meta.error) { st.textContent = meta.error; btn.disabled=false; btn.textContent="🔎 Check the web now"; return; }
+  const full = (parts[0] || "").trim();
+  const a = full.split("===LAWS===");
+  UPDATES_TEXT = a[0].trim();
+  let laws = [], verify = [];
+  if (a[1]) {
+    const b = a[1].split("===VERIFY===");
+    try { laws = JSON.parse(b[0].replace(/```json|```/g,"").trim()); } catch (e) {}
+    if (b[1]) { try { verify = JSON.parse(b[1].replace(/```json|```/g,"").trim()); } catch (e) {} }
+  }
+  upDoc.style.whiteSpace = "normal"; upDoc.innerHTML = mdToHtml(UPDATES_TEXT);
+  st.textContent = "Done — verify each item against its official source before relying on it.";
+  btn.disabled = false; btn.textContent = "🔁 Re-check";
+  const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
+  if (UPDATES_TEXT && allowed) $("#updatesSave").style.display = "inline-block";  // save brief as a note
+  renderFetchable(laws, allowed);                                                // fetch actual laws
+  renderVerify(verify, allowed);                                                 // confirm/deny leads
+};
+
+// leads to confirm/deny against the primary source → the verdict is written into
+// the course as the vetted position
+function renderVerify(items, allowed) {
+  const host = $("#updatesOut");
+  const old = host.querySelector(".verifyBox"); if (old) old.remove();
+  if (!items || !items.length) return;
+  const box = document.createElement("div"); box.className = "verifyBox";
+  box.style.cssText = "margin-top:14px;border-top:1px solid #2a3344;padding-top:10px";
+  box.innerHTML = "<div style='font-size:13px;color:#6fcf97;margin-bottom:6px'>✔️ Check these against the primary source, then record your verdict — it's written into the course as the vetted position:</div>";
+  items.forEach(it => {
+    const row = document.createElement("div");
+    row.style.cssText = "margin:8px 0;padding:8px;border:1px solid #2a3344;border-radius:6px";
+    const where = it.where
+      ? (/^https?:/i.test(it.where) ? " — <a href='" + esc(it.where) + "' target='_blank' style='color:#8fb4ff'>check source</a>"
+                                    : " <span style='color:#8b93a7'>(" + esc(it.where) + ")</span>")
+      : "";
+    row.innerHTML = "<div style='font-size:13px'>" + esc(it.claim || "") + where + "</div>";
+    if (allowed) {
+      const ctr = document.createElement("div");
+      ctr.style.cssText = "display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center";
+      const note = document.createElement("input");
+      note.placeholder = "optional note (what you found / source)";
+      note.style.cssText = "flex:1 1 200px;font-size:12px;padding:5px";
+      const yes = document.createElement("button"); yes.className = "btn mini"; yes.style.width = "auto"; yes.textContent = "✅ Confirm";
+      const no = document.createElement("button"); no.className = "btn mini alt"; no.style.width = "auto"; no.textContent = "❌ Deny";
+      const res = document.createElement("span"); res.style.cssText = "font-size:12px;color:#aab4c6";
+      const send = async (v) => {
+        yes.disabled = no.disabled = true;
+        try {
+          const r = await fetch("/api/updates/verdict", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({course: COURSE, claim: it.claim, where: it.where || "", verdict: v, note: note.value.trim()})}).then(x => x.json());
+          if (r.error) { res.textContent = r.error; yes.disabled = no.disabled = false; }
+          else { res.textContent = v === "confirmed" ? "✅ recorded as confirmed — added to materials" : "❌ recorded as denied — added to materials";
+                 if (typeof loadDocs === "function") loadDocs(); }
+        } catch (e) { res.textContent = "error"; yes.disabled = no.disabled = false; }
+      };
+      yes.onclick = () => send("confirmed"); no.onclick = () => send("denied");
+      ctr.append(note, yes, no, res); row.appendChild(ctr);
+    }
+    box.appendChild(row);
+  });
+  host.appendChild(box);
+}
+
+// checklist of the actual new laws → fetch official text + add to the course
+function renderFetchable(laws, allowed) {
+  const host = $("#updatesOut");
+  const old = host.querySelector(".fetchBox"); if (old) old.remove();
+  if (!laws || !laws.length || !allowed) return;
+  const box = document.createElement("div"); box.className = "fetchBox";
+  box.style.cssText = "margin-top:12px;border-top:1px solid #2a3344;padding-top:10px";
+  box.innerHTML = "<div style='font-size:13px;color:#e0b050;margin-bottom:6px'>📥 Add the actual new laws to this course — fetches the official document where a direct link exists, then re-indexes so answers can cite it:</div>";
+  laws.forEach((l, i) => {
+    const row = document.createElement("label");
+    row.style.cssText = "display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:4px 0";
+    row.innerHTML = "<input type='checkbox' class='lawck' data-i='" + i + "'" + (l.url ? " checked" : "") + ">"
+      + "<span><b>" + esc(l.title || "(untitled)") + "</b> <span style='color:#8b93a7'>" + esc(l.kind || "") + "</span>"
+      + (l.url ? " — <a href='" + esc(l.url) + "' target='_blank' style='color:#8fb4ff'>source</a>"
+               : " <span style='color:#c77'>(no direct link — download manually)</span>") + "</span>";
+    box.appendChild(row);
+  });
+  const go = document.createElement("button"); go.className = "btn gold";
+  go.style.cssText = "width:auto;margin-top:8px"; go.textContent = "⬇ Fetch selected & add to course";
+  const res = document.createElement("div"); res.style.cssText = "font-size:12px;color:#aab4c6;margin-top:8px";
+  go.onclick = async () => {
+    const picks = [...box.querySelectorAll(".lawck:checked")].map(c => laws[+c.dataset.i]).filter(l => l && l.url);
+    if (!picks.length) { res.textContent = "Select at least one law that has a source link."; return; }
+    go.disabled = true; go.textContent = "Fetching official texts…"; res.textContent = "";
+    try {
+      const r = await fetch("/api/updates/fetch", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, laws: picks})}).then(x => x.json());
+      if (r.error) { res.textContent = r.error; }
+      else {
+        res.innerHTML = "<b>Added " + r.added + " to the course (re-indexing now):</b><br>"
+          + r.results.map(x => x.ok ? "✅ " + esc(x.title) + " → " + esc(x.file)
+                                    : "❌ " + esc(x.title) + " — " + esc(x.why)).join("<br>");
+        if (typeof loadDocs === "function") loadDocs();
+      }
+    } catch (e) { res.textContent = "Fetch error: " + e; }
+    go.disabled = false; go.textContent = "⬇ Fetch selected & add to course";
+  };
+  box.appendChild(go); box.appendChild(res);
+  host.appendChild(box);
+}
+
+$("#updatesSave").onclick = async (e) => {
+  if (!UPDATES_TEXT) return;
+  const b = e.target; b.disabled = true; b.textContent = "Saving…";
+  try {
+    const r = await fetch("/api/updates/save", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, text: UPDATES_TEXT})}).then(x=>x.json());
+    if (r.error) { $("#updatesStatus").textContent = r.error; }
+    else { $("#updatesStatus").textContent = "Saved as “" + r.file + "” and re-indexing — future answers will include it."; loadDocs && loadDocs(); }
+  } catch (err) { $("#updatesStatus").textContent = "Save error: " + err; }
+  b.disabled = false; b.textContent = "💾 Save to course & include in answers";
+};
+
+// ---- mobile drawer ----
+(function () {
+  const b = document.body, tgl = $("#navToggle"), bd = $("#navBackdrop"), side = $("#side");
+  const open = () => b.classList.add("nav-open");
+  const close = () => b.classList.remove("nav-open");
+  if (tgl) tgl.onclick = () => b.classList.toggle("nav-open");
+  if (bd) bd.onclick = close;
+  // close the drawer after picking a course or tapping a study tool (mobile only)
+  if (side) side.addEventListener("click", e => {
+    if (window.matchMedia("(max-width: 760px)").matches &&
+        e.target.closest("button, select")) close();
+  });
+})();
+</script>
+</body>
+</html>

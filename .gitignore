@@ -1,0 +1,33 @@
+# ── secrets & auth (NEVER commit) ─────────────────────────────
+.env
+.env.local
+CREDENTIALS.txt
+.flask_secret
+users.json
+invites_used.json
+INVITE_LINKS.txt
+*.pem
+
+# ── large binaries (platform-specific, fetch separately) ──────
+cloudflared
+*.app
+
+# ── runtime state / logs (regenerated) ────────────────────────
+config.json
+grounding_audit.jsonl
+course_weeks.json
+*.log
+server.log
+
+# ── user data: uploaded PDFs + built indexes ──────────────────
+courses/
+
+# ── python / virtualenv / caches ──────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.fastembed_cache/
+
+# ── os cruft ──────────────────────────────────────────────────
+.DS_Store

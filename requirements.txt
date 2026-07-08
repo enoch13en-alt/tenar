@@ -1,0 +1,9 @@
+anthropic
+flask
+pymupdf
+fastembed
+numpy
+python-dotenv
+python-docx
+gunicorn
+gevent
