@@ -2610,6 +2610,55 @@ def api_research():
                                    fmt=fmt, max_out=7000, mode="answer"))
 
 
+@app.route("/api/research/issues", methods=["POST"])
+def api_research_issues():
+    """Cheap helper: the moment a consultant drops a (possibly cumbersome) set of
+    facts, pull out the KEY LEGAL ISSUES the matter turns on so they surface at a
+    glance instead of being buried in the narrative. Facts-only (no retrieval) →
+    fast and near-free; unmetered. The full grounded analysis is /api/research."""
+    body = request.json or {}
+    facts = (body.get("facts") or body.get("question") or "").strip()
+    if len(facts) < 30:
+        return jsonify({"issues": []})
+    c = _client()
+    if not c:
+        return jsonify({"issues": []})
+    try:
+        msg, _ = _create_final(
+            c,
+            model=ANSWER_MODEL, max_tokens=700,
+            system=(
+                "You read a legal fact pattern / instructions from a consultant and "
+                "pull out the KEY LEGAL ISSUES it raises, so the matter's core "
+                "questions surface at a glance rather than being buried in a long "
+                "narrative. Extract EVERY distinct issue — never stop early.\n"
+                "EACH ITEM MUST BE A COMPLETE, SELF-CONTAINED ISSUE STATEMENT that is "
+                "meaningful on its own — a crisp legal question or task, not a bare "
+                "party name or fragment. E.g. 'Whether the petroleum agreement's "
+                "stabilisation clause freezes the post-2015 tax changes', not "
+                "'stabilisation'.\n"
+                "PREFER THE CLIENT'S OWN QUESTIONS. If the facts explicitly ask "
+                "something ('advise whether…', 'can the company…'), extract those "
+                "verbatim in order. OTHERWISE derive the principal legal issues the "
+                "facts raise, most decisive first.\n"
+                "Return STRICT JSON: an array of strings. No numbering, no prose, no "
+                "markdown fences."),
+            messages=[{"role": "user", "content": (
+                f"FACTS / INSTRUCTIONS:\n{facts}\n\n"
+                "Return ALL the key legal issues as a JSON array — each a complete, "
+                "self-contained issue statement, most decisive first.")}])
+        raw = "".join(b.text for b in msg.content
+                      if getattr(b, "type", None) == "text").strip()
+        try:
+            issues = _parse_json(raw)
+        except Exception:
+            issues = []
+        issues = [str(x).strip() for x in issues if str(x).strip()] if isinstance(issues, list) else []
+        return jsonify({"issues": issues})
+    except Exception:
+        return jsonify({"issues": []})
+
+
 POLISH_INSTRUCTION = (
     "You are an expert legal-writing editor. Rewrite the student's OWN draft below "
     "to a distinction standard by APPLYING THE HOUSE STYLE — the clarity and "

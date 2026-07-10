@@ -291,6 +291,10 @@
     <label style="font-size:12px;color:#aab4c6">Search these courses</label>
     <div id="researchCourses" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px"></div>
     <textarea id="researchFacts" placeholder="Paste the facts / the question to research…" style="height:150px"></textarea>
+    <div id="researchIssues" style="margin:8px 0; display:none">
+      <div style="font-size:12px;color:#aab4c6;margin-bottom:4px" id="researchIssuesHdr">🔑 Key issues in these facts</div>
+      <div id="researchIssuesList" style="display:flex;flex-direction:column;gap:5px"></div>
+    </div>
     <div class="rowbtn" style="align-items:center;flex-wrap:wrap">
       <select id="researchFormat" style="width:auto">
         <option value="advice">Advice note</option>
@@ -2071,10 +2075,12 @@ function applyRole(role, isAdmin) {
 }
 
 // ---- consultant research (facts -> advice, multi-course) ----
+let researchIssuesTimer, lastIssuesFacts = "";
 async function openResearch() {
   const box = $("#researchCourses");
   box.innerHTML = "loading courses…";
   $("#researchOut").innerHTML = ""; $("#researchStatus").textContent = "";
+  $("#researchIssues").style.display = "none"; lastIssuesFacts = "";
   $("#researchModal").style.display = "flex";
   try {
     const r = await (await fetch("/api/courses")).json();
@@ -2107,6 +2113,28 @@ async function runResearch() {
   } catch (e) { st.textContent = "Network error — try again."; }
   go.disabled = false;
 }
+// the facts can be cumbersome — surface the key legal issues at a glance the
+// moment they're dropped in (debounced, facts-only, near-free, like exam focus)
+async function autoResearchIssues() {
+  const facts = $("#researchFacts").value.trim();
+  if (facts.length < 30 || facts === lastIssuesFacts) return;
+  lastIssuesFacts = facts;
+  const wrap = $("#researchIssues"), list = $("#researchIssuesList"), hdr = $("#researchIssuesHdr");
+  wrap.style.display = "block"; hdr.textContent = "🔑 Reading the facts for key issues…";
+  try {
+    const r = await (await fetch("/api/research/issues", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({facts})})).json();
+    const issues = (r.issues || []).filter(Boolean);
+    if (!issues.length) { wrap.style.display = "none"; return; }
+    hdr.textContent = "🔑 Key issues in these facts (" + issues.length + ") — what the research will address";
+    list.innerHTML = issues.map(i =>
+      `<div style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:6px 9px">• ${esc(i)}</div>`).join("");
+  } catch (e) { wrap.style.display = "none"; }
+}
+$("#researchFacts").addEventListener("input", () => {
+  clearTimeout(researchIssuesTimer);
+  researchIssuesTimer = setTimeout(autoResearchIssues, 800);
+});
 $("#openResearch").onclick = openResearch;
 $("#researchClose").onclick = () => { $("#researchModal").style.display = "none"; };
 $("#researchGo").onclick = runResearch;
