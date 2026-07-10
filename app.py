@@ -1928,6 +1928,36 @@ def grounding_audit(question, course, answer, retrieved, path="ask"):
         pass
 
 
+def load_full_docs(full_docs):
+    """Load the ENTIRE text of specific documents (every chunk, in page order) so the
+    model works from the complete instrument — not 25 similarity excerpts. Returns
+    (content_blocks, keys_loaded). This is what lets a consultant say 'analyse this
+    whole lease' and have the bot actually hold the whole lease. 1M-token context
+    makes even a long Act fit."""
+    blocks, keys = [], set()
+    for fd in (full_docs or []):
+        course = safe_course((fd or {}).get("course", ""))
+        doc = (fd or {}).get("file", "")
+        if not course or not doc or not _may_read_course(course):
+            continue
+        ensure_loaded(course)
+        idx = INDEXES.get(course)
+        if not idx or not idx.get("chunks"):
+            continue
+        chs = [c for c in idx["chunks"] if c.get("doc") == doc]
+        chs.sort(key=lambda c: (c.get("page") if isinstance(c.get("page"), int) else 0))
+        pdf_dir, _ = course_paths(course)
+        for ch in chs:
+            page = page_label(os.path.join(pdf_dir, doc), doc, ch["page"])
+            blocks.append({
+                "type": "document",
+                "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
+                "title": f'[FULL DOCUMENT] {display_name(doc)} — p.{page}',
+                "citations": {"enabled": True}})
+            keys.add((course, doc, ch.get("page")))
+    return blocks, keys
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer"):
     # `course` may be a single course name OR a list (consultant multi-course
@@ -2627,16 +2657,25 @@ def api_research():
     # and a PING heartbeat so Render never times the response out.
     multi = len(courses) > 1
     retrieved = search_multi(courses, query) if multi else search(courses[0], query)
+    full_blocks, full_keys = load_full_docs(body.get("full_docs") or [])
     c = _client()
-    if not retrieved or not c:
+    if (not retrieved and not full_blocks) or not c:
         err = ("No documents indexed in the selected course(s) yet."
-               if not retrieved else "ANTHROPIC_API_KEY is not set.")
+               if (not retrieved and not full_blocks) else "ANTHROPIC_API_KEY is not set.")
         return Response("\x1e\x1eMETA\x1e\x1e" + json.dumps({"error": err}),
                         mimetype="text/plain")
 
     content, sources, seen = [], [], set()
+    # documents asked for IN FULL go first, complete and in page order
+    for blk in full_blocks:
+        content.append(blk)
+        if blk["title"] not in seen:
+            seen.add(blk["title"]); sources.append({"title": blk["title"]})
+    # then similarity excerpts for breadth — skip any chunk already loaded in full
     for ch in retrieved:
         ch_course = ch.get("_course", courses[0])
+        if (ch_course, ch["doc"], ch.get("page")) in full_keys:
+            continue
         pdf_dir, _ = course_paths(ch_course)
         page = page_label(os.path.join(pdf_dir, ch["doc"]), ch["doc"], ch["page"])
         title = f'{display_name(ch["doc"])} — p.{page}'
@@ -2658,6 +2697,15 @@ def api_research():
               + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY)
     if FORMATS.get(fmt):
         system = system + "\n\n" + FORMATS[fmt]
+    if full_blocks:
+        system = system + (
+            "\n\nSOME DOCUMENTS ARE PROVIDED IN FULL (each block marked '[FULL "
+            "DOCUMENT]') — you hold their COMPLETE text, every page. Work through them "
+            "in full and rely on them as complete instruments. NEVER tell the reader "
+            "you do not have, or lack the full text of, a document that is in front of "
+            "you. If a specific point is genuinely absent from the materials provided, "
+            "say it is 'not addressed in the documents before me' and offer to review a "
+            "named further document — never imply the materials themselves are missing.")
     if include_web:
         system = system + "\n\n" + COMPARATIVE_SUFFIX
     cached_sys = cached_system(system)

@@ -290,6 +290,10 @@
        with citations — merged across every domain you select.</p>
     <label style="font-size:12px;color:#aab4c6">Search these courses</label>
     <div id="researchCourses" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px"></div>
+    <div id="researchFullWrap" style="margin:0 0 12px; display:none">
+      <label style="font-size:12px;color:#aab4c6">📄 Load specific documents in FULL (optional — tick a lease/contract/Act to analyse it whole, not in excerpts)</label>
+      <div id="researchFullDocs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;max-height:110px;overflow:auto"></div>
+    </div>
     <textarea id="researchFacts" placeholder="Paste the facts / the question to research…" style="height:150px"></textarea>
     <div id="researchIssues" style="margin:8px 0; display:none">
       <div style="font-size:12px;color:#aab4c6;margin-bottom:4px" id="researchIssuesHdr">🔑 Key issues in these facts</div>
@@ -2085,16 +2089,39 @@ async function openResearch() {
   $("#researchOut").innerHTML = ""; $("#researchStatus").textContent = "";
   $("#researchIssues").style.display = "none"; lastIssuesFacts = "";
   $("#researchQuestions").value = "";
+  $("#researchFullWrap").style.display = "none"; $("#researchFullDocs").innerHTML = "";
   $("#researchModal").style.display = "flex";
   try {
     const r = await (await fetch("/api/courses")).json();
     box.innerHTML = (r.courses || []).map(c =>
       `<label style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:5px 9px;cursor:pointer">
         <input type="checkbox" class="rcCourse" value="${esc(c)}" checked> ${esc(c)}</label>`).join("");
+    box.querySelectorAll(".rcCourse").forEach(cb => cb.onchange = loadResearchDocs);
+    loadResearchDocs();
   } catch (e) { box.innerHTML = "could not load courses"; }
+}
+// list the documents in the ticked courses so a consultant can load specific ones IN FULL
+async function loadResearchDocs() {
+  const courses = [...document.querySelectorAll(".rcCourse:checked")].map(x => x.value);
+  const wrap = $("#researchFullWrap"), box = $("#researchFullDocs");
+  if (!courses.length) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block"; box.innerHTML = "loading documents…";
+  try {
+    let html = "";
+    for (const course of courses) {
+      const r = await (await fetch("/api/docs?course=" + encodeURIComponent(course))).json();
+      (r.docs || []).forEach(d => {
+        html += `<label style="font-size:11px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:4px 8px;cursor:pointer" title="${esc(course)}">
+          <input type="checkbox" class="rFullDoc" data-course="${esc(course)}" data-file="${esc(d.file)}"> ${esc(d.name)}</label>`;
+      });
+    }
+    box.innerHTML = html || "<span style='font-size:11px;color:#6b7488'>no documents in the selected course(s)</span>";
+  } catch (e) { box.innerHTML = "could not load documents"; }
 }
 async function runResearch(focus) {
   const courses = [...document.querySelectorAll(".rcCourse:checked")].map(x => x.value);
+  const fullDocs = [...document.querySelectorAll(".rFullDoc:checked")]
+    .map(x => ({course: x.dataset.course, file: x.dataset.file}));
   const facts = $("#researchFacts").value.trim();
   const questions = $("#researchQuestions").value.trim();
   const st = $("#researchStatus"), out = $("#researchOut"), go = $("#researchGo");
@@ -2108,6 +2135,7 @@ async function runResearch(focus) {
   try {
     const resp = await fetch("/api/research", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({courses, facts, questions: questions || undefined, focus: focus || undefined,
+        full_docs: fullDocs.length ? fullDocs : undefined,
         web: $("#researchWeb").checked, format: $("#researchFormat").value})});
     const reader = resp.body.getReader(), dec = new TextDecoder();
     while (true) {
