@@ -223,6 +223,7 @@
     <div id="who" style="font-size:11px;color:#aab4c6"></div>
     <div id="planLine" style="font-size:11px;color:#aab4c6;line-height:1.6"></div>
     <button class="btn alt" id="openPlan">⚙ Plan &amp; usage</button>
+    <button class="btn alt" id="openPw" style="font-size:12px">🔑 Change password</button>
     <button class="btn alt" id="logoutBtn" style="font-size:12px">Log out</button>
     <div id="cost"></div>
     <button class="btn alt" id="openSettings">⚙ Edit how it answers</button>
@@ -259,6 +260,22 @@
       <button class="btn" id="savePrompt">Save</button>
       <button class="btn alt" id="resetPrompt" style="width:auto">Reset to default</button>
       <button class="btn alt" id="closeSettings" style="width:auto">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- change password -->
+<div class="modal" id="pwModal">
+  <div class="card">
+    <h3>Change password</h3>
+    <p>Set a new password for your account (minimum 8 characters).</p>
+    <input type="password" id="pwCurrent" placeholder="Current password" autocomplete="current-password" style="width:100%;margin-bottom:8px">
+    <input type="password" id="pwNew" placeholder="New password" autocomplete="new-password" style="width:100%;margin-bottom:8px">
+    <input type="password" id="pwConfirm" placeholder="Confirm new password" autocomplete="new-password" style="width:100%;margin-bottom:8px">
+    <div id="pwMsg" style="font-size:12px;min-height:16px"></div>
+    <div class="rowbtn">
+      <button class="btn" id="pwSave">Update password</button>
+      <button class="btn alt" id="pwClose" style="width:auto">Cancel</button>
     </div>
   </div>
 </div>
@@ -1974,6 +1991,28 @@ function mapToMarkdown(r) {
 $("#logoutBtn").onclick = async () => {
   await fetch("/api/logout", {method:"POST"});
   location.href = "/";
+};
+$("#openPw").onclick = () => {
+  $("#pwCurrent").value = $("#pwNew").value = $("#pwConfirm").value = "";
+  $("#pwMsg").textContent = "";
+  $("#pwModal").style.display = "flex";
+};
+$("#pwClose").onclick = () => { $("#pwModal").style.display = "none"; };
+$("#pwSave").onclick = async () => {
+  const cur = $("#pwCurrent").value, nw = $("#pwNew").value, cf = $("#pwConfirm").value;
+  const msg = $("#pwMsg");
+  if (nw.length < 8) { msg.style.color = "#e88"; msg.textContent = "New password must be at least 8 characters."; return; }
+  if (nw !== cf) { msg.style.color = "#e88"; msg.textContent = "New passwords don't match."; return; }
+  msg.style.color = "#aab4c6"; msg.textContent = "Updating…";
+  try {
+    const r = await fetch("/api/account/password", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({current: cur, new: nw})});
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      msg.style.color = "#7fdca0"; msg.textContent = "✅ Password updated.";
+      setTimeout(() => { $("#pwModal").style.display = "none"; }, 1200);
+    } else { msg.style.color = "#e88"; msg.textContent = d.error || "Could not update password."; }
+  } catch (e) { msg.style.color = "#e88"; msg.textContent = "Network error — try again."; }
 };
 (async () => {
   try {

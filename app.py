@@ -5222,6 +5222,28 @@ def api_logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/account/password", methods=["POST"])
+def api_change_password():
+    """Any logged-in user changes their own password. Verifies the current one,
+    then re-salts and re-hashes the new one. No admin bypass — you change yours."""
+    u = current_user()
+    email = session.get("email")
+    if not u or not email:
+        return jsonify({"error": "Not logged in."}), 401
+    body = request.json or {}
+    current = body.get("current") or ""
+    new = body.get("new") or ""
+    if not check_pw(email, current):
+        return jsonify({"error": "Current password is wrong."}), 403
+    if len(new) < 8:
+        return jsonify({"error": "New password must be at least 8 characters."}), 400
+    salt = secrets.token_hex(16)
+    u["salt"] = salt
+    u["pw"] = _hash_pw(new, salt)
+    save_users()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/me")
 def api_me():
     u = current_user()
