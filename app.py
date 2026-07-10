@@ -2590,8 +2590,23 @@ def api_research():
     if not courses:
         return jsonify({"error": "Select at least one course to research against."}), 400
     facts = (body.get("facts") or body.get("question") or "").strip()
-    if not facts:
+    # the consultant's OWN questions (list or newline text) + an optional single
+    # issue to focus on (from clicking one of the auto-extracted key issues)
+    questions = body.get("questions")
+    if isinstance(questions, list):
+        questions = "\n".join(str(q).strip() for q in questions if str(q).strip())
+    questions = (questions or "").strip()
+    focus = (body.get("focus") or "").strip()
+    if not facts and not questions and not focus:
         return jsonify({"error": "Enter the facts / question to research."}), 400
+    # build the research query: facts, then the consultant's specific questions,
+    # then (if they clicked one issue) a focusing instruction
+    query = facts
+    if questions:
+        query += ("\n\nSPECIFIC QUESTIONS THE CONSULTANT NEEDS ANSWERED — address "
+                  "each one explicitly and in order:\n" + questions)
+    if focus:
+        query += "\n\nFOCUS THIS ANALYSIS SPECIFICALLY ON THIS ISSUE: " + focus
     fmt = body.get("format", "advice")
     if fmt not in ("advice", "memo", "report"):
         fmt = "advice"
@@ -2606,7 +2621,7 @@ def api_research():
     consume("questions")
     if include_web:
         consume("comparative")
-    return jsonify(answer_question(courses, facts, include_web=include_web,
+    return jsonify(answer_question(courses, query, include_web=include_web,
                                    fmt=fmt, max_out=7000, mode="answer"))
 
 

@@ -294,7 +294,10 @@
     <div id="researchIssues" style="margin:8px 0; display:none">
       <div style="font-size:12px;color:#aab4c6;margin-bottom:4px" id="researchIssuesHdr">🔑 Key issues in these facts</div>
       <div id="researchIssuesList" style="display:flex;flex-direction:column;gap:5px"></div>
+      <div style="font-size:10px;color:#6b7488;margin-top:4px">Tip: click any issue to research just that one.</div>
     </div>
+    <label style="font-size:12px;color:#aab4c6;margin-top:4px;display:block">Your own questions (optional — one per line)</label>
+    <textarea id="researchQuestions" placeholder="e.g. Does the stabilisation clause survive the 2015 amendment?&#10;Is the equipment import VAT-exempt?" style="height:70px"></textarea>
     <div class="rowbtn" style="align-items:center;flex-wrap:wrap">
       <select id="researchFormat" style="width:auto">
         <option value="advice">Advice note</option>
@@ -2081,6 +2084,7 @@ async function openResearch() {
   box.innerHTML = "loading courses…";
   $("#researchOut").innerHTML = ""; $("#researchStatus").textContent = "";
   $("#researchIssues").style.display = "none"; lastIssuesFacts = "";
+  $("#researchQuestions").value = "";
   $("#researchModal").style.display = "flex";
   try {
     const r = await (await fetch("/api/courses")).json();
@@ -2089,17 +2093,20 @@ async function openResearch() {
         <input type="checkbox" class="rcCourse" value="${esc(c)}" checked> ${esc(c)}</label>`).join("");
   } catch (e) { box.innerHTML = "could not load courses"; }
 }
-async function runResearch() {
+async function runResearch(focus) {
   const courses = [...document.querySelectorAll(".rcCourse:checked")].map(x => x.value);
   const facts = $("#researchFacts").value.trim();
+  const questions = $("#researchQuestions").value.trim();
   const st = $("#researchStatus"), out = $("#researchOut"), go = $("#researchGo");
   if (!courses.length) { st.textContent = "Pick at least one course to search."; return; }
-  if (!facts) { st.textContent = "Enter the facts or question to research."; return; }
-  st.textContent = "Researching across " + courses.length + " course(s)… this can take a minute.";
+  if (!facts && !questions && !focus) { st.textContent = "Enter facts or your own questions to research."; return; }
+  st.textContent = (focus ? "Researching that one issue" : "Researching") + " across " +
+    courses.length + " course(s)… this can take a minute.";
   out.innerHTML = ""; go.disabled = true;
   try {
     const r = await fetch("/api/research", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({courses, facts, web: $("#researchWeb").checked, format: $("#researchFormat").value})});
+      body: JSON.stringify({courses, facts, questions: questions || undefined, focus: focus || undefined,
+        web: $("#researchWeb").checked, format: $("#researchFormat").value})});
     const d = await r.json();
     if (d.error && !d.answer) { st.textContent = d.error; go.disabled = false; return; }
     const c = d.cost || {};
@@ -2128,7 +2135,9 @@ async function autoResearchIssues() {
     if (!issues.length) { wrap.style.display = "none"; return; }
     hdr.textContent = "🔑 Key issues in these facts (" + issues.length + ") — what the research will address";
     list.innerHTML = issues.map(i =>
-      `<div style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:6px 9px">• ${esc(i)}</div>`).join("");
+      `<div class="rIssue" data-issue="${esc(i)}" title="Click to research just this issue"
+        style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:6px 9px;cursor:pointer">🔎 ${esc(i)}</div>`).join("");
+    list.querySelectorAll(".rIssue").forEach(el => el.onclick = () => runResearch(el.dataset.issue));
   } catch (e) { wrap.style.display = "none"; }
 }
 $("#researchFacts").addEventListener("input", () => {
@@ -2137,7 +2146,7 @@ $("#researchFacts").addEventListener("input", () => {
 });
 $("#openResearch").onclick = openResearch;
 $("#researchClose").onclick = () => { $("#researchModal").style.display = "none"; };
-$("#researchGo").onclick = runResearch;
+$("#researchGo").onclick = () => runResearch();
 
 loadCourses();
 
