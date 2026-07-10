@@ -218,12 +218,14 @@
   <button class="btn gold" id="openMap">🧭 Decode a question</button>
   <button class="btn gold" id="openPolish">✍️ Polish my draft</button>
   <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
+  <button class="btn gold" id="openResearch" style="display:none">🔎 Research (facts → advice)</button>
 
   <div style="margin-top:auto; display:flex; flex-direction:column; gap:8px;">
     <div id="who" style="font-size:11px;color:#aab4c6"></div>
     <div id="planLine" style="font-size:11px;color:#aab4c6;line-height:1.6"></div>
     <button class="btn alt" id="openPlan">⚙ Plan &amp; usage</button>
     <button class="btn alt" id="openPw" style="font-size:12px">🔑 Change password</button>
+    <button class="btn alt" id="viewToggle" style="font-size:12px; display:none"></button>
     <button class="btn alt" id="logoutBtn" style="font-size:12px">Log out</button>
     <div id="cost"></div>
     <button class="btn alt" id="openSettings">⚙ Edit how it answers</button>
@@ -277,6 +279,32 @@
       <button class="btn" id="pwSave">Update password</button>
       <button class="btn alt" id="pwClose" style="width:auto">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- consultant research -->
+<div class="modal" id="researchModal">
+  <div class="card" style="max-width:840px; width:94%">
+    <h3>🔎 Research from facts</h3>
+    <p>Tick the courses to search, drop your facts or question, and get grounded advice
+       with citations — merged across every domain you select.</p>
+    <label style="font-size:12px;color:#aab4c6">Search these courses</label>
+    <div id="researchCourses" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px"></div>
+    <textarea id="researchFacts" placeholder="Paste the facts / the question to research…" style="height:150px"></textarea>
+    <div class="rowbtn" style="align-items:center;flex-wrap:wrap">
+      <select id="researchFormat" style="width:auto">
+        <option value="advice">Advice note</option>
+        <option value="memo">Legal memo</option>
+        <option value="report">Report</option>
+      </select>
+      <label style="font-size:12px;color:#aab4c6;cursor:pointer">
+        <input type="checkbox" id="researchWeb"> 🌐 add web
+      </label>
+      <button class="btn" id="researchGo" style="width:auto">Research</button>
+      <button class="btn alt" id="researchClose" style="width:auto">Close</button>
+    </div>
+    <div id="researchStatus" style="font-size:12px;color:#aab4c6;min-height:16px;margin-top:6px"></div>
+    <div id="researchOut" style="margin-top:10px"></div>
   </div>
 </div>
 
@@ -2014,8 +2042,73 @@ $("#pwSave").onclick = async () => {
   try {
     const me = await (await fetch("/api/me")).json();
     if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
+    applyRole(me.role || "student", !!me.is_admin);
   } catch (e) {}
 })();
+
+// Role-driven view. Consultants get the research workspace; students keep the
+// essay/study tools. Admins get a toggle to preview either (stored locally).
+function applyRole(role, isAdmin) {
+  if (isAdmin) {
+    const override = localStorage.getItem("viewRole");
+    if (override) role = override;
+    const t = $("#viewToggle");
+    t.style.display = "";
+    t.textContent = "🔁 Preview: " + (role === "consultant" ? "Consultant" : "Student");
+    t.onclick = () => {
+      localStorage.setItem("viewRole", role === "consultant" ? "student" : "consultant");
+      location.reload();
+    };
+  }
+  const consultant = role === "consultant";
+  // hide student-only tools for consultants (no essay/exam/polish)
+  ["#openExam", "#openWeekly", "#openPolish"].forEach(id => {
+    const el = $(id); if (el) el.style.display = consultant ? "none" : "";
+  });
+  const rb = $("#openResearch"); if (rb) rb.style.display = consultant ? "" : "none";
+  document.body.dataset.role = role;
+}
+
+// ---- consultant research (facts -> advice, multi-course) ----
+async function openResearch() {
+  const box = $("#researchCourses");
+  box.innerHTML = "loading courses…";
+  $("#researchOut").innerHTML = ""; $("#researchStatus").textContent = "";
+  $("#researchModal").style.display = "flex";
+  try {
+    const r = await (await fetch("/api/courses")).json();
+    box.innerHTML = (r.courses || []).map(c =>
+      `<label style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:5px 9px;cursor:pointer">
+        <input type="checkbox" class="rcCourse" value="${esc(c)}" checked> ${esc(c)}</label>`).join("");
+  } catch (e) { box.innerHTML = "could not load courses"; }
+}
+async function runResearch() {
+  const courses = [...document.querySelectorAll(".rcCourse:checked")].map(x => x.value);
+  const facts = $("#researchFacts").value.trim();
+  const st = $("#researchStatus"), out = $("#researchOut"), go = $("#researchGo");
+  if (!courses.length) { st.textContent = "Pick at least one course to search."; return; }
+  if (!facts) { st.textContent = "Enter the facts or question to research."; return; }
+  st.textContent = "Researching across " + courses.length + " course(s)… this can take a minute.";
+  out.innerHTML = ""; go.disabled = true;
+  try {
+    const r = await fetch("/api/research", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({courses, facts, web: $("#researchWeb").checked, format: $("#researchFormat").value})});
+    const d = await r.json();
+    if (d.error && !d.answer) { st.textContent = d.error; go.disabled = false; return; }
+    const c = d.cost || {};
+    st.textContent = c.this_query_usd != null ? ("Done · $" + Number(c.this_query_usd).toFixed(4)) : "Done.";
+    out.innerHTML = mdToHtml(d.answer || "");
+    if (d.sources && d.sources.length) {
+      out.innerHTML += `<div style="margin-top:12px;font-size:11px;color:#8b93a7">` +
+        `<b>Sources (${d.sources.length}):</b> ` +
+        d.sources.map(s => esc(s.title || "")).join(" · ") + `</div>`;
+    }
+  } catch (e) { st.textContent = "Network error — try again."; }
+  go.disabled = false;
+}
+$("#openResearch").onclick = openResearch;
+$("#researchClose").onclick = () => { $("#researchModal").style.display = "none"; };
+$("#researchGo").onclick = runResearch;
 
 loadCourses();
 
