@@ -1652,6 +1652,27 @@ def search(course, query, k=TOP_K):
     sims = INDEXES[course]["emb"] @ qv
     return [chunks[i] for i in np.argsort(-sims)[:k]]
 
+
+def search_multi(courses, query, k=TOP_K):
+    """Consultant research: retrieve across a SELECTED SET of courses and merge by
+    similarity, returning the global top-k. Every embedding uses the same model, so
+    scores are comparable across courses. Each returned chunk is tagged with its
+    source course (`_course`) so page labels resolve to the right PDF folder."""
+    qv = embed_texts([query])[0]
+    scored = []
+    for course in courses:
+        ensure_loaded(course)
+        idx = INDEXES.get(course)
+        if not idx or not idx["chunks"]:
+            continue
+        sims = idx["emb"] @ qv
+        chunks = idx["chunks"]
+        for i in np.argsort(-sims)[:k]:
+            ch = dict(chunks[i]); ch["_course"] = course
+            scored.append((float(sims[i]), ch))
+    scored.sort(key=lambda x: -x[0])
+    return [c for _, c in scored[:k]]
+
 # ---------------------------------------------------------------- AI name extraction
 def first_pages_text(path, n=2, limit=3500):
     ext = path.lower().rsplit(".", 1)[-1]
@@ -1908,11 +1929,15 @@ def grounding_audit(question, course, answer, retrieved, path="ask"):
 
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer"):
-    retrieved = search(course, question)
+    # `course` may be a single course name OR a list (consultant multi-course
+    # research). Multi-course merges each selected course's index by similarity.
+    courses = course if isinstance(course, list) else [course]
+    multi = len(courses) > 1
+    retrieved = search_multi(courses, question) if multi else search(courses[0], question)
     # case-finder can run on the web alone; a normal answer needs the corpus
     if not retrieved and mode != "cases":
-        return {"answer": "No documents indexed in this course yet. Add PDFs "
-                "and click Re-index.", "sources": [], "cost": None}
+        return {"answer": "No documents indexed in the selected course(s) yet. Add "
+                "PDFs and click Re-index.", "sources": [], "cost": None}
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -1922,14 +1947,22 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
 
     import anthropic
     client = anthropic.Anthropic(api_key=api_key, max_retries=5)
-    pdf_dir, _ = course_paths(course)
     content = []
     for ch in retrieved:
+        # resolve the PDF folder per chunk — in multi-course search each chunk
+        # carries its own `_course`; single-course chunks fall back to courses[0]
+        ch_course = ch.get("_course", courses[0])
+        pdf_dir, _ = course_paths(ch_course)
         page = page_label(os.path.join(pdf_dir, ch["doc"]), ch["doc"], ch["page"])
+        # when researching across courses, tag each source with its course so the
+        # consultant can see which domain an authority came from
+        _title = f'{display_name(ch["doc"])} — p.{page}'
+        if multi:
+            _title = f'[{ch_course}] {_title}'
         content.append({
             "type": "document",
             "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
-            "title": f'{display_name(ch["doc"])} — p.{page}',
+            "title": _title,
             "citations": {"enabled": True},
         })
     content.append({"type": "text", "text": question})
@@ -2030,7 +2063,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
     save_config(CONFIG)
     _final_answer = "".join(s["text"] for s in segments).strip()
-    grounding_audit(question, course, _final_answer, retrieved, path=mode)
+    grounding_audit(question, " + ".join(courses) if multi else courses[0],
+                    _final_answer, retrieved, path=mode)
     return {"answer": _final_answer,
             "answer_annotated": annotated,
             "segments": segments, "sources": sources,
@@ -2540,6 +2574,39 @@ def api_cases():
     consume("comparative")
     return jsonify(answer_question(course, q, include_web=True, max_out=6000,
                                    mode="cases"))
+
+
+@app.route("/api/research", methods=["POST"])
+def api_research():
+    """Consultant research: drop a set of facts, pick which courses to search, get a
+    grounded memo/advice back (no essay). Retrieves across the SELECTED courses."""
+    u = current_user()
+    if not u:
+        return jsonify({"error": "Not logged in."}), 401
+    body = request.json or {}
+    courses = [safe_course(c) for c in (body.get("courses") or []) if c]
+    courses = [c for c in courses if _may_read_course(c)]
+    if not courses:
+        return jsonify({"error": "Select at least one course to research against."}), 400
+    facts = (body.get("facts") or body.get("question") or "").strip()
+    if not facts:
+        return jsonify({"error": "Enter the facts / question to research."}), 400
+    fmt = body.get("format", "advice")
+    if fmt not in ("advice", "memo", "report"):
+        fmt = "advice"
+    include_web = bool(body.get("web", False))
+    if include_web:
+        ok, msg = can_consume("comparative")
+        if not ok:
+            return jsonify({"answer": msg, "sources": [], "cost": None, "limit": True})
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"answer": msg, "sources": [], "cost": None, "limit": True})
+    consume("questions")
+    if include_web:
+        consume("comparative")
+    return jsonify(answer_question(courses, facts, include_web=include_web,
+                                   fmt=fmt, max_out=7000, mode="answer"))
 
 
 POLISH_INSTRUCTION = (
