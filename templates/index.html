@@ -2141,7 +2141,10 @@ async function autoResearchIssues() {
   if (facts.length < 30 || facts === lastIssuesFacts) return;
   lastIssuesFacts = facts;
   const wrap = $("#researchIssues"), list = $("#researchIssuesList"), hdr = $("#researchIssuesHdr");
-  wrap.style.display = "block"; hdr.textContent = "🔑 Reading the facts for key issues…";
+  list.innerHTML = "";
+  wrap.style.display = "block";
+  hdr.textContent = "⏳ Reading the facts for the key issues… (a few seconds)";
+  wrap.scrollIntoView({block: "nearest", behavior: "smooth"});
   try {
     const r = await (await fetch("/api/research/issues", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({facts})})).json();
@@ -2152,11 +2155,16 @@ async function autoResearchIssues() {
       `<div class="rIssue" data-issue="${esc(i)}" title="Click to research just this issue"
         style="font-size:12px;background:#11151d;border:1px solid #2a3344;border-radius:6px;padding:6px 9px;cursor:pointer">🔎 ${esc(i)}</div>`).join("");
     list.querySelectorAll(".rIssue").forEach(el => el.onclick = () => runResearch(el.dataset.issue));
+    wrap.scrollIntoView({block: "nearest", behavior: "smooth"});
   } catch (e) { wrap.style.display = "none"; }
 }
 $("#researchFacts").addEventListener("input", () => {
   clearTimeout(researchIssuesTimer);
   researchIssuesTimer = setTimeout(autoResearchIssues, 800);
+});
+$("#researchFacts").addEventListener("paste", () => {   // react fast the moment facts are dropped in
+  clearTimeout(researchIssuesTimer);
+  researchIssuesTimer = setTimeout(autoResearchIssues, 350);
 });
 $("#openResearch").onclick = openResearch;
 $("#researchClose").onclick = () => { $("#researchModal").style.display = "none"; };
