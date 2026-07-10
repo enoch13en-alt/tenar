@@ -2054,7 +2054,8 @@ function applyRole(role, isAdmin) {
     if (override) role = override;
     const t = $("#viewToggle");
     t.style.display = "";
-    t.textContent = "🔁 Preview: " + (role === "consultant" ? "Consultant" : "Student");
+    t.textContent = role === "consultant" ? "🔁 See Student view" : "🔁 See Consultant view";
+    t.style.background = role === "consultant" ? "#6b4a1f" : "";
     t.onclick = () => {
       localStorage.setItem("viewRole", role === "consultant" ? "student" : "consultant");
       location.reload();
