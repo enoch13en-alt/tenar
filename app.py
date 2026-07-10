@@ -968,7 +968,6 @@ def _save_meter():
 # Advisory work-products (~$1.2 each, ~10x a question) so caps protect margin;
 # `matters` caps private workspaces.
 _STU = {"drafts": 0, "matters": 0}       # students: no advisory/matters
-_PRAC = {"exam_sessions": 0, "oscola": 999999, "courses": 0, "exam": "none"}
 PLAN_LIMITS = {
     # ---- student tiers ----
     "free":         {"label": "Free", "questions": 10, "comparative": 0,
@@ -984,19 +983,12 @@ PLAN_LIMITS = {
                      "exam_sessions": 20, "fable_compiles": 8, "deepens": 20, "oscola": 999999,
                      "courses": 99, "web": True, "exam": "full", "pdf": True,
                      "drafts": 999999, "matters": 99},   # top/owner plan: everything
-    # ---- practitioner (lawyer) tiers ----
-    "single_matter": {"label": "Single Matter", "questions": 150, "comparative": 15,
-                      "fable_compiles": 1, "deepens": 3, "drafts": 8, "matters": 1,
-                      "web": True, "pdf": True, **_PRAC},
-    "solo":         {"label": "Solo (Practitioner)", "questions": 200, "comparative": 20,
-                     "fable_compiles": 2, "deepens": 10, "drafts": 15, "matters": 5,
-                     "web": True, "pdf": True, **_PRAC},
-    "practice":     {"label": "Practice", "questions": 500, "comparative": 50,
-                     "fable_compiles": 5, "deepens": 25, "drafts": 40, "matters": 15,
-                     "web": True, "pdf": True, **_PRAC},
-    "firm":         {"label": "Firm (per seat)", "questions": 600, "comparative": 60,
-                     "fable_compiles": 8, "deepens": 25, "drafts": 40, "matters": 999999,
-                     "web": True, "pdf": True, **_PRAC},
+    # ---- consultant tier: FULL access to every document across ALL courses,
+    #      plus advisory drafts and unlimited private matters. $599/mo (~2.5x cost). ----
+    "consultant":   {"label": "Consultant", "questions": 500, "comparative": 60,
+                     "fable_compiles": 5, "deepens": 25, "drafts": 40, "matters": 999999,
+                     "courses": 99, "exam_sessions": 0, "oscola": 999999,
+                     "web": True, "pdf": True, "exam": "none"},
 }
 CREDIT_KINDS = ("comparative", "exam_sessions", "fable_compiles", "drafts", "deepens")
 
