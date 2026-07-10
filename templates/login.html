@@ -25,12 +25,25 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   .toggle { text-align:center; margin-top:14px; font-size:12px; color:#8fb4ff; cursor:pointer; }
   #msg { color:#ff8080; font-size:12px; margin-top:10px; min-height:14px; }
+  .roles { display:flex; gap:8px; }
+  .role { flex:1; margin-top:0; background:#11151d; border:1px solid #2a3344; color:#8b93a7;
+          padding:10px 8px; font-size:13px; line-height:1.3; }
+  .role small { display:block; font-size:10px; color:#6b7488; margin-top:2px; }
+  .role.sel { background:#3b6fe0; color:#fff; border-color:#3b6fe0; }
+  .role.sel small { color:#dbe6ff; }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>⚖️ TENAR</h1>
     <p class="sub" id="mode">Sign in to your account</p>
+    <div id="roleRow" style="display:none">
+      <label>I am a…</label>
+      <div class="roles">
+        <button type="button" class="role sel" data-role="student">🎓 Student<small>essays, exam coach</small></button>
+        <button type="button" class="role" data-role="consultant">💼 Consultant<small>research, all courses</small></button>
+      </div>
+    </div>
     <label>Email</label>
     <input id="email" type="email" autocomplete="username">
     <label>Password</label>
@@ -46,12 +59,18 @@
 <script>
 const $ = s => document.querySelector(s);
 let signup = false;
+let role = "student";
+document.querySelectorAll(".role").forEach(b => b.onclick = () => {
+  role = b.dataset.role;
+  document.querySelectorAll(".role").forEach(x => x.classList.toggle("sel", x === b));
+});
 $("#toggle").onclick = () => {
   signup = !signup;
   $("#mode").textContent = signup ? "Create your account" : "Sign in to your account";
   $("#go").textContent = signup ? "Create account" : "Sign in";
   $("#toggle").textContent = signup ? "Have an account? Sign in" : "New here? Create an account";
   $("#codeRow").style.display = signup ? "block" : "none";
+  $("#roleRow").style.display = signup ? "block" : "none";
   $("#msg").textContent = "";
 };
 async function submit() {
@@ -63,7 +82,7 @@ async function submit() {
   go.classList.add("busy"); go.innerHTML = '<span class="spin"></span>' + label;
   try {
     const r = await fetch(signup ? "/api/signup" : "/api/login", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, password, code})});
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, password, code, role})});
     const d = await r.json();
     if (d.ok) { location.href = "/"; return; }
     $("#msg").textContent = d.error || "Something went wrong.";

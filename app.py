@@ -927,11 +927,12 @@ def _hash_pw(pw, salt):
                                200000).hex()
 
 
-def create_user(email, pw, plan="free", is_admin=False, courses=None):
+def create_user(email, pw, plan="free", is_admin=False, courses=None, role="student"):
     email = email.strip().lower()
     salt = secrets.token_hex(16)
     USERS[email] = {"salt": salt, "pw": _hash_pw(pw, salt), "plan": plan,
                     "is_admin": is_admin, "courses": courses or [],
+                    "role": role if role in ("student", "consultant") else "student",
                     "usage": {}, "credits": {}, "period_start": ""}
     save_users()
     return USERS[email]
@@ -5255,7 +5256,10 @@ def api_signup():
         return jsonify({"error": "Enter a valid email and a password of 6+ chars."}), 400
     if email in USERS:
         return jsonify({"error": "That email is already registered — log in instead."}), 400
-    create_user(email, pw, plan="free")
+    role = (body.get("role") or "student").strip().lower()
+    if role not in ("student", "consultant"):
+        role = "student"
+    create_user(email, pw, plan="free", role=role)
     _mark_invite_used(supplied)          # burn the single-use code
     session.permanent = True
     session["email"] = email
@@ -5307,7 +5311,8 @@ def api_me():
     if not u:
         return jsonify({"error": "not logged in"}), 401
     return jsonify({"email": session.get("email"), "is_admin": u.get("is_admin", False),
-                    "plan": u.get("plan", "free")})
+                    "plan": u.get("plan", "free"),
+                    "role": u.get("role", "student")})
 
 
 @app.route("/api/admin/grounding")
