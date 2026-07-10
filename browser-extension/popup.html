@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px/1.4 -apple-system, system-ui, sans-serif; width: 340px;
+         margin: 0; padding: 12px; background: #0f1218; color: #dfe4ee; }
+  h1 { font-size: 14px; margin: 0 0 8px; color: #e0b050; }
+  label { display: block; font-size: 11px; color: #99a2b3; margin: 8px 0 2px; }
+  input, select, button { width: 100%; box-sizing: border-box; padding: 6px 8px;
+         border-radius: 6px; border: 1px solid #2a3344; background: #171b24;
+         color: #dfe4ee; font-size: 13px; }
+  button { cursor: pointer; margin-top: 10px; font-weight: 600; }
+  #add { background: #b9772a; border-color: #b9772a; color: #fff; }
+  #save { background: #171b24; }
+  .bar { display: flex; gap: 6px; align-items: center; margin: 6px 0 2px; }
+  .bar a { font-size: 11px; color: #8fb4ff; cursor: pointer; }
+  #pdfList { max-height: 220px; overflow: auto; border: 1px solid #2a3344;
+             border-radius: 6px; padding: 6px; margin-top: 6px; font-size: 12px; }
+  .pdf { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; }
+  .pdf input { width: auto; margin-top: 2px; }
+  .pdf .t { flex: 1; word-break: break-word; }
+  .pdf .u { color: #6b7488; font-size: 10px; word-break: break-all; }
+  .pdf .st { font-size: 11px; }
+  .status { font-size: 12px; margin-top: 10px; color: #8fb4ff; min-height: 16px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 11px; color: #99a2b3; }
+</style>
+</head>
+<body>
+  <h1>⚖️ Add PDFs to TENAR</h1>
+  <label>Course</label>
+  <select id="course"><option>— set token in Setup —</option></select>
+
+  <div class="bar">
+    <span id="count" style="flex:1;color:#99a2b3;font-size:11px">scanning page…</span>
+    <a id="selAll">all</a><a id="selNone">none</a><a id="rescan">rescan</a>
+  </div>
+  <div id="pdfList"></div>
+  <button id="add">⬇ Add selected</button>
+  <div class="status" id="status"></div>
+
+  <details>
+    <summary>⚙️ Setup (once)</summary>
+    <label>TENAR address</label>
+    <input id="server" placeholder="http://localhost:5000">
+    <label>Extension token (from TENAR)</label>
+    <input id="token" placeholder="paste token">
+    <button id="save">Save & load courses</button>
+  </details>
+
+  <script src="popup.js"></script>
+</body>
+</html>

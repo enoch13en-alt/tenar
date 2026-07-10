@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "TENAR — Add PDF to course",
+  "version": "1.0",
+  "description": "Push the PDF you're viewing straight into a TENAR course. The browser does the fetch, so it works where the server can't (modern TLS, JavaScript pages, logins, bot-blocked sites).",
+  "permissions": ["tabs", "activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "http://localhost:5000/*",
+    "http://127.0.0.1:5000/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Add this PDF to TENAR"
+  }
+}

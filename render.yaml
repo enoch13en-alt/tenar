@@ -1,0 +1,21 @@
+# Render Blueprint — deploy TENAR as a managed Docker web service with a persistent
+# disk. Push this repo to GitHub, then in Render: New → Blueprint → pick the repo.
+services:
+  - type: web
+    name: tenar
+    runtime: docker
+    plan: pro                 # 4 GB RAM (use 'standard' for 2 GB to save cost)
+    region: frankfurt         # closest Render region to Ghana
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: tenar-data        # persistent — holds the corpus, indexes, model cache, state
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: TENAR_DATA
+        value: /data
+      - key: ANTHROPIC_API_KEY
+        sync: false           # set the real value in the Render dashboard (secret)
+      - key: SIGNUP_CODE
+        sync: false           # invite codes; secret

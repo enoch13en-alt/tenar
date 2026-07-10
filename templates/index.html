@@ -129,6 +129,26 @@
                 max-height: 180px; overflow: auto; border-top: 1px solid #2a3344; padding-top: 6px; }
   .fact { font-size: 12px; margin: 3px 0; }
   .fact b { color: #8fb4ff; }
+  .modeSel { font-size: 12px; padding: 4px 6px; background: #0d1017; color: #cdd5e6;
+             border: 1px solid #2a3344; border-radius: 5px; }
+  .voice { font-size: 12px; margin: 8px 0; padding: 8px 10px; border-radius: 6px;
+           border: 1px solid #2a3344; border-left-width: 3px; background: #0e1219; }
+  .voice.v-holds { border-left-color: #6fcf97; }
+  .voice.v-contradicted { border-left-color: #e06f6f; }
+  .voice.v-ungrounded { border-left-color: #e0c56f; }
+  .voice .vq { color: #8fb4ff; margin-bottom: 5px; }
+  .voice .vrow { color: #cdd5e6; margin: 3px 0; }
+  .voice .vrow b { color: #aab4c6; }
+  .voice .vverdict { font-weight: 600; margin: 5px 0; }
+  .voice.v-holds .vverdict { color: #6fcf97; }
+  .voice.v-contradicted .vverdict { color: #e06f6f; }
+  .voice.v-ungrounded .vverdict { color: #e0c56f; }
+  .cueBox { flex-basis: 100%; width: 100%; background: #0e1219; border: 1px solid #2a3344;
+            border-radius: 6px; padding: 8px 10px; margin: 2px 0; font-size: 12px; }
+  .cueHdr { color: #e0c56f; margin-bottom: 6px; }
+  .cue { color: #cdd5e6; margin: 5px 0; }
+  .cue b { color: #8fb4ff; }
+  .cueEmpty { color: #6b7488; font-style: italic; }
   #examDoc { background: #fff; border: 1px solid #e3e6ec; color: #1c2330;
              border-radius: 6px; padding: 16px; font-size: 13px; line-height: 1.6;
              max-height: 52vh; overflow: auto; }
@@ -285,12 +305,24 @@
           <option value="report">Formal report</option>
         </select>
       </label>
+      <label style="color:#aab4c6;font-size:12px" title="Optional. After Deepen, the document is condensed to fit this many words. Leave blank for no limit.">
+        Word limit:
+        <input type="number" id="wordLimit" placeholder="none" min="100" step="50"
+               style="width:74px;display:inline-block">
+      </label>
+      <label style="color:#aab4c6;font-size:12px" title="Whether footnotes count toward the word limit — lecturers differ.">
+        <select id="fnCount" style="width:auto;display:inline-block">
+          <option value="nocount">footnotes NOT counted</option>
+          <option value="count">footnotes counted</option>
+        </select>
+      </label>
       <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
         <input type="checkbox" id="examWeb"> Comparative (web)
       </label>
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
       </label>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → compile the final document → Deepen it to top-band standard. Uses the credits each step would (questions + one compile + one Deepen).">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -330,6 +362,14 @@
        link. <b style="color:#e0b050">It's a flag-for-verification tool, not authority:</b>
        confirm each item against the official gazette / primary source before relying on it.</p>
     <div id="updatesCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <div id="gapSection" style="border:1px solid #2a3344;border-radius:8px;padding:10px;margin-bottom:12px;background:#0e1219">
+      <div style="font-size:13px;color:#e0b050;margin-bottom:4px">① Missing primary sources <span style="color:#8b93a7">— checked first</span></div>
+      <p style="font-size:12px;color:#aab4c6;margin:0 0 8px">Audits THIS course for primary instruments it relies on but doesn't actually hold as text — treaties, statutes, conventions cited only through commentary. Then finds the official text and adds it straight in.</p>
+      <div class="rowbtn" style="margin:0"><button class="btn gold" id="gapScan" style="width:auto">🧭 Find missing primary sources</button></div>
+      <div id="gapStatus" style="font-size:12px;color:#aab4c6;margin-top:6px"></div>
+      <div id="gapOut"></div>
+    </div>
+    <div style="font-size:13px;color:#e0b050;margin-bottom:4px">② Recent changes <span style="color:#8b93a7">— web scan for new/amended law</span></div>
     <div class="rowbtn" style="align-items:center">
       <button class="btn" id="updatesGo" style="width:auto">🔎 Check the web now</button>
       <button class="btn gold" id="updatesSave" style="width:auto;display:none">💾 Save to course &amp; include in answers</button>
@@ -528,7 +568,7 @@ window.fetch = function(...args) {
   if (b) p.then(() => btnBusyEnd(b), () => btnBusyEnd(b));
   return p;
 };
-const esc = s => (s||"").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function downloadDocx(text, title) {
   const res = await fetch("/api/export", {method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title})});
@@ -835,12 +875,20 @@ async function oscolaExport(sources) {
 
 // ---- Exam Coach ----
 let EXAM = {facts:[], assumptions:[], issues:[]};
+let focusUserTouched = false, lastFocusQ = "", focusBusy = false, focusTimer = null;
 $("#openExam").onclick = () => {
   $("#examCourse").textContent = "📚 Searching course: " + COURSE;
-  if (!$("#focusList").children.length) addFocusRow();   // start with one field
+  // fresh focus state every open: clear stale boxes to one empty field and re-arm
+  // auto-fill (a leftover box from a prior session used to leave it "touched" and
+  // silently block the fill — the "not delivering key focus areas" bug)
+  $("#focusList").innerHTML = ""; addFocusRow();
+  focusUserTouched = false;
+  lastFocusQ = "";
   $("#examModal").style.display = "flex";
+  // if a question is already sitting in the box, fill focus areas right away
+  if ($("#examQ").value.trim().length >= 30) autoFillFocus();
 };
-function addFocusRow(value) {
+function addFocusRow(value, silent) {
   const row = document.createElement("div");
   row.className = "focusRow";
   row.style.cssText = "display:flex;gap:6px;margin-bottom:5px";
@@ -857,15 +905,43 @@ function addFocusRow(value) {
   inp.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); addFocusRow(); }
   });
+  // real user typing (not programmatic .value) means "stop auto-managing focus"
+  inp.addEventListener("input", () => { focusUserTouched = true; });
   row.appendChild(inp); row.appendChild(rm);
   $("#focusList").appendChild(row);
-  inp.focus();
+  if (!silent) inp.focus();
 }
-$("#addFocus").onclick = () => addFocusRow();
+$("#addFocus").onclick = () => { focusUserTouched = true; addFocusRow(); };
 function collectFocus() {
   return Array.from(document.querySelectorAll(".focusInput"))
     .map(i => i.value.trim()).filter(Boolean);
 }
+// Auto-derive the key focus areas from a dropped question and populate the boxes
+// one by one. Skips silently if you've already typed/added focus areas yourself.
+async function autoFillFocus() {
+  const q = $("#examQ").value.trim();
+  if (q.length < 30 || q === lastFocusQ || focusUserTouched || focusBusy) return;
+  lastFocusQ = q; focusBusy = true;
+  const prev = $("#examStatus").textContent;
+  $("#examStatus").textContent = "✨ Picking key focus areas…";
+  try {
+    const r = await (await fetch("/api/exam/focus", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, question: q})})).json();
+    const areas = (r.focus || []).filter(Boolean);
+    if (!focusUserTouched && areas.length) {
+      $("#focusList").innerHTML = "";                 // clear the empty starter row
+      areas.forEach(a => addFocusRow(a, true));       // render ALL at once (no race)
+      $("#examStatus").textContent = "✨ Filled " + areas.length +
+        " focus areas — edit, remove or add before Break it down.";
+    } else { $("#examStatus").textContent = prev; }
+  } catch (e) { $("#examStatus").textContent = prev; }
+  finally { focusBusy = false; }
+}
+$("#examQ").addEventListener("input", () => {
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(autoFillFocus, 700);        // debounce after paste/typing
+});
 $("#examUpload").onclick = () => $("#examFile").click();
 $("#examFile").onchange = async () => {
   const f = $("#examFile").files[0]; if (!f) return;
@@ -877,13 +953,14 @@ $("#examFile").onchange = async () => {
     $("#examQ").value = r.text;
     $("#examStatus").textContent = "Loaded " + f.name + " (" + r.text.length
       + " chars). Review it, then Break it down.";
+    lastFocusQ = ""; autoFillFocus();   // auto-pick focus areas from the uploaded exam
   } catch (e) { $("#examStatus").textContent = "Upload error: " + e; }
 };
 $("#examClose").onclick = () => $("#examModal").style.display = "none";
 
-$("#examBreak").onclick = async () => {
+async function runBreakdown() {
   const q = $("#examQ").value.trim();
-  if (!q) return;
+  if (!q) { $("#examStatus").textContent = "Paste the exam question first."; return false; }
   const focus = collectFocus();
   $("#examStatus").textContent = "Mapping facts and breaking down the question…";
   $("#examOut").innerHTML = "";
@@ -891,14 +968,54 @@ $("#examBreak").onclick = async () => {
     const r = await (await fetch("/api/exam/breakdown", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, question: q, focus})})).json();
-    if (r.error) { $("#examStatus").textContent = r.error; return; }
+    if (r.error) { $("#examStatus").textContent = r.error; return false; }
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
             issues: (r.issues||[]).map(i => ({...i, answer:null, sources:[], done:false})),
             question: q, focus, cost: (r.cost ? (r.cost.this_usd||0) : 0)};
     $("#examStatus").textContent = "Broken down · exam session cost so far $" + EXAM.cost.toFixed(4);
     renderExam();
-  } catch (e) { $("#examStatus").textContent = "Error: " + e; }
-};
+    return EXAM.issues.length > 0;
+  } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
+}
+$("#examBreak").onclick = runBreakdown;
+
+// ONE-CLICK: run the whole Exam Coach pipeline end to end → break down, gather
+// every issue, compile the final document, then Deepen it to top-band standard.
+async function runFullPipeline() {
+  const q = $("#examQ").value.trim();
+  if (!q) { $("#examStatus").textContent = "Paste the exam question first."; return; }
+  const btn = $("#examAuto");
+  if (btn) btn.disabled = true;
+  const stage = s => { if (btn) btn.textContent = s; };
+  try {
+    // ① break down (reuse if this exact question is already broken down)
+    if (!EXAM.issues.length || EXAM.question !== q) {
+      stage("① Breaking down…");
+      if (!(await runBreakdown())) return;                 // status already set
+    }
+    if (!EXAM.issues.length) { $("#examStatus").textContent = "No issues to work on."; return; }
+    // ② gather the law for every issue
+    stage("② Gathering the law…");
+    await gatherAll();
+    if (!EXAM.issues.some(it => it.done && it.answer)) {
+      $("#examStatus").textContent = "Couldn't gather any issue — check your plan limits."; return;
+    }
+    // ③ compile the final document
+    stage("③ Compiling…");
+    await compileExam();
+    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
+    // ④ deepen it (the final step)
+    stage("④ Deepening…");
+    const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
+    if (deepBtn) { deepBtn.click(); $("#examStatus").textContent = "🔬 Deepening the final document — it appears below."; }
+    else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
+  } catch (e) {
+    $("#examStatus").textContent = "Auto-run stopped: " + e;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🚀 Do it all → Deepen"; }
+  }
+}
+$("#examAuto").onclick = runFullPipeline;
 
 function renderExam() {
   let h = "";
@@ -928,10 +1045,23 @@ function renderExam() {
   $("#examOut").innerHTML = h;
   $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i));
+  const sendFup = i => {
+    const sel = document.querySelector('.modeSel[data-i="' + i + '"]');
+    if (sel && sel.value === "voice") addVoice(i); else askFollowup(i);
+  };
   $("#examOut").querySelectorAll(".fupBtn").forEach(b =>
-    b.onclick = () => askFollowup(+b.dataset.i));
+    b.onclick = () => sendFup(+b.dataset.i));
   $("#examOut").querySelectorAll(".fupInput").forEach(inp =>
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") askFollowup(+inp.dataset.i); }));
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendFup(+inp.dataset.i); }
+    }));
+  $("#examOut").querySelectorAll(".modeSel").forEach(s =>
+    s.onchange = () => {
+      const i = +s.dataset.i, it = EXAM.issues[i];
+      it.voiceMode = (s.value === "voice");
+      if (it.voiceMode && !it.cues && !it.cuesLoading) loadCues(i);  // re-renders itself
+      else renderExam();     // show/hide the cue block, keep the dropdown state
+    });
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
   const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
 }
@@ -940,12 +1070,102 @@ function followHTML(it, idx) {
   const fups = (it.followups || []).map(f =>
     '<div class="fupItem"><div class="fupq">↳ ' + esc(f.q) + '</div>'
     + '<div class="ans">' + linkify(esc(f.answer)) + '</div></div>').join("");
+  const voices = (it.voices || []).map(renderVoice).join("");
+  const voiceOn = !!it.voiceMode;
+  const ph = voiceOn
+    ? "State your own position — I'll ground it, counter it, place it, and merge only if it holds…"
+    : "Ask or challenge — reply appears in the thread, not merged…";
   const box = it.fupLoading
-    ? '<div class="why" style="margin-top:8px">⏳ Answering follow-up…</div>'
-    : '<div class="fup"><input class="fupInput" data-i="' + idx
-      + '" placeholder="Ask a follow-up about this issue…">'
-      + '<button class="btn mini fupBtn" data-i="' + idx + '">Ask</button></div>';
-  return fups + box;
+    ? '<div class="why" style="margin-top:8px">⏳ ' + (it.fupMode === "voice"
+        ? "Testing your view against the law…" : "Answering follow-up…") + '</div>'
+    : '<div class="fup" style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">'
+      + '<select class="modeSel" data-i="' + idx + '">'
+      + '<option value="ask"' + (voiceOn ? '' : ' selected') + '>Ask a question</option>'
+      + '<option value="voice"' + (voiceOn ? ' selected' : '') + '>Add your voice</option></select>'
+      + (voiceOn ? renderCues(it) : "")
+      + '<textarea class="fupInput" data-i="' + idx + '" rows="' + (voiceOn ? 3 : 2)
+      + '" style="flex:1;min-width:180px" placeholder="' + esc(ph) + '"></textarea>'
+      + '<button class="btn mini fupBtn" data-i="' + idx + '">Send</button></div>';
+  return fups + voices + box;
+}
+
+function renderCues(it) {
+  if (it.cuesLoading)
+    return '<div class="cueBox">💡 Finding issue-specific cues…</div>';
+  const cues = it.cues || [];
+  if (!cues.length) return '';
+  const rows = cues.map(c => {
+    const on = c.applies !== false;
+    return '<div class="cue' + (on ? '' : ' cueEmpty') + '"><b>' + esc(c.type || '')
+      + '</b> — ' + esc(c.cue || (on ? '' : 'nothing obvious here')) + '</div>';
+  }).join("");
+  return '<div class="cueBox"><div class="cueHdr">💡 Where to find YOUR angle on '
+    + 'this issue — questions, not answers; the view stays yours:</div>' + rows + '</div>';
+}
+
+async function loadCues(i) {
+  const it = EXAM.issues[i];
+  if (it.cues || it.cuesLoading) return;      // cache per issue
+  it.cuesLoading = true; renderExam();
+  try {
+    const r = await (await fetch("/api/exam/cues", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, issue: it.issue,
+        why: it.why || "", law: it.law || ""})})).json();
+    it.cues = r.cues || [];
+  } catch (e) { it.cues = []; }
+  it.cuesLoading = false; renderExam();
+}
+
+function renderVoice(v) {
+  const verdict = (v.verdict || "").toLowerCase();
+  const label = {holds: "✅ Holds — merged into the answer, attributed to you",
+    contradicted: "❌ Contradicted — not merged",
+    ungrounded: "⚠️ Sound but ungrounded — verify first, not merged yet"
+    }[verdict] || "⚠️ " + (v.reason ? "" : "Could not evaluate");
+  const g = v.ground || {};
+  let h = '<div class="voice v-' + esc(verdict) + '">';
+  h += '<div class="vq">🗣 Your view: ' + esc(v.view || "") + '</div>';
+  if (g.authority || g.status)
+    h += '<div class="vrow"><b>Ground</b> [' + esc(g.status || "") + ']: '
+      + esc(g.authority || "") + (g.note ? " — " + esc(g.note) : "") + '</div>';
+  if (v.counter) h += '<div class="vrow"><b>Counter</b>: ' + esc(v.counter) + '</div>';
+  if (v.place) h += '<div class="vrow"><b>Place</b>: ' + esc(v.place)
+    + (v.place_note ? " — " + esc(v.place_note) : "") + '</div>';
+  if (label) h += '<div class="vverdict">' + label + '</div>';
+  if (v.reason) h += '<div class="vrow">' + esc(v.reason) + '</div>';
+  if (verdict === "ungrounded" && v.need_authority)
+    h += '<div class="vrow"><b>Verify this authority</b>: ' + esc(v.need_authority) + '</div>';
+  h += '</div>';
+  return h;
+}
+
+async function addVoice(i) {
+  const inp = document.querySelector('.fupInput[data-i="' + i + '"]');
+  const view = inp ? inp.value.trim() : "";
+  if (!view) return;
+  const it = EXAM.issues[i];
+  it.voices = it.voices || [];
+  it.fupLoading = true; it.fupMode = "voice"; renderExam();
+  $("#examStatus").textContent = "Testing your view — grounding, countering, placing it…";
+  try {
+    const r = await (await fetch("/api/exam/voice", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, issue: it.issue, why: it.why || "",
+        law: it.law || "", answer: it.answer || "", view})})).json();
+    if (r.error) { it.voices.push({view, verdict: "", reason: r.error}); }
+    else {
+      it.voices.push({view, ground: r.ground, counter: r.counter, place: r.place,
+        place_note: r.place_note, verdict: r.verdict, reason: r.reason,
+        need_authority: r.need_authority});
+      if (r.verdict === "holds" && r.merged_answer) {
+        it.answer = r.merged_answer;      // merged in the essay's voice, attributed
+        it.done = true; it.attributed = true;
+      }
+      $("#examStatus").textContent = r.cost ? ("Running total $" + (r.cost.total_usd||0)) : "";
+    }
+  } catch (e) { it.voices.push({view, verdict: "", reason: "Error: " + e}); }
+  it.fupLoading = false; it.fupMode = null; renderExam();
 }
 
 async function askFollowup(i) {
@@ -1066,6 +1286,7 @@ async function compileExam() {
   // final formatted render
   docEl.style.whiteSpace = "normal";
   docEl.innerHTML = mdToHtml(document);
+  EXAM.doc = document;                       // expose the compiled text for the pipeline
   EXAM.cost = (EXAM.cost || 0) + (meta.cost ? (meta.cost.this_usd || 0) : 0);
   $("#examStatus").textContent = meta.cost
     ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $"
@@ -1115,10 +1336,13 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       + "title='Steel-man the thesis, one comparator in depth, resolve the sharpest "
       + "trade-offs — moves it toward the top band'>🔬 Deepen</button>"
     : "";
+  const fitBtn = "<button class='btn mini bFit' style='margin-left:6px' "
+      + "title='Condense this document to the word limit set in Exam Coach, "
+      + "preserving the argument and citations'>✂️ Fit to limit</button>";
   box.innerHTML = coverBlock
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + deepBtn + "</div>";
+    + pdfBtn + deepBtn + fitBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
   box.querySelector(".bCopy").onclick = e => {
@@ -1154,6 +1378,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   };
   const deepEl = box.querySelector(".bDeepen");
   if (deepEl) deepEl.onclick = () => deepenDoc(box, doc, wordName, defaultTitle, deepEl);
+  const fitEl = box.querySelector(".bFit");
+  if (fitEl) fitEl.onclick = () => fitDoc(box, doc, wordName, defaultTitle);
 }
 
 // Deepen a competent answer to "examined argument" standard. Streams the upgraded
@@ -1219,6 +1445,62 @@ async function deepenDoc(anchorEl, doc, wordName, defaultTitle, btn) {
   }
   renderExportBar(tail, upgraded, wordName + " (deepened)", defaultTitle);
   if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; }
+  // WORD LIMIT kicks in AFTER Deepen: if a limit was entered, fit automatically so
+  // "enter details → Do it all" carries all the way through in one flow.
+  const lim = parseInt(($("#wordLimit") || {}).value, 10);
+  if (lim && lim >= 50) fitDoc(box, upgraded, wordName, defaultTitle);
+}
+
+// Fit a document to a lecturer's word limit (kicks in after Deepen). Streams the
+// condensed version; footnote handling depends on the "footnotes counted" toggle.
+async function fitDoc(anchorEl, doc, wordName, defaultTitle) {
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e", MARK = "=== WORDS ===";
+  const lim = parseInt(($("#wordLimit") || {}).value, 10) || 0;
+  const fnCount = (($("#fnCount") || {}).value === "count");
+  if (!lim || lim < 50) { alert("Set a word limit (e.g. 2000) in Exam Coach first."); return; }
+  const prev = anchorEl.parentNode.querySelector(".fitOut"); if (prev) prev.remove();
+  const box = document.createElement("div");
+  box.className = "fitOut";
+  box.style.cssText = "margin-top:14px;border-top:1px solid #2a3344;padding-top:12px";
+  box.innerHTML = "<h4 style='margin:0 0 6px'>✂️ Fitted to " + lim + " words "
+    + "<span style='font-size:12px;color:#8b93a7'>(" + (fnCount ? "footnotes counted" : "footnotes not counted") + ")</span> "
+    + "<span id='fDot' style='color:#6fcf97;font-size:12px'>● fitting…</span></h4>"
+    + "<div id='fDoc' style='white-space:pre-wrap'></div>";
+  anchorEl.insertAdjacentElement("afterend", box);
+  const fDoc = box.querySelector("#fDoc"), fDot = box.querySelector("#fDot");
+  let buf = "", meta = {}, gotText = false; const t0 = Date.now();
+  const timer = setInterval(() => {
+    if (!gotText && fDot) fDot.textContent = "● fitting… " + Math.round((Date.now()-t0)/1000) + "s";
+  }, 1000);
+  try {
+    const resp = await fetch("/api/exam/fit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text: doc, limit: lim, footnotes_count: fnCount})});
+    if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error || "request failed"); }
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      buf = buf.split(PING).join("");
+      const body = buf.split(DELIM)[0].split(MARK)[0];
+      fDoc.textContent = body;
+      if (!gotText && body.trim()) { gotText = true; if (fDot) fDot.textContent = "● writing…"; }
+    }
+  } catch (e) { clearInterval(timer); if (fDot) fDot.remove(); fDoc.textContent = "Fit error: " + e.message; return; }
+  clearInterval(timer);
+  const parts = buf.split(DELIM);
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  if (fDot) fDot.remove();
+  if (meta.error) { fDoc.textContent = meta.error; return; }
+  const seg = (parts[0] || "").split(MARK);
+  const fitted = seg[0].trim(), wc = (seg[1] || "").trim();
+  fDoc.style.whiteSpace = "normal"; fDoc.innerHTML = mdToHtml(fitted);
+  let tail = fDoc;
+  if (wc) {
+    const cnt = document.createElement("div");
+    cnt.style.cssText = "margin-top:6px;font-size:12px;color:#6fcf97"; cnt.textContent = "📏 " + wc;
+    fDoc.insertAdjacentElement("afterend", cnt); tail = cnt;
+  }
+  renderExportBar(tail, fitted, wordName + " (fitted " + lim + "w)", defaultTitle);
 }
 
 // ---- polish my draft ----
@@ -1776,15 +2058,100 @@ async function loadWeekSummary(w) {
 
 // ---- legal updates (web) ----
 let UPDATES_TEXT = "";
+let GAPS = [];
 $("#openUpdates").onclick = () => {
   $("#updatesCourse").textContent = "📚 Course: " + COURSE;
   $("#updatesOut").innerHTML = ""; $("#updatesStatus").textContent = "";
   $("#updatesSave").style.display = "none"; UPDATES_TEXT = "";
   $("#pasteRes").textContent = "";
+  $("#gapOut").innerHTML = ""; $("#gapStatus").textContent = ""; GAPS = [];
   const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
   $("#pasteRow").style.display = allowed ? "flex" : "none";   // add-by-URL is admin/owner only
+  $("#gapSection").style.display = allowed ? "block" : "none"; // gap audit is admin/owner only
   $("#updatesModal").style.display = "flex";
 };
+
+// ① Missing primary sources — audit the corpus, find official text, fetch it in
+$("#gapScan").onclick = async () => {
+  const btn = $("#gapScan"), st = $("#gapStatus");
+  btn.disabled = true; btn.textContent = "Scanning the corpus…"; $("#gapOut").innerHTML = "";
+  st.textContent = "🧭 Auditing this course for primary sources it cites but doesn't hold as text…";
+  try {
+    const r = await fetch("/api/primary/gaps", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE})}).then(x => x.json());
+    if (r.error) { st.textContent = r.error; }
+    else {
+      GAPS = r.missing || [];
+      st.textContent = "Found " + GAPS.length + " missing primary source(s) across "
+        + r.have_count + " documents — highest-leverage first.";
+      const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
+      renderGaps(GAPS, allowed);
+    }
+  } catch (e) { st.textContent = "Scan error: " + e; }
+  btn.disabled = false; btn.textContent = "🔁 Re-scan";
+};
+
+function renderGaps(missing, allowed) {
+  const host = $("#gapOut");
+  if (!missing.length) {
+    host.innerHTML = "<div style='font-size:12px;color:#6fcf97;margin-top:6px'>✅ No missing primary sources — the instruments this course relies on appear present as text.</div>";
+    return;
+  }
+  const col = {high:"#e06f6f", medium:"#e0c56f", low:"#8b93a7"};
+  host.innerHTML = missing.map((m, i) => {
+    const lb = (m.load_bearing || "").toLowerCase();
+    return '<div class="gapRow" data-i="' + i + '" style="margin:8px 0;padding:8px;border:1px solid #2a3344;border-radius:6px">'
+      + '<div style="font-size:13px"><span style="color:' + (col[lb]||"#8b93a7") + ';font-weight:600">[' + esc(lb||"?") + ']</span> ' + esc(m.name||"") + '</div>'
+      + (m.provisions ? '<div style="font-size:12px;color:#8b93a7">leans on: ' + esc(m.provisions) + '</div>' : "")
+      + (m.why_absent ? '<div style="font-size:12px;color:#8b93a7">' + esc(m.why_absent) + '</div>' : "")
+      + (allowed ? '<div class="gapAct" style="margin-top:6px"><button class="btn mini gapFind" data-i="' + i + '" style="width:auto">🔎 Find official text</button></div>' : "")
+      + '</div>';
+  }).join("");
+  host.querySelectorAll(".gapFind").forEach(b => b.onclick = () => findPrimary(+b.dataset.i));
+}
+
+async function findPrimary(i) {
+  const m = GAPS[i]; if (!m) return;
+  const act = $("#gapOut").querySelector('.gapRow[data-i="' + i + '"] .gapAct');
+  act.innerHTML = "🔎 Searching for the official text…";
+  try {
+    const r = await fetch("/api/primary/find", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, name: m.name, search_query: m.search_query || m.name})}).then(x => x.json());
+    const cands = r.candidates || [];
+    if (!cands.length) { act.innerHTML = "<span style='color:#e0b050'>No authoritative text found automatically — paste the official link in the box below.</span>"; return; }
+    m._cands = cands;
+    act.innerHTML = cands.map((c, j) =>
+      '<div style="margin:4px 0;font-size:12px">'
+      + '<span style="color:' + (c.kind==="official"?"#6fcf97":"#e0c56f") + '">[' + esc(c.kind||"?") + ']</span> '
+      + '<a href="' + esc(c.url) + '" target="_blank" style="color:#8fb4ff">' + esc(c.title||c.url) + '</a> '
+      + '<button class="btn mini gapFetch" data-i="' + i + '" data-j="' + j + '" style="width:auto">⬇ Fetch &amp; add</button></div>'
+    ).join("");
+    act.querySelectorAll(".gapFetch").forEach(b => b.onclick = () => fetchPrimary(+b.dataset.i, +b.dataset.j, b));
+  } catch (e) {
+    // NetworkError = the web search ran too long and the browser gave up (common
+    // under API load, and for hard-walled UN/treaty sites). Fail helpfully.
+    act.innerHTML = "<span style='color:#e0b050'>⏱️ The finder timed out for this one "
+      + "(slow search / walled site). <a href='#' class='gapRetry' data-i='" + i
+      + "' style='color:#8fb4ff'>Retry</a>, paste an official link below, or — most "
+      + "reliable for treaties — open the PDF in your browser and use the TENAR "
+      + "extension to add it.</span>";
+    const rt = act.querySelector(".gapRetry");
+    if (rt) rt.onclick = (ev) => { ev.preventDefault(); findPrimary(i); };
+  }
+}
+
+async function fetchPrimary(i, j, btn) {
+  const m = GAPS[i]; const c = (m._cands || [])[j]; if (!c) return;
+  btn.disabled = true; btn.textContent = "Fetching…";
+  try {
+    const r = await fetch("/api/updates/fetch", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, laws: [{title: m.name, url: c.url}]})}).then(x => x.json());
+    const x = (r.results || [])[0] || {};
+    btn.outerHTML = x.ok ? "<span style='color:#6fcf97'>✅ added → re-indexing, citeable shortly</span>"
+                         : "<span style='color:#e06f6f'>❌ " + esc(x.why || "fetch failed — try the paste box") + "</span>";
+    if (x.ok && typeof loadDocs === "function") loadDocs();
+  } catch (e) { btn.disabled = false; btn.textContent = "⬇ Fetch & add"; }
+}
 $("#pasteFetch").onclick = async () => {
   const url = $("#pasteUrl").value.trim();
   const title = $("#pasteTitle").value.trim() || url;

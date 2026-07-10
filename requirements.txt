@@ -5,5 +5,7 @@ fastembed
 numpy
 python-dotenv
 python-docx
+reportlab
+httpx
 gunicorn
 gevent

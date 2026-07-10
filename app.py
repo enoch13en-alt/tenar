@@ -29,7 +29,7 @@ import queue
 import numpy as np
 import fitz  # PyMuPDF
 from flask import (Flask, request, jsonify, render_template, session,
-                   redirect, Response, stream_with_context,
+                   redirect, Response, stream_with_context, make_response,
                    copy_current_request_context)
 from dotenv import load_dotenv
 
@@ -37,18 +37,51 @@ load_dotenv()
 
 # ---------------------------------------------------------------- paths
 HERE = os.path.dirname(os.path.abspath(__file__))
-COURSES_DIR = os.path.join(HERE, "courses")
-MATTERS_DIR = os.path.join(HERE, "matters")   # private per-user document workspaces
+# Persistent data (corpus, indexes, model cache, accounts, usage/state) lives under
+# DATA. Locally that's the app directory; on a host set TENAR_DATA to a mounted
+# PERSISTENT volume (e.g. /data) so nothing is lost on restart or image redeploy.
+DATA = os.environ.get("TENAR_DATA") or HERE
+os.makedirs(DATA, exist_ok=True)
+
+
+def _write_json(path, obj, **kw):
+    """Atomic JSON write: dump to a temp file in the same directory, fsync, then
+    os.replace() it into place (an atomic rename on the same filesystem). A reader
+    never sees a half-written file and two concurrent writers can't interleave — the
+    corruption risk plain 'open(path, "w")' carries under concurrent users. Defaults
+    to indent=2; pass indent=None for large files (the chunk index)."""
+    import tempfile
+    kw.setdefault("indent", 2)
+    d = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f, **kw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
+
+COURSES_DIR = os.path.join(DATA, "courses")
+MATTERS_DIR = os.path.join(DATA, "matters")   # private per-user document workspaces
 MATTER_PREFIX = "mtr-"                          # matter ids look like 'mtr-ab12cd34'
-CONFIG_FILE = os.path.join(HERE, "config.json")
-SOURCES_FILE = os.path.join(HERE, "sources.json")
+CONFIG_FILE = os.path.join(DATA, "config.json")
+SOURCES_FILE = os.path.join(DATA, "sources.json")
 os.makedirs(COURSES_DIR, exist_ok=True)
 
 ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 EMBED_DIM = 384
-TOP_K = 15
+TOP_K = 25   # retrieved chunks per question — wider window so a broadly-framed
+             # question is less likely to miss a specific instrument that IS indexed
+             # (raised from 15; ~a few cents more input/question, softened by caching)
 CHUNK_CHARS = 1800
 CHUNK_OVERLAP = 200
 PRICE_IN = 5.0 / 1_000_000
@@ -621,6 +654,30 @@ GRUNDNORM_METHOD = (
     "and their application. Show the law's pedigree; do not drift into a long abstract "
     "jurisprudence essay where the question is narrow.")
 
+REFORM_METHOD = (
+    "EVALUATION & FUTURE-PROOFING — use ONLY where the question actually calls for it "
+    "(evaluating whether a framework is adequate or strikes the right balance, or "
+    "recommending legislative/policy reforms). Do NOT bolt it onto answers that don't "
+    "ask for evaluation or reform.\n"
+    "- Where it IS called for, a strong, high-band move is to assess whether the "
+    "framework is FUTURE-PROOF: adaptable and proportionate, able to evolve with "
+    "technological change, emerging risks, evolving international standards and "
+    "changing national circumstances WITHOUT needing fresh primary legislation each "
+    "time; and whether it balances LEGAL CERTAINTY (clear statutory principles) with "
+    "REGULATORY FLEXIBILITY (technical standards / subsidiary legislation that can be "
+    "updated as knowledge, technology and best practice develop).\n"
+    "- MAKE IT CONCRETE — NEVER A MANTRA. A generic sentence ('the framework should "
+    "be adaptable and future-proof') applied identically to any topic is PADDING an "
+    "examiner discounts, and it fails the same precision standard as an unsupported "
+    "citation. EARN the point: tie it to a SPECIFIC anticipated development in THIS "
+    "subject (e.g. a new mineral such as lithium, deep-seabed mining technology, "
+    "carbon markets, AI, a coming international standard) AND a SPECIFIC feature of "
+    "the ACTUAL framework in the materials (e.g. whether the licensing or fiscal "
+    "regime sits in the primary Act or in amendable subsidiary legislation; whether a "
+    "regulation-making power exists; whether a sunset/review clause is present). Show "
+    "HOW this framework is or is not future-proof on a concrete, grounded point — "
+    "that is the distinction-level version; the generic one is filler.")
+
 # Citation integrity — how to cite law. A wrong or second-hand authority is worse
 # than a candid gap, and in a knowledge base it contaminates every downstream
 # answer that retrieves it. Codifies the citation failures this tool must avoid.
@@ -692,7 +749,16 @@ PRECISION_DISCIPLINE = (
     "front of me, but the compensation duty comes from Act 703' is a BETTER legal "
     "answer than a confident wrong pinpoint. When you don't have the exact detail, "
     "name the instrument and the general provision-area, flag the gap plainly, and "
-    "move on — never paper over it with manufactured specificity."
+    "move on — never paper over it with manufactured specificity.\n"
+    "- SCOPE 'NOT PRESENT' TO WHAT YOU RETRIEVED, NEVER THE WHOLE CORPUS. You see "
+    "only the passages retrieved for THIS question — a small window, not the entire "
+    "collection. So you may say 'the passages retrieved here don't include Act X's "
+    "provision text', but you must NOT say 'these materials do not contain Act X' or "
+    "'the Act itself isn't in the corpus' — you cannot know that from a handful of "
+    "retrieved chunks, and the instrument may well be indexed and simply not pulled "
+    "for this query. When the provision text isn't in front of you, say so as a "
+    "RETRIEVAL fact and add that a more specific question (naming the Act and "
+    "section) would surface it if it is in the corpus — never assert its absence."
 )
 
 ARGUMENTATIVE_COMMITMENT = (
@@ -750,6 +816,33 @@ ARGUMENTATIVE_COMMITMENT = (
     "settle', and present it as the live question, not as an established route."
 )
 
+PRIMARY_FIRST = (
+    "PRIMARY SOURCE FIRST, COMMENTARY AS GLOSS — the preferred structure for every "
+    "legal point is TWO layers, in this order: (1) state the operative rule FROM THE "
+    "PRIMARY INSTRUMENT itself — the treaty article, statute section, regulation or "
+    "the decided case — cited to the instrument by its own provision number; THEN "
+    "(2) add what authors and commentators said ABOUT it, attributed by name "
+    "('Stoiber notes that…', 'the NEA volume argues…'). Lead with the law; layer the "
+    "scholarship on top as interpretation. This is the method the reader wants: the "
+    "provision, then the gloss.\n"
+    "- WHEN THE PRIMARY INSTRUMENT IS IN THE RETRIEVED MATERIAL: state/quote the rule "
+    "from the instrument, cite the provision to the instrument, THEN bring the "
+    "commentary in as interpretation of it.\n"
+    "- WHEN THE PRIMARY IS NOT IN THE RETRIEVED MATERIAL (you have only a book or "
+    "article that DISCUSSES it): this is the trap. Do NOT write 'Article 7 CNS "
+    "provides X' or 'section 7 provides X' as though you hold the instrument — you "
+    "are reading a commentator's account of it, not the provision. ATTRIBUTE it to "
+    "the commentator ('Stoiber states that Article 7 CNS requires X') AND flag that "
+    "the instrument itself is absent — 'the primary text is not in the retrieved "
+    "material; verify against the instrument'. A second-hand account of a provision, "
+    "dressed up as the provision itself, is a grounding failure exactly like an "
+    "invented pinpoint — a book's paraphrase of section 7 is NOT section 7.\n"
+    "- The reader must ALWAYS be able to tell from your wording whether you are "
+    "reading the provision or reading someone's description of it. 'Section 7 "
+    "provides…' claims you have the section; 'Author X says section 7 provides…' is "
+    "honest when the section itself isn't in front of you."
+)
+
 # ---------------------------------------------------------------- config
 def load_config():
     cfg = {"system_prompt": DEFAULT_PROMPT, "total_cost_usd": 0.0,
@@ -764,7 +857,7 @@ def load_config():
 
 
 def save_config(cfg):
-    json.dump(cfg, open(CONFIG_FILE, "w"), indent=2)
+    _write_json(CONFIG_FILE, cfg)
 
 
 CONFIG = load_config()
@@ -773,9 +866,9 @@ CONFIG = load_config()
 # Multi-tenant foundation: accounts, hashed passwords, sessions. Course packs
 # stay SHARED (the reusable-inventory model); what's per-user is auth, plan,
 # usage and which courses a user may access.
-USERS_FILE = os.path.join(HERE, "users.json")
-SECRET_FILE = os.path.join(HERE, ".flask_secret")
-INVITES_FILE = os.path.join(HERE, "invites_used.json")   # single-use invite codes already redeemed
+USERS_FILE = os.path.join(DATA, "users.json")
+SECRET_FILE = os.path.join(DATA, ".flask_secret")
+INVITES_FILE = os.path.join(DATA, "invites_used.json")   # single-use invite codes already redeemed
 USERS = {}
 
 
@@ -790,14 +883,14 @@ def _mark_invite_used(code):
     used = _used_invites()
     used.add(code)
     try:
-        json.dump(sorted(used), open(INVITES_FILE, "w"))
+        _write_json(INVITES_FILE, sorted(used))
     except Exception:
         pass
 
 
 # Weekly Update: parsed teaching schedules cached per course (course name → list
 # of {"week", "topic"}), so we only ask Claude to read the outline once.
-WEEKS_FILE = os.path.join(HERE, "course_weeks.json")
+WEEKS_FILE = os.path.join(DATA, "course_weeks.json")
 COURSE_WEEKS = {}
 
 
@@ -811,7 +904,7 @@ def load_weeks():
 
 def save_weeks():
     try:
-        json.dump(COURSE_WEEKS, open(WEEKS_FILE, "w"), ensure_ascii=False, indent=1)
+        _write_json(WEEKS_FILE, COURSE_WEEKS, ensure_ascii=False, indent=1)
     except Exception:
         pass
 
@@ -826,7 +919,7 @@ def load_users():
 
 
 def save_users():
-    json.dump(USERS, open(USERS_FILE, "w"), indent=2)
+    _write_json(USERS_FILE, USERS)
 
 
 def _hash_pw(pw, salt):
@@ -1009,6 +1102,16 @@ def _looks_real_title(t):
     return bool(t) and len(t) >= 5 and not JUNK_TITLE.search(t) and _alpha_ratio(t) >= 0.6
 
 
+def _is_refusal_title(t):
+    """A model 'I don't see any text / please paste it' reply (emitted when a scanned
+    PDF has no extractable text) must never be stored as a document's display title."""
+    tl = str(t or "").lower()
+    return any(p in tl for p in (
+        "i'm ready", "i am ready", "ready to extract", "don't see", "do not see",
+        "paste the", "please paste", "no document text", "opening text of the legal",
+        "below your instructions", "provide the opening"))
+
+
 def _title_from_fonts(doc):
     best, lines = 0.0, []
     for p in range(min(2, len(doc))):
@@ -1056,7 +1159,7 @@ def load_sources():
 
 
 def save_sources():
-    json.dump(SOURCES, open(SOURCES_FILE, "w"), indent=2, ensure_ascii=False)
+    _write_json(SOURCES_FILE, SOURCES, ensure_ascii=False)
 
 
 def ensure_sources(files):
@@ -1087,7 +1190,7 @@ def display_name(fname):
 # Every document is tagged so a pack visibly covers the full range of authority
 # (primary law + secondary), and so OSCOLA formats each type correctly.
 DOCTYPES = {}
-DOCTYPES_FILE = os.path.join(HERE, "doctypes.json")
+DOCTYPES_FILE = os.path.join(DATA, "doctypes.json")
 TYPES = ["constitution", "statute", "case", "treaty", "book", "article",
          "report", "web", "other"]
 TYPE_LABEL = {"constitution": "Constitution", "statute": "Statute/Legislation",
@@ -1121,7 +1224,7 @@ def load_doctypes():
 
 
 def save_doctypes():
-    json.dump(DOCTYPES, open(DOCTYPES_FILE, "w"), indent=2, ensure_ascii=False)
+    _write_json(DOCTYPES_FILE, DOCTYPES, ensure_ascii=False)
 
 
 def display_type(fname):
@@ -1151,7 +1254,7 @@ def title_type(title):
 # Bibliographic fields (author/publisher/year/place) for complete OSCOLA
 # citations. Filled by the AI "Name documents" pass; empty until then.
 META = {}
-META_FILE = os.path.join(HERE, "meta.json")
+META_FILE = os.path.join(DATA, "meta.json")
 
 
 def load_meta():
@@ -1164,7 +1267,7 @@ def load_meta():
 
 
 def save_meta():
-    json.dump(META, open(META_FILE, "w"), indent=2, ensure_ascii=False)
+    _write_json(META_FILE, META, ensure_ascii=False)
 
 
 def title_meta(title):
@@ -1317,6 +1420,28 @@ def owns_matter(user, cid):
     return any(m.get("id") == cid for m in user_matters(user))
 
 
+def _may_edit_corpus(course):
+    """Who may MODIFY a course's documents: an admin/owner for the shared course
+    packs, or a user for their OWN private matter. A non-owner must never be able to
+    change the shared library (upload junk, rename docs, force re-index)."""
+    u = current_user() or {}
+    if u.get("is_admin"):
+        return True
+    return is_matter(course) and owns_matter(u, course)
+
+
+def _may_read_course(course):
+    """Who may QUERY a course: admin/operator (any), a user for their OWN matter, or
+    a student for a course sourced/enrolled to them. Stops a student reading another
+    student's course just by knowing its name."""
+    u = current_user() or {}
+    if u.get("is_admin"):
+        return True
+    if is_matter(course):
+        return owns_matter(u, course)
+    return course in set(u.get("courses", []) or [])
+
+
 def create_matter(user, name):
     mid = MATTER_PREFIX + secrets.token_hex(4)
     rec = {"id": mid, "name": (name or "Untitled matter").strip()[:80]}
@@ -1356,7 +1481,7 @@ _embed_lock = threading.Lock()
 # default cache lives under /var/folders/.../T (macOS) which the OS purges on
 # reboot/idle — when that happens the ONNX model vanishes and ALL retrieval breaks
 # with a NoSuchFile error. A persistent, project-local cache prevents recurrence.
-EMBED_CACHE = os.path.join(HERE, ".fastembed_cache")
+EMBED_CACHE = os.path.join(DATA, ".fastembed_cache")
 
 
 def get_embedder():
@@ -1518,9 +1643,9 @@ def reindex(course):
         emb = np.vstack(parts) if parts else np.zeros((0, EMBED_DIM), dtype=np.float32)
         with _lock:
             INDEXES[course] = {"chunks": new_chunks, "emb": emb}
-            json.dump(new_chunks, open(cf, "w"))
+            _write_json(cf, new_chunks, indent=None)
             np.save(ef, emb)
-            json.dump(on_disk, open(mf, "w"))
+            _write_json(mf, on_disk, indent=None)
         st["message"] = f"ready — {len(new_chunks)} chunks from {len(on_disk)} document(s)"
     except Exception as e:
         st["message"] = f"error: {e}"
@@ -1559,41 +1684,56 @@ def extract_names(course, update_names=True):
         NAME_STATUS[course] = "set ANTHROPIC_API_KEY first"
         return
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, max_retries=5)
     files = sorted(pdfs)
     for i, f in enumerate(files):
         NAME_STATUS[course] = f"naming & classifying {i + 1}/{len(files)}…"
         try:
             txt = first_pages_text(pdfs[f])
-            msg = client.messages.create(
-                model=ANSWER_MODEL, max_tokens=300,
-                system="You extract bibliographic details from the opening "
-                       "pages of a legal document. Return STRICT JSON only.",
-                messages=[{"role": "user", "content":
-                    "From the opening text below, return JSON: "
-                    '{"name": "full title, plus \' — \' and author/publisher if '
-                    'identifiable", "type": one of '
-                    '["constitution","statute","case","treaty","book",'
-                    '"article","report"], "author": "author or editor(s), '
-                    'else empty", "publisher": "publisher/institution, else '
-                    'empty", "year": "year of publication, else empty", '
-                    '"place": "place of publication if shown, else empty"}. '
-                    "Choose the type by what the document IS (a case report, a "
-                    "statute/act, a constitution, a treaty/convention, a book, "
-                    "a journal article, or an institutional report). Use only "
-                    "what the text actually shows; leave a field empty rather "
-                    "than guessing. JSON only.\n\n" + txt}])
-            raw = "".join(b.text for b in msg.content
-                          if getattr(b, "type", None) == "text").strip()
-            try:
-                obj = _parse_json(raw)
-                nm = (obj.get("name") or "").strip()
-                tp = (obj.get("type") or "").strip().lower()
-            except Exception:
-                nm = raw.splitlines()[0].strip().strip('"') if raw.strip() else ""
-                tp = ""
+            nm, tp, obj = "", "", {}
+            # only ask the model to name a doc that HAS text. A scanned/image PDF
+            # yields empty text; naming it made the model reply "please paste the
+            # text", which used to be stored AS the title.
+            if len((txt or "").strip()) >= 80:
+                msg = client.messages.create(
+                    model=ANSWER_MODEL, max_tokens=300,
+                    system="You extract bibliographic details from the opening "
+                           "pages of a legal document. Return STRICT JSON only.",
+                    messages=[{"role": "user", "content":
+                        "From the opening text below, return JSON: "
+                        '{"name": "full title, plus \' — \' and author/publisher if '
+                        'identifiable", "type": one of '
+                        '["constitution","statute","case","treaty","book",'
+                        '"article","report"], "author": "author or editor(s), '
+                        'else empty", "publisher": "publisher/institution, else '
+                        'empty", "year": "year of publication, else empty", '
+                        '"place": "place of publication if shown, else empty"}. '
+                        "Choose the type by what the document IS (a case report, a "
+                        "statute/act, a constitution, a treaty/convention, a book, "
+                        "a journal article, or an institutional report). Use only "
+                        "what the text actually shows; leave a field empty rather "
+                        "than guessing. JSON only.\n\n" + txt}])
+                raw = "".join(b.text for b in msg.content
+                              if getattr(b, "type", None) == "text").strip()
+                try:
+                    obj = _parse_json(raw)
+                    nm = (obj.get("name") or "").strip()
+                    tp = (obj.get("type") or "").strip().lower()
+                except Exception:
+                    nm = raw.splitlines()[0].strip().strip('"') if raw.strip() else ""
+                    tp = ""
+            # reject junk that must NEVER become a title: a JSON blob, or a
+            # 'no text / please paste' style refusal the model emits on empty input.
+            if nm.startswith("{") or nm.startswith("[") or _is_refusal_title(nm):
+                nm = ""
             if update_names and nm:
                 SOURCES[f] = nm[:160]
+                save_sources()
+            elif update_names and (f not in SOURCES or _is_refusal_title(SOURCES.get(f, ""))
+                                   or str(SOURCES.get(f, "")).startswith("{")):
+                # no usable title (scanned/failed) — use a filename name, and OVERWRITE
+                # any previously-stored junk (refusal/blob) title
+                SOURCES[f] = _name_from_filename(f)
                 save_sources()
             if tp in TYPES and (update_names or f not in DOCTYPES):
                 DOCTYPES[f] = tp
@@ -1678,7 +1818,7 @@ def _scrub_narration(text):
 # from the retrieved text and NOT hedged nearby — the correct-but-ungrounded cite the
 # architecture exists to prevent. Read the rate via /api/admin/grounding; drop the
 # monitor once it holds at zero across a few hundred real questions.
-GROUNDING_LOG = os.path.join(HERE, "grounding_audit.jsonl")
+GROUNDING_LOG = os.path.join(DATA, "grounding_audit.jsonl")
 
 _GA_HEDGE = re.compile(
     r"(unverified|verify|verified against|not (?:in|reproduced in|contained in|"
@@ -1791,7 +1931,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         include_web = True                 # case verification always needs web
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, max_retries=5)
     pdf_dir, _ = course_paths(course)
     content = []
     for ch in retrieved:
@@ -1813,8 +1953,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n"
-                  + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
+                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
@@ -1830,7 +1970,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search",
                             "max_uses": 6}]
     kwargs["system"] = cached_system(system)   # prompt-cache the big system block
-    resp = client.messages.create(**kwargs)
+    resp, _ = _create_final(client, **kwargs)   # model fallback on overload
 
     # The real answer is the text AFTER the last tool call. Everything the model
     # emits during the search/code phase ('let me retry', 'r2 is a string',
@@ -1914,7 +2054,49 @@ def _client():
     if not key:
         return None
     import anthropic
-    return anthropic.Anthropic(api_key=key)
+    # max_retries above the SDK default of 2: the API returns transient 429/500/529
+    # (overloaded) blips that clear in seconds; the SDK retries these with exponential
+    # backoff + jitter, so a higher count silently rides out brief overloads instead
+    # of surfacing "the AI is temporarily overloaded" to the user.
+    return anthropic.Anthropic(api_key=key, max_retries=5)
+
+
+# When the primary model is overloaded, fall through to less-loaded tiers. Each
+# attempt still gets the client's max_retries backoff first; this adds cross-MODEL
+# fallback so a single-tier overload doesn't kill the whole request.
+FALLBACK_MODELS = ["claude-opus-4-7", "claude-sonnet-4-6"]
+
+
+def _stream_final(client, primary_model, **kwargs):
+    """Stream a message to completion with model fallback on overload. Returns
+    (final_message, model_used). Raises the last error only if EVERY model failed."""
+    import anthropic
+    models = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
+    last = None
+    for m in models:
+        try:
+            with client.messages.stream(model=m, **kwargs) as s:
+                return s.get_final_message(), m
+        except anthropic.APIError as e:   # overloaded / rate-limit / server / connection
+            last = e
+            continue
+    raise last
+
+
+def _create_final(client, **kwargs):
+    """Non-streaming create with model fallback on overload. `model` is read from
+    kwargs as the primary. Returns (resp, model_used); raises only if all failed."""
+    import anthropic
+    primary = kwargs.pop("model", ANSWER_MODEL)
+    models = [primary] + [m for m in FALLBACK_MODELS if m != primary]
+    last = None
+    for m in models:
+        try:
+            return client.messages.create(model=m, **kwargs), m
+        except anthropic.APIError as e:
+            last = e
+            continue
+    raise last
 
 
 def cached_system(text):
@@ -1963,6 +2145,39 @@ def _parse_json(text):
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
         text = re.sub(r"\n?```$", "", text).strip()
     return json.loads(text)
+
+
+def _first_json_obj(text):
+    """Robustly pull the FIRST balanced {...} object out of a model response, even
+    when it's wrapped in fences or trailed by extra prose/JSON (which json.loads
+    rejects as 'Extra data'). Falls back to _parse_json for plain arrays/objects."""
+    try:
+        return _parse_json(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object in response")
+    depth = 0
+    in_str = esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i + 1])
+    raise ValueError("unbalanced JSON object")
 
 
 def course_context(course, query, k=15):
@@ -2030,7 +2245,13 @@ def _favicon():
 def home():
     if current_user() is None:
         return render_template("login.html")
-    return render_template("index.html")
+    # no-cache: the single-file app ships JS inline, so a cached page = stale JS
+    # (features "not working" until a hard-refresh). Always serve the latest.
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def _visible_courses_for(user):
@@ -2047,7 +2268,13 @@ def _visible_courses_for(user):
     source material, not study courses, and are never queried at runtime (the
     writing/OSCOLA guidance is baked into the prompt constants). Their folders
     stay on disk, so this is reversible."""
-    return list_courses(visible_only=True)
+    all_visible = list_courses(visible_only=True)
+    if (user or {}).get("is_admin"):
+        return all_visible                       # owner/operator sees the whole library
+    # PER-STUDENT: a student sees ONLY the courses sourced/enrolled for them (their
+    # done-for-you packs), not every other student's. Operator enrols via /api/enroll.
+    enrolled = set((user or {}).get("courses", []) or [])
+    return [c for c in all_visible if c in enrolled]
 
 
 @app.route("/api/courses", methods=["GET", "POST"])
@@ -2111,8 +2338,9 @@ def api_docs():
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     course = safe_course(request.form.get("course", ""))
-    if is_matter(course) and not owns_matter(current_user(), course):
-        return jsonify({"error": "That matter isn't yours."}), 403
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can add to a shared course. You can "
+                        "upload to your own matters."}), 403
     pdf_dir, _ = course_paths(course)
     saved, skipped = [], []
     for f in request.files.getlist("files"):
@@ -2125,11 +2353,113 @@ def api_upload():
     return jsonify({"saved": saved, "skipped": skipped})
 
 
+# ---------------------------------------------------------------- browser extension
+# A browser extension pushes the PDF you're viewing straight into a course. The
+# BROWSER does the fetch, so it defeats what the server can't: modern TLS, JS-rendered
+# pages, cookies/sessions, and bot-blocks. Token-authed (no cookie/SameSite issues).
+EXT_TOKEN_FILE = os.path.join(DATA, ".extension_token")
+
+
+def _ext_token():
+    try:
+        t = open(EXT_TOKEN_FILE).read().strip()
+        if t:
+            return t
+    except Exception:
+        pass
+    import secrets
+    t = secrets.token_urlsafe(24)
+    try:
+        open(EXT_TOKEN_FILE, "w").write(t)
+        os.chmod(EXT_TOKEN_FILE, 0o600)
+    except Exception:
+        pass
+    return t
+
+
+def _ext_ok():
+    tok = (request.headers.get("X-TENAR-Token") or request.form.get("token", "")
+           or request.args.get("token", ""))
+    return bool(tok) and tok == _ext_token()
+
+
+@app.route("/api/extension/token")
+def api_ext_token():
+    """Owner/admin fetches the extension token to paste into the extension once."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    return jsonify({"token": _ext_token()})
+
+
+@app.route("/api/extension/courses")
+def api_ext_courses():
+    if not _ext_ok():
+        return jsonify({"error": "bad or missing token"}), 401
+    return jsonify({"courses": list_courses(visible_only=True)})
+
+
+@app.route("/api/extension/add", methods=["POST"])
+def api_ext_add():
+    """Receive a PDF (or text) the browser grabbed, save it into the course, OCR it
+    if it's a scan, and reindex. Same pipeline as fetch — but the browser did the
+    hard part of getting the bytes."""
+    if not _ext_ok():
+        return jsonify({"error": "bad or missing token"}), 401
+    course = safe_course(request.form.get("course", ""))
+    title = (request.form.get("title", "") or "").strip()
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file received"}), 400
+    data = f.read()
+    if not data:
+        return jsonify({"error": "empty file"}), 400
+    pdf_dir, _ = course_paths(course)
+    safe = re.sub(r'[^\w %()&.,-]', '_', (title or f.filename or "document")).strip()[:80] or "document"
+    # dedup: replace any prior copy of this doc (either extension)
+    for _ext in (".pdf", ".md"):
+        _pp = os.path.join(pdf_dir, f"New law — {safe}{_ext}")
+        if os.path.exists(_pp):
+            try:
+                os.remove(_pp)
+            except Exception:
+                pass
+            SOURCES.pop(f"New law — {safe}{_ext}", None)
+            DOCTYPES.pop(f"New law — {safe}{_ext}", None)
+    # trust the CONTENT, not the filename: an HTML page named ".pdf" must not be
+    # saved as a PDF (it was — the GRA acts *page* landed as "Acts _ GRA.pdf")
+    is_pdf = b"%PDF-" in data[:1024]
+    if is_pdf:
+        has_text, npages = _pdf_has_text(data)
+        fn = f"New law — {safe}.pdf"
+        with open(os.path.join(pdf_dir, fn), "wb") as out:
+            out.write(data)
+        SOURCES[fn] = title or _name_from_filename(fn)
+        save_sources()
+        if not has_text and npages:
+            threading.Thread(target=_ocr_and_index, args=(course, fn, title or safe),
+                             daemon=True).start()
+            return jsonify({"ok": True, "file": fn, "ocr": True,
+                            "why": f"scanned PDF ({npages} pages) — OCR running; searchable shortly."})
+        threading.Thread(target=reindex, args=(course,), daemon=True).start()
+        return jsonify({"ok": True, "file": fn})
+    # non-PDF: treat as HTML/text
+    text = _html_to_text(data) if b"<" in data[:400] else data.decode("utf-8", "ignore")
+    if len(text.strip()) < 200:
+        return jsonify({"error": "that file had little readable text"})
+    fn = f"New law — {safe}.md"
+    with open(os.path.join(pdf_dir, fn), "w", encoding="utf-8") as out:
+        out.write(f"# {title or safe}\n\n" + text)
+    SOURCES[fn] = title or safe
+    save_sources()
+    threading.Thread(target=reindex, args=(course,), daemon=True).start()
+    return jsonify({"ok": True, "file": fn})
+
+
 @app.route("/api/reindex", methods=["POST"])
 def api_reindex():
     course = safe_course((request.json or {}).get("course", ""))
-    if is_matter(course) and not owns_matter(current_user(), course):
-        return jsonify({"error": "That matter isn't yours."}), 403
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can re-index a shared course."}), 403
     if not _status(course)["running"]:
         threading.Thread(target=reindex, args=(course,), daemon=True).start()
     return jsonify({"started": True})
@@ -2138,6 +2468,8 @@ def api_reindex():
 @app.route("/api/extract_names", methods=["POST"])
 def api_extract_names():
     course = safe_course((request.json or {}).get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can rename docs in a shared course."}), 403
     NAME_STATUS[course] = "starting…"
     threading.Thread(target=extract_names, args=(course,), daemon=True).start()
     return jsonify({"started": True})
@@ -2146,6 +2478,8 @@ def api_extract_names():
 @app.route("/api/names", methods=["GET", "POST"])
 def api_names():
     if request.method == "POST":
+        if not (current_user() or {}).get("is_admin"):
+            return jsonify({"error": "Only the owner can rename documents."}), 403
         body = request.json or {}
         for fname, val in (body.get("names", {}) or {}).items():
             if val and val.strip():
@@ -2168,8 +2502,8 @@ def api_ask():
     body = request.json or {}
     q = (body.get("question") or "").strip()
     course = safe_course(body.get("course", ""))
-    if is_matter(course) and not owns_matter(current_user(), course):
-        return jsonify({"error": "That matter isn't yours."}), 403
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
     include_web = bool(body.get("web", True))
     fmt = body.get("format", "essay")
     if not q:
@@ -2317,7 +2651,7 @@ def api_deepen():
 
     system = (WRITING_STYLE + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD
               + "\n\n" + CASE_APPLICATION
-              + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
+              + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
               + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\n" + REASONING_UPGRADE)
     if FORMATS.get(fmt):
@@ -2360,6 +2694,112 @@ def api_deepen():
                         "console." if "credit balance" in msg
                         else "The deepen pass failed partway — please try again.")
             q.put(DELIM + json.dumps({"error": friendly}))
+        finally:
+            q.put(_DONE)
+
+    def generate():
+        threading.Thread(target=_worker, daemon=True).start()
+        while True:
+            try:
+                item = q.get(timeout=5)
+            except queue.Empty:
+                yield PING
+                continue
+            if item is _DONE:
+                break
+            yield item
+
+    return Response(stream_with_context(generate()), mimetype="text/plain",
+                    headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
+
+FIT_INSTRUCTION = (
+    "FIT TO A WORD LIMIT — revise the document so it fits the stated limit WITHOUT "
+    "losing substance. This is condensing, not gutting.\n"
+    "- PRESERVE the thesis, the structure, EVERY distinct legal point, and EVERY "
+    "authority/citation. Never drop an argument or a source to save words — tighten "
+    "the prose instead: cut redundancy, throat-clearing, repetition and padding; "
+    "merge overlapping sentences; make every sentence earn its place.\n"
+    "- Keep the argument's force and the OSCOLA footnotes intact and sequentially "
+    "numbered.\n"
+    "- HIT THE TARGET: land AT OR JUST UNDER the limit (within ~2%), never over. Do "
+    "not pad to reach it if the argument is complete in fewer words.\n"
+    "- Output ONLY the revised document (same format, headings, footnotes). Then on "
+    "a new line output the marker '=== WORDS ===' and a one-line count: body words, "
+    "and total-including-footnotes words."
+)
+
+
+@app.route("/api/exam/fit", methods=["POST"])
+def api_exam_fit():
+    """After Deepen: revise the document to a lecturer's word limit, handling whether
+    footnotes count toward it. Streams the fitted document (heartbeated)."""
+    body = request.json or {}
+    text = (body.get("text") or "").strip()
+    fmt = body.get("format", "essay")
+    try:
+        limit = int(body.get("limit") or 0)
+    except Exception:
+        limit = 0
+    fn_count = bool(body.get("footnotes_count"))
+    if not text:
+        return jsonify({"error": "Nothing to fit."}), 400
+    if limit < 50:
+        return jsonify({"error": "Set a sensible word limit (e.g. 2000)."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+
+    fn_rule = ("The word limit INCLUDES footnotes — count body + footnote text "
+               "TOGETHER and bring the TOTAL to within the limit. You may shorten "
+               "footnotes to essential pinpoints, but never remove a needed citation."
+               if fn_count else
+               "The word limit applies to the BODY TEXT ONLY — footnotes are NOT "
+               "counted. Keep footnotes full; trim only the main body to the limit.")
+    system = (WRITING_STYLE + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST
+              + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + FIT_INSTRUCTION
+              + "\n\nWORD LIMIT: " + str(limit) + " words. FOOTNOTE RULE: " + fn_rule)
+    if FORMATS.get(fmt):
+        system = system + "\n\n" + FORMATS[fmt]
+    cached_sys = cached_system(system)
+    DELIM = "\x1e\x1eMETA\x1e\x1e"
+    PING = "\x1e\x1ePING\x1e\x1e"
+    messages = [{"role": "user", "content":
+                 f"Revise the following to {limit} words ({'footnotes counted' if fn_count else 'footnotes NOT counted'}):\n\n" + text}]
+
+    q = queue.Queue()
+    _DONE = object()
+
+    @copy_current_request_context
+    def _worker():
+        pieces, this_usd, total_usd = [], 0.0, None
+        try:
+            for _round in range(4):
+                with c.messages.stream(model=ANSWER_MODEL, max_tokens=16000,
+                                       thinking={"type": "adaptive"},
+                                       system=cached_sys, messages=messages) as s:
+                    for delta in s.text_stream:
+                        q.put(delta)
+                    resp = s.get_final_message()
+                cost = record_cost(resp, ANSWER_MODEL)
+                this_usd += cost.get("this_usd", 0) or 0
+                total_usd = cost.get("total_usd", total_usd)
+                pieces.append(_text_of(resp))
+                if getattr(resp, "stop_reason", None) != "max_tokens":
+                    break
+                messages.append({"role": "assistant", "content": resp.content})
+                messages.append({"role": "user", "content":
+                    "Continue EXACTLY where you stopped, mid-sentence if needed; "
+                    "do not repeat anything already written."})
+            q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd, 5),
+                                               "total_usd": total_usd}}))
+        except Exception as e:
+            app.logger.exception("fit stream error")
+            q.put(DELIM + json.dumps({"error": "The fit pass failed partway — please try again."}))
         finally:
             q.put(_DONE)
 
@@ -2725,6 +3165,15 @@ LAW_UPDATE = (
     "repealed or replaced instruments; significant recent cases (citation + date); new "
     "or newly-ratified treaties or protocols; and material regulator/policy changes. "
     "Focus on what a student's EXISTING materials might now get wrong.\n"
+    "COMPLETENESS — MISSING AMENDMENTS OF ANY AGE (do this too, not just recent "
+    "changes): for each PRINCIPAL statute in the EXISTING MATERIALS, check its FULL "
+    "amendment history via web search and flag ANY amending Act the materials do NOT "
+    "already hold — even a 10-year-old one. Amendments are CUMULATIVE: holding the "
+    "newest amendment does not mean the earlier ones are superseded. So a student who "
+    "holds a parent Act and its 2019 amendment but NOT its 2015 amendment has a real "
+    "gap — report that missing amendment as a finding, name the parent Act it amends, "
+    "what it changed (e.g. penalties, licence tenure), and its official link. Do NOT "
+    "assume the latest amendment they hold is the only one in force.\n"
     "AUTHORITY & HONESTY (critical — a student may rely on this):\n"
     "- Prefer OFFICIAL / authoritative sources: the national gazette, official "
     "legislation portals, parliament, the courts and the regulators' own sites. Treat "
@@ -2789,6 +3238,139 @@ def _text_after_tools(resp):
                    if getattr(b, "type", None) == "text").strip()
 
 
+PRIMARY_GAP = (
+    "You audit a legal course corpus for MISSING PRIMARY SOURCES. You are given (A) "
+    "the titles of the documents we HAVE and (B) passages from the corpus showing "
+    "what instruments are actually cited. List the PRIMARY instruments — treaties, "
+    "conventions, statutes, acts, regulations, constitutions, and leading decided "
+    "cases — that the materials RELY ON but whose OWN TEXT is NOT among the documents "
+    "we have (they appear only through commentary that discusses them).\n"
+    "RULES:\n"
+    "- GROUND EVERY ENTRY IN THE PASSAGES: only list an instrument actually cited or "
+    "relied on in the passages. Do NOT add instruments from general knowledge that "
+    "the corpus doesn't use, and never invent one. If unsure it's relied on, omit "
+    "it.\n"
+    "- JUDGE PRESENCE AGAINST THE HAVE TITLES: if a document titles itself as that "
+    "instrument's own text (e.g. 'Convention on Nuclear Safety', 'Minerals and "
+    "Mining Act 703'), it is PRESENT — exclude it. A handbook, guide, country "
+    "survey, journal article, or 'World Nuclear Association'-style page that "
+    "DISCUSSES the instrument does NOT count as holding its text — if the corpus has "
+    "only those, the instrument is ABSENT.\n"
+    "- MATCH BY SUBJECT, NOT JUST THE SHORT NAME OR SERIES NUMBER. An instrument is "
+    "PRESENT if a HAVE title describes the SAME document under a fuller or different "
+    "name — e.g. a title 'Regulations for the Safe Transport of Radioactive "
+    "Material' IS the IAEA transport regulations (SSR-6) even though it doesn't say "
+    "'SSR-6'; 'Model Additional Protocol' IS INFCIRC/540. Do NOT flag an instrument "
+    "as missing when a held document clearly IS that instrument's text under another "
+    "name. Only flag it absent if NO held document is its actual text.\n"
+    "- RANK by how LOAD-BEARING the absence is — how much the course's core arguments "
+    "depend on that instrument's actual text.\n"
+    "- For each, give the official name, the specific provisions the materials lean "
+    "on (if identifiable), why you judge it absent, and a precise search query that "
+    "would locate its authoritative published text.\n"
+    'Return STRICT JSON: {"missing":[{"name":..., "provisions":..., "load_bearing":'
+    '"high|medium|low", "why_absent":..., "search_query":...}]} ranked high→low. '
+    "If nothing is missing, return an empty list."
+)
+
+
+@app.route("/api/primary/gaps", methods=["POST"])
+def api_primary_gaps():
+    """Automatically detect which PRIMARY instruments the corpus relies on but does
+    not actually hold as text (referenced only through commentary). Feeds the same
+    fetch pipeline as Legal Updates, but focused on primary sources first."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "Only an admin can audit a shared course."}), 403
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    load_index(course)
+    titles = sorted({display_name(f) for f in course_pdfs(course)})
+    if not titles:
+        return jsonify({"error": "No documents in this course yet.", "missing": []})
+    ctx = course_context(course, "treaty convention statute act section article "
+                         "regulation constitution decided case cited authority "
+                         "provides requires", 40)
+    have = "\n".join("- " + t for t in titles)
+    user = (f"DOCUMENTS WE HAVE (titles):\n{have}\n\nPASSAGES FROM THE CORPUS (what "
+            f"is actually cited and relied on):\n{ctx}\n\nList the primary "
+            "instruments RELIED ON but ABSENT as their own text, as JSON, ranked by "
+            "how load-bearing the gap is.")
+    try:
+        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=5000,
+                                system=cached_system(PRIMARY_GAP),
+                                messages=[{"role": "user", "content": user}])
+        data = _first_json_obj(_text_of(resp))
+        missing = data.get("missing") if isinstance(data, dict) else data
+        if not isinstance(missing, list):
+            missing = []
+    except Exception as e:
+        return jsonify({"error": "Gap scan failed — " + str(e)[:140], "missing": []})
+    return jsonify({"missing": missing, "have_count": len(titles),
+                    "cost": record_cost(resp, ANSWER_MODEL)})
+
+
+@app.route("/api/primary/find", methods=["POST"])
+def api_primary_find():
+    """For one missing primary instrument, web-search for its AUTHORITATIVE full
+    text and return candidate {title, url} — which then feed /api/updates/fetch to
+    download + include + reindex (the 'you find and include them' half)."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    name = (body.get("name") or "").strip()
+    query = (body.get("search_query") or name).strip()
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "admin only", "candidates": []}), 403
+    if not name:
+        return jsonify({"candidates": []})
+    c = _client()
+    if not c:
+        return jsonify({"candidates": []})
+    sys = (
+        "Find the AUTHORITATIVE published full TEXT of the named legal instrument "
+        "online — the official treaty depositary (e.g. UN Treaty Collection, IAEA), "
+        "an official gazette, or a government legislation site. Prefer a DIRECT link "
+        "to the instrument's OWN text, PDF where possible — NOT commentary, a "
+        "summary, a casebrief, or a news article about it.\n"
+        "PREFER A DIRECT FILE URL, NOT A LANDING PAGE. A URL ending in '.pdf' that "
+        "points straight at the document (e.g. an IAEA file like "
+        "'iaea.org/sites/default/files/infcirc567.pdf', or a gazette/govt PDF) is "
+        "far more fetchable than a topic/overview page ('/topics/…', "
+        "'/publications/<number>/…'), which official sites often bot-block with a "
+        "403. When you know the document's series number (e.g. IAEA INFCIRC/NNN), "
+        "prefer the direct file form of it. Put the most directly-fetchable file URL "
+        "FIRST, and include a landing page only as a lower-ranked fallback.\n"
+        "Use web search. Return "
+        'STRICT JSON: {"candidates":[{"title":..., "url":..., "kind":'
+        '"official|unofficial", "note":...}]} best first, max 4. If you cannot find '
+        "an authoritative text, return an empty candidates list rather than guessing "
+        "a URL.")
+    def _run():
+        # fewer web searches (3) so it returns before a browser fetch times out
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1200,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       f"Instrument: {name}\nSearch hint: {query}\n\nFind its "
+                       "authoritative full text online."}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        # run the blocking web-search off the gevent hub so many concurrent Find
+        # clicks don't serialise on the worker and time the browser out
+        data = gevent.get_hub().threadpool.apply(_run)
+        cands = data.get("candidates") if isinstance(data, dict) else data
+        if not isinstance(cands, list):
+            cands = []
+    except Exception as e:
+        return jsonify({"candidates": [], "error": str(e)[:140]})
+    return jsonify({"candidates": cands[:4]})
+
+
 @app.route("/api/updates", methods=["POST"])
 def api_updates():
     """Web-scan a course's legal domain for recent changes and stream a verified,
@@ -2808,7 +3390,9 @@ def api_updates():
     ensure_loaded(course)
     weeks = COURSE_WEEKS.get(course, {}).get("weeks", [])
     topics = "; ".join(w["topic"] for w in weeks[:20])
-    titles = "; ".join(display_name(f) for f in sorted(course_pdfs(course))[:25])
+    # ALL titles (not a sample): the completeness check must know exactly what's
+    # held to flag what's missing (e.g. a 2015 amendment when only 2019 is present)
+    titles = "; ".join(sorted({display_name(f) for f in course_pdfs(course)}))
     ctx = (f"COURSE: {course}\n"
            f"TOPICS COVERED: {topics or '(no outline parsed — infer from titles)'}\n"
            f"EXISTING MATERIALS (titles): {titles}\n\n"
@@ -2902,14 +3486,54 @@ def _safe_fetch(url, max_bytes=30_000_000, timeout=25):
     except socket.gaierror:
         raise ValueError("cannot resolve host")
     import httpx
-    with httpx.Client(follow_redirects=True, timeout=timeout,
-                      headers={"User-Agent": "Mozilla/5.0 (TENAR legal-updates fetcher)"}) as cl:
-        r = cl.get(url)
-        r.raise_for_status()
-        data = r.content
-        if len(data) > max_bytes:
-            raise ValueError("document too large")
-        return data, (r.headers.get("content-type", "") or "").lower()
+    # A real browser UA + Accept headers: many official sites (IAEA, ICJ, UNECE,
+    # CanLII) return 403 to requests that announce themselves as bots. These are
+    # public, published legal instruments; a normal browser fetch is legitimate.
+    browser_headers = {
+        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 "
+                       "Safari/537.36"),
+        "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+                   "application/pdf,*/*;q=0.8"),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    def _get(verify):
+        with httpx.Client(follow_redirects=True, timeout=timeout,
+                          headers=browser_headers, verify=verify) as cl:
+            r = cl.get(url)
+            r.raise_for_status()
+            return r
+    try:
+        r = _get(True)                       # normal, secure TLS first
+    except Exception as e:
+        # many official gov/legal sites run OLD or misconfigured TLS (weak ciphers,
+        # legacy versions) that a modern/strict SSL stack refuses with an SSL/TLS
+        # handshake error. For fetching PUBLIC legal documents, retry once with a
+        # permissive context (older TLS + lower cipher security level). Only on an
+        # SSL-shaped failure — normal fetches stay strict.
+        import ssl
+        if "ssl" not in type(e).__module__.lower() and "SSL" not in str(e) \
+                and "TLS" not in str(e) and "certificate" not in str(e).lower():
+            raise
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        for attr, val in (("minimum_version", getattr(ssl, "TLSVersion", None)
+                           and ssl.TLSVersion.TLSv1),):
+            try:
+                if val is not None:
+                    setattr(ctx, attr, val)
+            except Exception:
+                pass
+        try:
+            ctx.set_ciphers("DEFAULT@SECLEVEL=1")
+        except Exception:
+            pass
+        r = _get(ctx)
+    data = r.content
+    if len(data) > max_bytes:
+        raise ValueError("document too large")
+    return data, (r.headers.get("content-type", "") or "").lower()
 
 
 def _html_to_text(data):
@@ -2922,6 +3546,103 @@ def _html_to_text(data):
     s = re.sub(r'(?s)<[^>]+>', ' ', s)
     s = _html.unescape(s)
     return re.sub(r'\n{3,}', '\n\n', re.sub(r'[ \t]+', ' ', s)).strip()
+
+
+# ---------------------------------------------------------------- OCR (Claude vision)
+# Scanned/image-only PDFs (no text layer) index to nothing. Rather than reject them,
+# render each page to an image and have Claude transcribe it — no local OCR install.
+OCR_STATUS = {}          # course -> human-readable progress string
+
+
+def _pdf_has_text(data_or_path, pages=6):
+    """True if the PDF has a real text layer (not a scan). Accepts bytes or a path."""
+    try:
+        d = (fitz.open(stream=data_or_path, filetype="pdf")
+             if isinstance(data_or_path, (bytes, bytearray))
+             else fitz.open(data_or_path))
+        sample = "".join(d[i].get_text() for i in range(min(pages, d.page_count)))
+        n = d.page_count
+        d.close()
+        return (n == 0) or len(sample.strip()) >= 100, n
+    except Exception:
+        return True, 0        # can't open → don't treat as a scan
+
+
+def _ocr_pdf_text(pdf_path, course=None, per_call=3, dpi=150, max_pages=400):
+    """Transcribe a scanned PDF via Claude vision, a few pages per call. Returns the
+    full text. Updates OCR_STATUS[course] as it goes."""
+    import base64
+    c = _client()
+    if not c:
+        return ""
+    doc = fitz.open(pdf_path)
+    n = min(doc.page_count, max_pages)
+    out, i = [], 0
+    while i < n:
+        batch = list(range(i, min(i + per_call, n)))
+        if course:
+            OCR_STATUS[course] = f"OCR: transcribing pages {batch[0]+1}-{batch[-1]+1} of {n}…"
+        content = []
+        for pg in batch:
+            png = doc[pg].get_pixmap(dpi=dpi).tobytes("png")
+            content.append({"type": "image", "source": {"type": "base64",
+                            "media_type": "image/png",
+                            "data": base64.b64encode(png).decode()}})
+        content.append({"type": "text", "text": (
+            f"Transcribe the text of these {len(batch)} scanned pages of a legal "
+            "document VERBATIM and in order. Preserve section and subsection numbers, "
+            "headings, and structure. Start each page with a line '--- page N ---'. "
+            "Output ONLY the transcribed text — no commentary, no summary.")})
+        try:
+            resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
+                                    messages=[{"role": "user", "content": content}])
+            out.append(_text_of(resp))
+        except Exception as e:
+            out.append(f"[OCR failed for pages {batch[0]+1}-{batch[-1]+1}: {str(e)[:60]}]")
+        i += per_call
+    doc.close()
+    return "\n\n".join(out).strip()
+
+
+def _ocr_and_index(course, pdf_fn, title):
+    """Background: OCR a scanned PDF already saved in the course, write the text as a
+    searchable .md, drop the image PDF, and reindex."""
+    pdf_dir, _ = course_paths(course)
+    pdf_path = os.path.join(pdf_dir, pdf_fn)
+    OCR_STATUS[course] = f"OCR starting for “{title}”…"
+    try:
+        text = _ocr_pdf_text(pdf_path, course=course)
+    except Exception as e:
+        OCR_STATUS[course] = f"OCR failed: {str(e)[:80]}"
+        return
+    if len(text.strip()) < 200:
+        OCR_STATUS[course] = "OCR produced almost no text — the scan may be unreadable."
+        return
+    safe = re.sub(r'[^\w %()&.,-]', '_', title).strip()[:80] or "ocr-law"
+    md_fn = f"New law — {safe}.md"
+    hdr = (f"# {title}\n\n(Text OCR-extracted from a scanned PDF via Claude vision — "
+           "verify against the official published version.)\n\n")
+    with open(os.path.join(pdf_dir, md_fn), "w", encoding="utf-8") as f:
+        f.write(hdr + text)
+    SOURCES[md_fn] = title
+    # the image PDF is now redundant (its text lives in the .md) — remove it
+    try:
+        os.remove(pdf_path)
+    except Exception:
+        pass
+    SOURCES.pop(pdf_fn, None)
+    DOCTYPES.pop(pdf_fn, None)
+    save_sources()
+    save_doctypes()
+    OCR_STATUS[course] = f"OCR done — “{title}” transcribed; re-indexing so it's citeable."
+    reindex(course)
+    OCR_STATUS[course] = f"✅ “{title}” OCR'd and indexed — it's now searchable."
+
+
+@app.route("/api/ocr/status")
+def api_ocr_status():
+    course = safe_course(request.args.get("course", ""))
+    return jsonify({"status": OCR_STATUS.get(course, "")})
 
 
 @app.route("/api/updates/fetch", methods=["POST"])
@@ -2956,18 +3677,75 @@ def api_updates_fetch():
             results.append({"title": title, "ok": False, "why": f"could not fetch ({e})"})
             continue
         safe = re.sub(r'[^\w %()&.,-]', '_', title).strip()[:80] or "new-law"
+        # dedup: drop any prior copy of THIS instrument (either extension) before
+        # writing, so re-fetching REPLACES rather than accumulating a .pdf + .md pair
+        for _ext in (".pdf", ".md"):
+            _prev = f"New law — {safe}{_ext}"
+            _pp = os.path.join(pdf_dir, _prev)
+            if os.path.exists(_pp):
+                try:
+                    os.remove(_pp)
+                except Exception:
+                    pass
+                SOURCES.pop(_prev, None)
+                DOCTYPES.pop(_prev, None)
         is_pdf = ("pdf" in ctype or url.lower().split("?")[0].endswith(".pdf")
                   or data[:5] == b"%PDF-")
         try:
             if is_pdf:
+                # guard: a SCANNED / image-only PDF has no text layer, so it indexes
+                # to nothing and answers silently keep using older docs. Detect it
+                # here (sample the first pages) and reject with a clear message
+                # rather than adding an unindexable file.
+                try:
+                    _d = fitz.open(stream=data, filetype="pdf")
+                    _sample = "".join(_d[i].get_text()
+                                      for i in range(min(6, _d.page_count)))
+                    _npages = _d.page_count
+                    _d.close()
+                except Exception:
+                    _sample, _npages = "x" * 999, 0   # can't open → let it through
+                if _npages and len(_sample.strip()) < 100:
+                    # scanned image PDF → save it and OCR it via Claude vision in the
+                    # background; it becomes a searchable .md when done
+                    fn = f"New law — {safe}.pdf"
+                    with open(os.path.join(pdf_dir, fn), "wb") as f:
+                        f.write(data)
+                    SOURCES[fn] = title
+                    save_sources()
+                    threading.Thread(target=_ocr_and_index, args=(course, fn, title),
+                                     daemon=True).start()
+                    results.append({"title": title, "ok": True, "ocr": True,
+                        "why": (f"scanned PDF ({_npages} pages) — OCR is running via "
+                                "Claude vision (a few minutes for a long document). "
+                                "It'll be searchable when done.")})
+                    continue
                 fn = f"New law — {safe}.pdf"
                 with open(os.path.join(pdf_dir, fn), "wb") as f:
                     f.write(data)
             else:
                 text = _html_to_text(data)
+                low = text.lower()
+                cookie_hits = sum(low.count(k) for k in
+                                  ("cookie", "accept all", "manage preferences",
+                                   "non-essential", "privacy policy"))
+                # legal-document markers — a real statute page has these
+                legal_hits = sum(low.count(k) for k in
+                                 ("section ", "shall", "enacted", "parliament",
+                                  "hereby", "in force", "repeal", "act, 20", "act 20"))
                 if len(text.strip()) < 200:
                     results.append({"title": title, "ok": False,
                                     "why": "page had little readable text (may need manual download)"})
+                    continue
+                # reject website chrome / cookie-consent pages and thin summaries: a
+                # JS-rendered mirror (e.g. judy.legal AMP) returns cookie boilerplate,
+                # not the law. Require real legal text and little cookie noise.
+                if legal_hits < 5 or (cookie_hits >= 3 and legal_hits < 15) or \
+                        (len(text.split()) < 400 and legal_hits < 8):
+                    results.append({"title": title, "ok": False,
+                        "why": ("this page looks like a website/cookie or summary page, "
+                                "not the statute's own text — try the official PDF, or "
+                                "download it and use Upload.")})
                     continue
                 fn = f"New law — {safe}.md"
                 hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today} (web copy — verify "
@@ -3103,8 +3881,8 @@ def api_advisory():
     ctx = course_context(course, instructions, 18)     # labelled matter passages
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n"
-              + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+              + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
               + "\n\n" + ECONOMY + "\n\n" + ADVISORY_TASK
               + "\n\nOSCOLA RULES:\n" + OSCOLA_GUIDE)
     if FORMATS.get(deliverable):
@@ -3190,6 +3968,268 @@ def api_prompt():
 
 
 # ---------------------------------------------------------------- Exam Coach
+@app.route("/api/exam/focus", methods=["POST"])
+def api_exam_focus():
+    """Cheap helper: the moment a question is dropped into Exam Coach, derive the
+    KEY FOCUS AREAS from it so the focus boxes auto-populate instead of being keyed
+    in by hand. Question-only (no retrieval) → fast and near-free; unmetered. The
+    full course-grounded decomposition still happens later in /api/exam/breakdown."""
+    body = request.json or {}
+    q = (body.get("question") or "").strip()
+    if len(q) < 30:
+        return jsonify({"focus": []})
+    course = safe_course(body.get("course", ""))
+    c = _client()
+    if not c:
+        return jsonify({"focus": []})
+    try:
+        msg, _ = _create_final(
+            c,
+            model=ANSWER_MODEL, max_tokens=700,
+            system=(
+                "You pull out the KEY ISSUES / TASKS a law exam question requires the "
+                "answer to address, to populate an exam-prep checklist. Extract EVERY "
+                "listed task — never stop early or truncate; if there are ten, return "
+                "ten.\n"
+                "EACH ITEM MUST BE A COMPLETE, SELF-CONTAINED INSTRUCTION that is "
+                "meaningful on its own. NEVER output a bare party name, bare noun or "
+                "fragment that means nothing without its heading — 'GreenRock Minerals "
+                "Ltd' alone is useless; 'Advise GreenRock Minerals Ltd on its legal "
+                "rights' is the task.\n"
+                "RULE 1 — PREFER VERBATIM. If the question spells out what to do — "
+                "numbered/bulleted tasks, directives, or explicit instructions "
+                "('identify and analyse…', 'evaluate whether…', 'recommend…') — extract "
+                "each VERBATIM: keep the examiner's EXACT wording, stripping only the "
+                "leading bullet/number marker and trailing ';'/'.'. Preserve order. Do "
+                "NOT paraphrase, merge, shorten or invent labels for these.\n"
+                "PARTIES TO ADVISE. When the question says 'Advise the following "
+                "parties about their legal rights' then lists them, turn EACH party "
+                "into its own full instruction by carrying the governing verb+object "
+                "down to it — e.g. 'Advise GreenRock Minerals Ltd about their legal "
+                "rights', 'Advise the Paramount Chief and the affected landowners about "
+                "their legal rights'. One item per party. Never emit the bare name.\n"
+                "RULE 2 — ONLY IF NONE. If the question is pure prose with no explicit "
+                "list of tasks/parties/instructions, THEN derive the principal legal "
+                "issues as concise but complete labels instead.\n"
+                "Return STRICT JSON: an array of strings. No numbering, no prose, no "
+                "markdown fences."),
+            messages=[{"role": "user", "content": (
+                f"Course: {course}\n\nEXAM QUESTION / CASE STUDY:\n{q}\n\n"
+                "Return ALL the key issues/tasks as a JSON array — each a complete "
+                "self-contained instruction (parties rendered as 'Advise X about their "
+                "legal rights'), directives verbatim, in the order they appear.")}])
+        raw = "".join(b.text for b in msg.content
+                      if getattr(b, "type", None) == "text").strip()
+        try:
+            areas = _parse_json(raw)
+        except Exception:
+            # fallback: one item per non-empty line, stripped of bullets/numbering
+            areas = [re.sub(r'^[\s\-\*•\d\.\)"]+', "", ln).strip().strip('";,')
+                     for ln in raw.splitlines() if ln.strip()]
+        if not isinstance(areas, list):
+            areas = []
+        areas = [str(a).strip() for a in areas if str(a).strip()][:14]
+    except Exception:
+        areas = []
+    return jsonify({"focus": areas})
+
+
+VOICE_EVAL = (
+    "The STUDENT has offered THEIR OWN position on this issue. Your job is to TEST "
+    "it on exactly the same precision standard you hold your own analysis to — NOT "
+    "to include it. You must be genuinely willing to reject it. A view enters the "
+    "essay ONLY when it is both legally sound AND grounded in the retrieved "
+    "material. Work in this order:\n"
+    "1) GROUND IT — name the authority/source the view rests on, and judge whether "
+    "the RETRIEVED MATERIAL actually supports it. status is one of: 'grounded' (the "
+    "authority is in the retrieved material AND supports the view); 'ungrounded' "
+    "(the authority is NOT in the retrieved material — you cannot confirm it from "
+    "what you have, even if it may be right); 'contradicted' (the retrieved law "
+    "cuts against the view).\n"
+    "2) COUNTER IT — state the single STRONGEST objection to the view, so the "
+    "student is committing to something stress-tested.\n"
+    "3) PLACE IT — 'novel' (not already in the sources) or 'present' (the sources "
+    "already make this point), with a brief why.\n"
+    "Then a VERDICT, and act on it:\n"
+    "- 'holds' — legally sound AND grounded. ONLY then merge: in merged_answer, "
+    "rewrite this issue's answer so the student's point is woven into the essay's "
+    "OWN voice and flow (not bolted on), and end merged_answer with a final "
+    "paragraph exactly: '[Argument contributed by the student.]' so provenance "
+    "survives export.\n"
+    "- 'contradicted' — the law is against it. Do NOT merge (merged_answer null). "
+    "In reason, say plainly why, naming the provision/authority that cuts against "
+    "it.\n"
+    "- 'ungrounded' — sound in principle but the supporting authority is NOT in the "
+    "retrieved material. Do NOT merge yet (merged_answer null). In need_authority, "
+    "name exactly which authority the student must verify before it can merge.\n"
+    "Apply CALIBRATED PRECISION to the student's view exactly as to your own: cite "
+    "only as precisely as the source supports; 'not in the retrieved material' is a "
+    "valid finding about their view, just as about yours. Do not soften a verdict "
+    "to be agreeable.\n"
+    "CONSISTENCY: ground.status must match the verdict — call it 'grounded' ONLY "
+    "when the verdict is 'holds' (and you are therefore providing merged_answer). "
+    "If you are withholding the merge for any reason, status is 'ungrounded' or "
+    "'contradicted', never 'grounded'. Whenever verdict is 'holds', merged_answer "
+    "MUST be a non-empty rewrite ending in the attribution line."
+)
+
+
+@app.route("/api/exam/voice", methods=["POST"])
+def api_exam_voice():
+    """'Add your voice': test the student's OWN position on an issue — ground it,
+    counter it, place it, and return a verdict (holds / contradicted / ungrounded).
+    Merge into the issue answer ONLY on 'holds', attributed. Never just includes."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    issue = (body.get("issue") or "").strip()
+    view = (body.get("view") or "").strip()
+    why = (body.get("why") or "").strip()
+    law = (body.get("law") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    if not issue or not view:
+        return jsonify({"error": "Give both the issue and your view."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    ctx = course_context(course, issue + "\n" + view, 30)  # wider window: a fair
+    # grounding check needs to actually see the authority the view may rest on
+    system = (VOICE_EVAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
+              + "\n\n" + ARGUMENTATIVE_COMMITMENT
+              + "\n\nReturn STRICT JSON only, no prose, no markdown fences.")
+    user = (
+        f"RETRIEVED MATERIAL (the only law you may rely on):\n{ctx}\n\n"
+        f"ISSUE: {issue}\n"
+        + (f"WHY IT MATTERS: {why}\n" if why else "")
+        + (f"LAW FLAGGED: {law}\n" if law else "")
+        + (f"\nCURRENT DRAFT ANSWER FOR THIS ISSUE:\n{answer}\n" if answer
+           else "\n(No draft answer for this issue yet — if the view holds, build "
+                "the merged answer from the retrieved law and the student's point.)\n")
+        + f"\nTHE STUDENT'S VIEW TO TEST:\n{view}\n\n"
+        "Return JSON with exactly these keys: "
+        '"ground": {"authority": str, "status": "grounded|ungrounded|contradicted", '
+        '"note": str}, "counter": str, "place": "novel|present", "place_note": str, '
+        '"verdict": "holds|contradicted|ungrounded", "reason": str, '
+        '"need_authority": str (empty unless ungrounded), '
+        '"merged_answer": str or null (non-null ONLY if verdict is holds).')
+    try:
+        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=6000,
+                                system=cached_system(system),
+                                messages=[{"role": "user", "content": user}])
+        data = _first_json_obj(_text_of(resp))
+    except Exception as e:
+        return jsonify({"error": "Couldn't evaluate that view — " + str(e)[:140]})
+    consume("questions")
+    # normalise the verdict: the model sometimes fills ground.status but leaves the
+    # top-level verdict blank. Derive a valid verdict, then NEVER merge unless it is
+    # a genuine 'holds' (grounded status + not contradicted).
+    v = (data.get("verdict") or "").strip().lower()
+    gs = ((data.get("ground") or {}).get("status") or "").strip().lower()
+    if v not in ("holds", "contradicted", "ungrounded"):
+        v = ("contradicted" if gs == "contradicted"
+             else "ungrounded" if gs == "ungrounded"
+             else "holds" if gs == "grounded" else "ungrounded")
+    if gs == "contradicted":            # a contradicted ground can never 'hold'
+        v = "contradicted"
+    if v == "holds" and not (data.get("merged_answer") or "").strip():
+        v = "ungrounded"                # can't 'hold' with nothing actually merged
+    data["verdict"] = v
+    if v != "holds":
+        data["merged_answer"] = None
+    else:
+        data.setdefault("ground", {})["status"] = "grounded"  # keep display consistent
+    data["cost"] = record_cost(resp, ANSWER_MODEL)
+    return jsonify(data)
+
+
+CUE_PROMPT = (
+    "The student wants to 'add their voice' on this issue and needs THINKING-CUES to "
+    "get past a blank box — NOT a view. You must NOT state a position, a conclusion, "
+    "or ANY claim the student could paste into the essay. Produce ONLY directions to "
+    "find their own thought. THE TEST: if a cue contains a claim usable as-is, it has "
+    "overstepped — rewrite it as a QUESTION pointed at the student's own knowledge. "
+    "'Where might practice diverge here?' is a cue; 'Practice diverges because X' is "
+    "you doing their job.\n"
+    "Work through all FIVE cue types for THIS specific issue:\n"
+    "1) Practice gap — where might law-on-paper diverge from what happens in "
+    "practice? Name the specific mechanism in THIS issue.\n"
+    "2) Open question — what genuinely unsettled point does this issue turn on that "
+    "the sources do not settle?\n"
+    "3) Connection — what elsewhere in the materials might link to this that the "
+    "sources treat separately?\n"
+    "4) Framing to challenge — what received framing here (e.g. how the Policy frames "
+    "it) could be pushed on?\n"
+    "5) Example — invite the STUDENT to recall or construct THEIR OWN real matter "
+    "or scenario. Do NOT narrate a scenario, timeline, price move or figure drawn "
+    "from the materials — ask them to supply it.\n"
+    "Every cue MUST be a question directed at the student's own knowledge, never a "
+    "statement of the answer.\n"
+    "HARD LINE — NO PASTEABLE CLAIMS. A cue must contain NOTHING the student could "
+    "lift into their essay. Therefore: do NOT cite section, article, clause or "
+    "regulation numbers; do NOT quote statutory, policy, lease or case wording; do "
+    "NOT state what a provision says, holds, grants or carves out; do NOT recite "
+    "specific figures, prices, percentages or named-deal facts from the materials. "
+    "Naming any of those IS doing the student's research for them. Instead name the "
+    "MECHANISM or TENSION in plain, generic words and ask their view — e.g. 'how "
+    "compensation is actually negotiated and paid to farmers on the ground', or "
+    "'whether compensation is a one-off for surface loss or an ongoing entitlement "
+    "that tracks the mineral's value'. If you catch yourself typing a section "
+    "number, a quotation, or a proposition of law, DELETE it and replace it with the "
+    "plain-language topic. The point-at, never the thing itself.\n"
+    "Where a type genuinely does NOT apply to this issue, set applies=false with a "
+    "one-line 'nothing obvious here' note rather than manufacturing a weak or "
+    "fabricated cue — an invented connection that isn't really in the material is as "
+    "bad as an invented citation. Show the strong ones; flag the empty ones "
+    "honestly; never pad to five.\n"
+    "FINAL SELF-SCAN before you answer: reread every cue and DELETE any number, "
+    "percentage, price, date, or phrase in quotation marks, and any statement of "
+    "what a source says — rewrite it as the plain-language topic plus a question. A "
+    "clean cue names a direction to look and asks what the student thinks; it "
+    "carries no fact they could quote.\n"
+    'Return STRICT JSON: {"cues":[{"type": one of the five names, "applies": '
+    'true|false, "cue": the question (or the brief "nothing obvious here" note)}]} '
+    "— all five types, in order."
+)
+
+
+@app.route("/api/exam/cues", methods=["POST"])
+def api_exam_cues():
+    """When the student picks 'Add your voice', hand them issue-specific thinking-
+    cues so they're not facing a blank box — questions that point at where their own
+    original thought is possible, never the view itself. Unmetered; cached per issue
+    client-side."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    issue = (body.get("issue") or "").strip()
+    if not issue:
+        return jsonify({"cues": []})
+    why = (body.get("why") or "").strip()
+    law = (body.get("law") or "").strip()
+    c = _client()
+    if not c:
+        return jsonify({"cues": []})
+    ctx = course_context(course, issue + " " + why, 20)
+    user = (
+        f"RETRIEVED MATERIAL (what the sources actually contain):\n{ctx}\n\n"
+        f"ISSUE: {issue}\n" + (f"WHY IT MATTERS: {why}\n" if why else "")
+        + (f"LAW FLAGGED: {law}\n" if law else "")
+        + "\nGive the five thinking-cue types for THIS issue as JSON — each a "
+        "question pointed at my own knowledge, empty types flagged not faked.")
+    try:
+        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=1200,
+                                system=cached_system(CUE_PROMPT),
+                                messages=[{"role": "user", "content": user}])
+        data = _first_json_obj(_text_of(resp))
+        cues = data.get("cues") if isinstance(data, dict) else data
+        if not isinstance(cues, list):
+            cues = []
+    except Exception:
+        cues = []
+    return jsonify({"cues": cues})
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
@@ -3200,11 +4240,19 @@ def api_exam_breakdown():
     focus = [f.strip() for f in (body.get("focus") or []) if f and f.strip()]
     if not q:
         return jsonify({"error": "empty question"}), 400
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    # meter the breakdown as one question — it's the gate to Exam Coach, so this also
+    # caps the (unmetered but cheap) per-issue cues that depend on its issues.
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
 
-    ctx = course_context(course, q, 15)
+    ctx = course_context(course, q, 25)
     if not ctx.strip():
         return jsonify({"error": "The selected course '" + course + "' has no "
                         "documents. Pick a course with materials in the dropdown "
@@ -3252,9 +4300,8 @@ def api_exam_breakdown():
     # Stream (the breakdown can take 30-60s and the enlarged prompt produces a
     # lot of JSON) with a generous cap so the issue list is never truncated —
     # truncation used to yield unparseable JSON and a silently empty breakdown.
-    with c.messages.stream(model=ANSWER_MODEL, max_tokens=8000, system=system,
-                           messages=[{"role": "user", "content": user}]) as s:
-        resp = s.get_final_message()
+    resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
+                                      messages=[{"role": "user", "content": user}])
     txt = _text_of(resp)
     cost = record_cost(resp)
     try:
@@ -3288,7 +4335,7 @@ def api_mindmap():
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
-    ctx = course_context(course, q, 15)
+    ctx = course_context(course, q, 25)
     if not ctx.strip():
         return jsonify({"error": "This course has no documents. Add materials "
                         "and Re-index first."})
@@ -3442,8 +4489,8 @@ def api_exam_assemble():
     system = (
         CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
-        + CASE_APPLICATION + "\n\n"
-        + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
+        + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+        + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document, and: "
@@ -3452,7 +4499,13 @@ def api_exam_assemble():
         "a single argued piece (not stapled blocks; remove repetition). PRESERVE "
         "the opposing views, alternative approaches, and their attribution (who "
         "holds each — author, institution, court, jurisdiction) that appear in "
-        "the analyses; do not flatten a genuine debate into one view. Introduce "
+        "the analyses; do not flatten a genuine debate into one view. If an "
+        "analysis carries a '[Argument contributed by the student.]' note, that "
+        "argument was vetted and added by the student — weave it into the prose in "
+        "the document's own voice and KEEP an attribution: retain a footnote or "
+        "parenthetical to the effect of 'argument contributed by the author/"
+        "student', so their provenance survives into the exported document. "
+        "Introduce "
         "no new facts and no new law — use only what appears in the analyses and "
         "source list below; do not fabricate citations. QUOTATION INTEGRITY: put "
         "text in quotation marks ONLY if that exact wording appears in an "
@@ -3568,16 +4621,28 @@ def api_exam_assemble():
         used_fallback = False
         MAX_ROUNDS = 4
         try:
+            import anthropic
+            def _round_fallback(start_model):
+                # overload fallback: try the model, then less-loaded tiers. An
+                # overloaded 529 throws at stream-open (before any delta), so no
+                # streamed text is duplicated.
+                tiers = [start_model] + [m for m in FALLBACK_MODELS if m != start_model]
+                last = None
+                for m in tiers:
+                    try:
+                        return _stream_round(m, q.put), m
+                    except anthropic.APIError as e:
+                        last = e
+                        continue
+                raise last
             for _round in range(MAX_ROUNDS):
-                round_model = compile_model
-                resp, streamed = _stream_round(round_model, q.put)
+                (resp, streamed), round_model = _round_fallback(compile_model)
                 # Fable can decline benign work — fall back to Opus for this round
                 # (only safe if nothing was streamed yet, i.e. a pre-output refusal)
                 if getattr(resp, "stop_reason", None) == "refusal" \
                         and round_model != ANSWER_MODEL and not streamed:
-                    round_model = ANSWER_MODEL
                     used_fallback = True
-                    resp, streamed = _stream_round(round_model, q.put)
+                    (resp, streamed), round_model = _round_fallback(ANSWER_MODEL)
                 cost = record_cost(resp, round_model)
                 this_usd += cost.get("this_usd", 0) or 0
                 total_usd = cost.get("total_usd", total_usd)
@@ -4270,5 +5335,8 @@ if __name__ == "__main__":
     # dev server only: refresh indexes on boot, then run the Flask dev server
     for c in list_courses():
         threading.Thread(target=reindex, args=(c,), daemon=True).start()
-    print("\n  TENAR (dev server) →  http://127.0.0.1:5000\n")
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    _port = int(os.environ.get("PORT", 5000))
+    # bind all interfaces only when hosted (PORT set by the platform); localhost local
+    _host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    print(f"\n  TENAR (dev server) →  http://{_host}:{_port}\n")
+    app.run(host=_host, port=_port, debug=False, threaded=True)

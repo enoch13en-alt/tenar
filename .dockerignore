@@ -1,0 +1,32 @@
+# The image is CODE ONLY. Everything below is either data (lives on the /data volume),
+# a secret (set as an env var / uploaded to the volume), or local cruft.
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# data — lives on the persistent volume, never baked into the image
+courses/
+matters/
+.fastembed_cache/
+users.json
+config.json
+sources.json
+doctypes.json
+meta.json
+invites_used.json
+course_weeks.json
+grounding_audit.jsonl
+
+# secrets
+.env
+CREDENTIALS.txt
+.flask_secret
+.extension_token
+
+# local-only
+.git/
+*.log
+server.log
+cloudflared
+browser-extension/

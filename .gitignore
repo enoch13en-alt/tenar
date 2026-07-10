@@ -3,6 +3,7 @@
 .env.local
 CREDENTIALS.txt
 .flask_secret
+.extension_token
 users.json
 invites_used.json
 INVITE_LINKS.txt

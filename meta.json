@@ -26,8 +26,8 @@
   "978-3-662-57366-2.pdf": {
     "author": "Luciano Maiani, Said Abousahl, Wolfango Plastino (Editors)",
     "publisher": "Springer",
-    "year": "",
-    "place": ""
+    "year": "2017",
+    "place": "Rome, Italy"
   },
   "Chernobyl Accident 1986 - World Nuclear Association.pdf": {
     "author": "",
@@ -42,8 +42,8 @@
     "place": ""
   },
   "Effects of Nuclear Technology Export Competition on Nuclear Nonproliferation.pdf": {
-    "author": "Sungyeol Choi & Il Soon Hwang",
-    "publisher": "The Nonproliferation Review (Taylor & Francis)",
+    "author": "Sungyeol Choi and Il Soon Hwang",
+    "publisher": "The Nonproliferation Review",
     "year": "2015",
     "place": ""
   },
@@ -60,7 +60,7 @@
     "place": ""
   },
   "International Standardization of Nuclear Reactor Designs.pdf": {
-    "author": "World Nuclear Association's Working Group on Cooperation in Reactor Design Evaluation and Licensing (CORDEL Group)",
+    "author": "Working Group on Cooperation in Reactor Design Evaluation and Licensing (CORDEL Group)",
     "publisher": "World Nuclear Association",
     "year": "",
     "place": ""
@@ -91,19 +91,19 @@
   },
   "P_1708_web.pdf": {
     "author": "",
-    "publisher": "International Atomic Energy Agency (IAEA)",
+    "publisher": "International Atomic Energy Agency",
     "year": "",
-    "place": "Vienna, Austria"
+    "place": "Vienna"
   },
   "Pub1175_web.pdf": {
     "author": "",
-    "publisher": "International Atomic Energy Agency",
+    "publisher": "",
     "year": "2002",
     "place": "Vienna"
   },
   "Pub1254_web.pdf": {
     "author": "",
-    "publisher": "International Atomic Energy Agency (IAEA)",
+    "publisher": "International Atomic Energy Agency",
     "year": "",
     "place": "Vienna, Austria"
   },
@@ -111,7 +111,7 @@
     "author": "Cooperation in Reactor Design Evaluation and Licensing (CORDEL) Working Group, Small Modular Reactors Ad-hoc Group",
     "publisher": "World Nuclear Association",
     "year": "2015",
-    "place": ""
+    "place": "England and Wales"
   },
   "Radioactive Waste Management - World Nuclear Association.pdf": {
     "author": "",
@@ -141,12 +141,12 @@
     "author": "",
     "publisher": "OECD Nuclear Energy Agency",
     "year": "",
-    "place": "Paris"
+    "place": ""
   },
   "Three Mile Island Accident - World Nuclear Association.pdf": {
     "author": "",
     "publisher": "World Nuclear Association",
-    "year": "",
+    "year": "2026",
     "place": ""
   },
   "gib184073.pdf": {
@@ -175,13 +175,13 @@
   },
   "nlb53.pdf": {
     "author": "",
-    "publisher": "Nuclear Energy Agency, Organisation for Economic Co-operation and Development",
+    "publisher": "Nuclear Energy Agency, Organisation for Economic Co-operation and Development (OECD)",
     "year": "1994",
     "place": "Paris"
   },
   "p15912-PUB2120_web.pdf": {
     "author": "",
-    "publisher": "International Atomic Energy Agency",
+    "publisher": "International Atomic Energy Agency (IAEA)",
     "year": "2025",
     "place": "Vienna"
   },
@@ -193,9 +193,9 @@
   },
   "pub1468_web.pdf": {
     "author": "",
-    "publisher": "International Atomic Energy Agency (IAEA)",
+    "publisher": "International Atomic Energy Agency",
     "year": "",
-    "place": "Vienna, Austria"
+    "place": "Vienna"
   },
   "united_states_2026.pdf": {
     "author": "",
@@ -886,5 +886,515 @@
     "publisher": "School of Law, University of Ghana",
     "year": "2025",
     "place": ""
+  },
+  "Customs Excise and Preventive Service (Management) Law 1993 (PNDCL 330) - Ghana.pdf": {
+    "author": "",
+    "publisher": "Republic of Ghana",
+    "year": "1993",
+    "place": ""
+  },
+  "Minerals and Mining Act 703 Ghana.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2006",
+    "place": ""
+  },
+  "Minerals-Commission-Act-1993-Act-450-1.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2006",
+    "place": ""
+  },
+  "Minerals-and-Mining-Licensing-Regulations-2012-L.-I.-2176.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2012",
+    "place": ""
+  },
+  "New law — Ghana-Barari DV Holding Ltd Lithium Mining Lease (ratified by Parliament, 2025).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2026",
+    "place": ""
+  },
+  "New law — Gold Board Act, 2025 (Act 1140).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Gold Board Act, 2025 (Act 1140).pdf": {
+    "author": "Nana Konadu Agyeman",
+    "publisher": "Graphic Online",
+    "year": "2026",
+    "place": ""
+  },
+  "ON-SHORE MINING LAW (MNRL 604).pdf": {
+    "author": "Kweku Ainuson",
+    "publisher": "University of Ghana, School of Law",
+    "year": "",
+    "place": ""
+  },
+  "Reimagining Mine Closure - Werner.pdf": {
+    "author": "P Werner",
+    "publisher": "Australian Centre for Geomechanics",
+    "year": "2023",
+    "place": "Perth"
+  },
+  "Standard-Mining-Lease.pdf": {
+    "author": "",
+    "publisher": "Government of the Republic of Ghana",
+    "year": "2020",
+    "place": "Ghana"
+  },
+  "TRUSTEES (INCORPORATION) ACT, 1962 (ACT 106).pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "1962",
+    "place": "Ghana"
+  },
+  "Waste_Dump_Closure_and_Cost_Estimates_at.pdf": {
+    "author": "K. O. A. Arhinful and G. Agyei",
+    "publisher": "Ghana Mining Journal",
+    "year": "2017",
+    "place": ""
+  },
+  "_Verified legal updates.md": {
+    "author": "",
+    "publisher": "Parliament of Ghana",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Minerals and Mining (Amendment) Act, 2019 (Act 995).pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2015",
+    "place": ""
+  },
+  "COURSEOUTLINE-LAW RELATINGTO NUCLEAR ENERGY.pdf": {
+    "author": "",
+    "publisher": "University of Birmingham",
+    "year": "",
+    "place": ""
+  },
+  "New law — Alternative Dispute Resolution Act, 2010 (Act 798).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2010",
+    "place": ""
+  },
+  "New law — Companies Code, 1963 (Act 179) _ Companies Act, 1963 (Act 179).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "1963",
+    "place": ""
+  },
+  "New law — Constitution of the Republic of Ghana, 1992.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "1992",
+    "place": ""
+  },
+  "New law — Environmental Protection Agency Act, 1994 (Act 490).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "1994",
+    "place": ""
+  },
+  "New law — Internal Revenue Act (Ghana).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2000",
+    "place": ""
+  },
+  "New law — Minerals Commission Act, 1993 (Act 450).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "1993",
+    "place": ""
+  },
+  "New law — UNCITRAL Arbitration Rules (United Nations Commission on International Trade Law.pdf": {
+    "author": "",
+    "publisher": "United Nations Commission on International Trade Law (UNCITRAL)",
+    "year": "1976",
+    "place": ""
+  },
+  "New law — https___faolex.fao.org_docs_pdf_gha232276.pdf.pdf": {
+    "author": "",
+    "publisher": "United Nations Commission on International Trade Law (UNCITRAL)",
+    "year": "1976",
+    "place": ""
+  },
+  "Mineral-and-Mining-Policy-Ghana.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "",
+    "place": "Ghana"
+  },
+  "New law — Convention on the Recognition and Enforcement of Foreign Arbitral Awards (New Yo.pdf": {
+    "author": "",
+    "publisher": "United Nations (UNCITRAL)",
+    "year": "1958",
+    "place": "New York"
+  },
+  "New law — Environmental Protection Act, 2025 (Act 1124).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Minerals and Mining (Amendment) Act, 2015 (Act 900).md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — Public Financial Management Act, 2016 (Act 921).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2016",
+    "place": ""
+  },
+  "_Legal status — EPA Acts (Ghana).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Ghana Gold Board Act, 2025 (establishing GoldBod).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Growth and Sustainability Levy Act, 2023 (Act 1095).pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
+  },
+  "New law — Income Tax Act, 2015 (Act 896).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — Minerals and Mining (Amendment) proposals, 2025.md": {
+    "author": "",
+    "publisher": "Minerals Commission of Ghana",
+    "year": "2006",
+    "place": "Ghana"
+  },
+  "New law — Minerals and Mining Act, 2006 (Act 703).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2006",
+    "place": ""
+  },
+  "New law — Petroleum (Exploration and Production) Act, 2016 (Act 919).pdf": {
+    "author": "",
+    "publisher": "Republic of Ghana",
+    "year": "2016",
+    "place": ""
+  },
+  "New law — Petroleum Revenue Management Act, 2011 (Act 815).pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2011",
+    "place": "Ghana"
+  },
+  "OIL, GAS & OTHER MINERAL TAXATION.pdf": {
+    "author": "Dr. Dominic Dokbilla Naab",
+    "publisher": "University of Ghana, School of Law",
+    "year": "",
+    "place": "Accra"
+  },
+  "New law — Acts _ GRA.pdf": {
+    "author": "",
+    "publisher": "Ghana Revenue Authority",
+    "year": "",
+    "place": ""
+  },
+  "New law — 1_Abridged-version-of-Customs-Act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — 2_Abridged-version-of-Excise-Duty-Act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2014",
+    "place": ""
+  },
+  "New law — 3_Abridged-version-of-Excise-Tax-Stamp-Act.pdf": {
+    "author": "",
+    "publisher": "Government of Ghana",
+    "year": "2013",
+    "place": "Ghana"
+  },
+  "New law — 4_Abridged-version-of-Income-Tax-Act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — ACT689StampDutyAct.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2005",
+    "place": ""
+  },
+  "New law — Abridged-version-of-Value-Added-Tax-Act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2013",
+    "place": ""
+  },
+  "New law — Advance Ruling Instructions on the Completion of the Origin Application Form..pdf": {
+    "author": "",
+    "publisher": "Customs Division",
+    "year": "",
+    "place": ""
+  },
+  "New law — Communications-Service-Tax-Amendment.-Act-2013..pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2013",
+    "place": "Ghana"
+  },
+  "New law — Customs-Act-2015.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — Electronic-Levy-transfer-Amendment.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — Free-Zones-Act-1995-Act-504.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "1995",
+    "place": "Ghana"
+  },
+  "New law — GHANA-REVENUE-AUTHORITY-AMENDMENT-ACT-2023-ACT-1096.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
+  },
+  "New law — GROWTH-AND-SUSTAINABILITY-LEVY-ACT-2023-ACT-1095.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
+  },
+  "New law — Ghana-Act-967-Standard-for-Automatic.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2018",
+    "place": ""
+  },
+  "New law — INCOME-TAX-AMENDMENT-ACT-2023-ACT-1094.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
+  },
+  "New law — Instructions for Completion of the Classification Application Form..pdf": {
+    "author": "",
+    "publisher": "Ghana Revenue Authority (GRA-Customs)",
+    "year": "",
+    "place": ""
+  },
+  "New law — Revenue-Administration-Act-2016-.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2016",
+    "place": ""
+  },
+  "New law — Revenue-Administration-Act-amendment-2022.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — VAT-AMENDMENT-2022.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — Value-Added-Tax-Amendment-Act-2022-Act-1082.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — Withholding Tax Guide-Codes & Rates.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2015",
+    "place": ""
+  },
+  "New law — cst_act.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2008",
+    "place": "Ghana"
+  },
+  "New law — ge_trust_fund_act.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2000",
+    "place": "Ghana"
+  },
+  "New law — gra_act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2009",
+    "place": "Ghana"
+  },
+  "New law — irs_act-1.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2000",
+    "place": ""
+  },
+  "New law — irs_act.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2000",
+    "place": ""
+  },
+  "New law — tin_act.pdf": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2002",
+    "place": ""
+  },
+  "New law — vat_act_870.pdf": {
+    "author": "",
+    "publisher": "",
+    "year": "2013",
+    "place": ""
+  },
+  "New law — Covid-19-Health-Recovery-Levy-Act.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — Electronic-Transfer-Levy-Act-2022-Act-1075.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — FINANCIAL-SECTOR-RECOVERY-LEVY-ACT2021.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — DOWNLOAD.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "1993",
+    "place": "Ghana"
+  },
+  "New law — Ghana Gold Board Act, 2025 (Act 1140).md": {
+    "author": "",
+    "publisher": "",
+    "year": "2025",
+    "place": ""
+  },
+  "New law — Ghana-Exemption-ACT-2022-2-1.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2022",
+    "place": "Ghana"
+  },
+  "New law — Ghana-Infrastructure-investment-FundAmendmentAct2021.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — INCOME-TAX-AMENDMENT-ACT-2021.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — Minerals Commission Act, 1993 (Act 450).md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "1993",
+    "place": "Ghana"
+  },
+  "New law — Income-Tax-amendment-No-2-Act-2021-Act-1071.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — Minerals and Mining (Amendment) Act, 2019 (Act 995).md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2019",
+    "place": "Ghana"
+  },
+  "New law — Penalty-and-Interest-Waiver-Act-2021.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — Penalty-and-Interest-Waiver-Amendment-Act-2021-Act-1073.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2021",
+    "place": "Ghana"
+  },
+  "New law — Revenue-AdminstrationAmendment-Act2020-Act-1029.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2020",
+    "place": "Ghana"
+  },
+  "New law — Service Charter.md": {
+    "author": "",
+    "publisher": "Ghana Revenue Authority",
+    "year": "",
+    "place": ""
+  },
+  "New law — Standard-for-Automatic-Exchange-of-Financial-Account-Information-Amendment-Act-2.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
+  },
+  "New law — VAT-Amendment-Act-2021-Act-1072.md": {
+    "author": "",
+    "publisher": "Ghana Publishing Company Ltd., Assembly Press",
+    "year": "2021",
+    "place": "Accra"
+  },
+  "New law — VAT_AMENDMENT_ACT_954.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2017",
+    "place": "Ghana"
+  },
+  "New law — Value-Added-Tax-Amendment-Act-2023-Act-1107.md": {
+    "author": "",
+    "publisher": "Parliament of the Republic of Ghana",
+    "year": "2023",
+    "place": "Ghana"
   }
 }
