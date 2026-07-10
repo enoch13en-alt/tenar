@@ -983,10 +983,11 @@ PLAN_LIMITS = {
                      "exam_sessions": 20, "fable_compiles": 8, "deepens": 20, "oscola": 999999,
                      "courses": 99, "web": True, "exam": "full", "pdf": True,
                      "drafts": 999999, "matters": 99},   # top/owner plan: everything
-    # ---- consultant tier: FULL access to every document across ALL courses,
-    #      plus advisory drafts and unlimited private matters. $599/mo (~2.5x cost). ----
-    "consultant":   {"label": "Consultant", "questions": 500, "comparative": 60,
-                     "fable_compiles": 5, "deepens": 25, "drafts": 40, "matters": 999999,
+    # ---- consultant tier: a yearly RESEARCH plan. FULL access to every document
+    #      across ALL courses + heavy Q&A/web research; writing kept light (they use
+    #      other tools to draft). $599/YEAR (~$50/mo), worst-case cost ~$285 -> ~2.1x. ----
+    "consultant":   {"label": "Consultant", "questions": 850, "comparative": 150,
+                     "fable_compiles": 5, "deepens": 12, "drafts": 10, "matters": 999999,
                      "courses": 99, "exam_sessions": 0, "oscola": 999999,
                      "web": True, "pdf": True, "exam": "none"},
 }
