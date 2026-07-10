@@ -2101,23 +2101,37 @@ async function runResearch(focus) {
   if (!courses.length) { st.textContent = "Pick at least one course to search."; return; }
   if (!facts && !questions && !focus) { st.textContent = "Enter facts or your own questions to research."; return; }
   st.textContent = (focus ? "Researching that one issue" : "Researching") + " across " +
-    courses.length + " course(s)… this can take a minute.";
-  out.innerHTML = ""; go.disabled = true;
+    courses.length + " course(s)… writing live — a full advice note can take a minute or two.";
+  out.innerHTML = ""; out.style.whiteSpace = "pre-wrap"; go.disabled = true;
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e";
+  let buf = "", meta = {};
   try {
-    const r = await fetch("/api/research", {method:"POST", headers:{"Content-Type":"application/json"},
+    const resp = await fetch("/api/research", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({courses, facts, questions: questions || undefined, focus: focus || undefined,
         web: $("#researchWeb").checked, format: $("#researchFormat").value})});
-    const d = await r.json();
-    if (d.error && !d.answer) { st.textContent = d.error; go.disabled = false; return; }
-    const c = d.cost || {};
-    st.textContent = c.this_query_usd != null ? ("Done · $" + Number(c.this_query_usd).toFixed(4)) : "Done.";
-    out.innerHTML = mdToHtml(d.answer || "");
-    if (d.sources && d.sources.length) {
-      out.innerHTML += `<div style="margin-top:12px;font-size:11px;color:#8b93a7">` +
-        `<b>Sources (${d.sources.length}):</b> ` +
-        d.sources.map(s => esc(s.title || "")).join(" · ") + `</div>`;
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      buf = buf.split(PING).join("");                 // drop heartbeats
+      out.textContent = buf.split(DELIM)[0];           // live plain-text as it writes
+      out.scrollIntoView({block: "end"});
     }
-  } catch (e) { st.textContent = "Network error — try again."; }
+  } catch (e) { st.textContent = "Network error — try again."; go.disabled = false; return; }
+  const parts = buf.split(DELIM);
+  const doc = (parts[0] || "").trim();
+  try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+  if (meta.error) { st.textContent = meta.error; go.disabled = false; return; }
+  out.style.whiteSpace = "normal";
+  out.innerHTML = mdToHtml(doc);                        // final formatted render
+  const cost = meta.cost ? (meta.cost.this_usd || 0) : 0;
+  st.textContent = cost ? ("Done · $" + Number(cost).toFixed(4)) : "Done.";
+  if (meta.sources && meta.sources.length) {
+    out.innerHTML += `<div style="margin-top:12px;font-size:11px;color:#8b93a7">` +
+      `<b>Sources (${meta.sources.length}):</b> ` +
+      meta.sources.map(s => esc(s.title || "")).join(" · ") + `</div>`;
+  }
   go.disabled = false;
 }
 // the facts can be cumbersome — surface the key legal issues at a glance the

@@ -2621,8 +2621,104 @@ def api_research():
     consume("questions")
     if include_web:
         consume("comparative")
-    return jsonify(answer_question(courses, query, include_web=include_web,
-                                   fmt=fmt, max_out=7000, mode="answer"))
+
+    # retrieve across the selected courses, then STREAM the advice note with an
+    # auto-continue loop so long multi-issue notes finish (no 7k-token truncation)
+    # and a PING heartbeat so Render never times the response out.
+    multi = len(courses) > 1
+    retrieved = search_multi(courses, query) if multi else search(courses[0], query)
+    c = _client()
+    if not retrieved or not c:
+        err = ("No documents indexed in the selected course(s) yet."
+               if not retrieved else "ANTHROPIC_API_KEY is not set.")
+        return Response("\x1e\x1eMETA\x1e\x1e" + json.dumps({"error": err}),
+                        mimetype="text/plain")
+
+    content, sources, seen = [], [], set()
+    for ch in retrieved:
+        ch_course = ch.get("_course", courses[0])
+        pdf_dir, _ = course_paths(ch_course)
+        page = page_label(os.path.join(pdf_dir, ch["doc"]), ch["doc"], ch["page"])
+        title = f'{display_name(ch["doc"])} — p.{page}'
+        if multi:
+            title = f'[{ch_course}] {title}'
+        content.append({
+            "type": "document",
+            "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
+            "title": title, "citations": {"enabled": True}})
+        if title not in seen:
+            seen.add(title); sources.append({"title": title})
+    content.append({"type": "text", "text": query})
+
+    system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
+              + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD
+              + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
+              + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n"
+              + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY)
+    if FORMATS.get(fmt):
+        system = system + "\n\n" + FORMATS[fmt]
+    if include_web:
+        system = system + "\n\n" + COMPARATIVE_SUFFIX
+    cached_sys = cached_system(system)
+    web_tools = ([{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}]
+                 if include_web else None)
+
+    DELIM = "\x1e\x1eMETA\x1e\x1e"
+    PING = "\x1e\x1ePING\x1e\x1e"
+    messages = [{"role": "user", "content": content}]
+    qout = queue.Queue()
+    _DONE = object()
+
+    @copy_current_request_context
+    def _worker():
+        this_usd, total_usd = 0.0, None
+        try:
+            for _round in range(4):
+                kw = dict(model=ANSWER_MODEL, max_tokens=8000,
+                          system=cached_sys, messages=messages)
+                if web_tools:
+                    kw["tools"] = web_tools
+                with c.messages.stream(**kw) as s:
+                    for delta in s.text_stream:
+                        qout.put(delta)
+                    resp = s.get_final_message()
+                cost = record_cost(resp, ANSWER_MODEL)
+                this_usd += cost.get("this_usd", 0) or 0
+                total_usd = cost.get("total_usd", total_usd)
+                if getattr(resp, "stop_reason", None) != "max_tokens":
+                    break
+                messages.append({"role": "assistant", "content": resp.content})
+                messages.append({"role": "user", "content":
+                    "Continue EXACTLY where you stopped, mid-sentence if needed; "
+                    "do not repeat anything already written."})
+            qout.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd, 5),
+                                                  "total_usd": total_usd},
+                                         "sources": sources}))
+        except Exception as e:
+            app.logger.exception("research stream error")
+            emsg = str(getattr(e, "message", "") or e).lower()
+            friendly = ("The AI account is out of credits — top up in the Anthropic "
+                        "console." if "credit balance" in emsg
+                        else "The research pass failed partway — please try again.")
+            qout.put(DELIM + json.dumps({"error": friendly}))
+        finally:
+            qout.put(_DONE)
+
+    def generate():
+        threading.Thread(target=_worker, daemon=True).start()
+        while True:
+            try:
+                item = qout.get(timeout=5)
+            except queue.Empty:
+                yield PING
+                continue
+            if item is _DONE:
+                break
+            yield item
+
+    return Response(stream_with_context(generate()), mimetype="text/plain",
+                    headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @app.route("/api/research/issues", methods=["POST"])
