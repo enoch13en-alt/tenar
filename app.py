@@ -2743,7 +2743,10 @@ def api_research():
     # auto-continue loop so long multi-issue notes finish (no 7k-token truncation)
     # and a PING heartbeat so Render never times the response out.
     multi = len(courses) > 1
-    retrieved = search_multi(courses, query) if multi else search(courses[0], query)
+    # consultant research pulls a wider window than a normal question (40 vs 25) so it
+    # covers a fact pattern well without anyone hand-picking documents
+    RK = 40
+    retrieved = search_multi(courses, query, k=RK) if multi else search(courses[0], query, k=RK)
     full_blocks, full_keys = load_full_docs(body.get("full_docs") or [])
     c = _client()
     if (not retrieved and not full_blocks) or not c:
