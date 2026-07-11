@@ -1282,9 +1282,17 @@ async function gatherIssue(i) {
   it.loading = true; renderExam();            // instant feedback
   $("#examStatus").textContent = "Gathering law for issue " + (it.n||i+1) + "…";
   try {
+    // gather with the FULL problem as context (so retrieval surfaces the same
+    // distinguishing provisions a direct question would — e.g. family vs stool land),
+    // plus this issue's own why/law for focus. Bare issue labels retrieve too narrowly.
+    const exq = (EXAM.question || $("#examQ").value || "").trim();
+    const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
+      + 'Analyse this specific issue in depth: "' + (it.issue || '') + '".'
+      + (it.why ? (' It arises because: ' + it.why + '.') : '')
+      + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: it.issue, web: false, brief: true})})).json();
+      body: JSON.stringify({course: COURSE, question: gq, web: false, brief: true})})).json();
     it.answer = r.answer || r.error || "";
     it.answer_annotated = r.answer_annotated || "";
     it.sources = r.sources || [];
