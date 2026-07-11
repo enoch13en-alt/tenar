@@ -3235,24 +3235,36 @@ def api_audit_recheck():
     pin = mnum.group(1) if mnum else None
     queries = [(claim + " " + authority).strip(), authority, claim]
     if pin:
-        queries += [f"section {pin}", f"{pin}. (1)", f"article {pin}", f"clause {pin}", pin]
-    merged, seen = [], set()
+        queries += [f"section {pin}", f"{pin}. (1)", f"article {pin}", f"clause {pin}"]
+    # tally which document is most relevant to this authority across all angles
+    from collections import Counter
+    doc_freq, merged, seen = Counter(), [], set()
     for qy in queries:
         if not qy.strip():
             continue
         hits = search_multi(courses, qy, k=16) if multi else search(courses[0], qy, k=16)
         for h in hits:
             hc = h.get("_course", courses[0])
+            doc_freq[(hc, h["doc"])] += 1
             key = (hc, h["doc"], h.get("page"))
-            if key in seen:
-                continue
-            seen.add(key)
-            pdir, _ = course_paths(hc)
-            pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
-            merged.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
-        if len(merged) >= 48:
-            break
-    ctx = "\n\n".join(merged[:48])[:16000]
+            if key not in seen:
+                seen.add(key)
+                pdir, _ = course_paths(hc)
+                pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+                merged.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
+    # THE definitive move: load the most-relevant document IN FULL, so the re-check
+    # reads the WHOLE instrument (e.g. all of Act 703) rather than chunks — a small
+    # section like s.11 that never ranks in a window is simply present in the full text.
+    ctx = ""
+    if doc_freq:
+        (dc, ddoc), _ = doc_freq.most_common(1)[0]
+        try:
+            blocks, _k = load_full_docs([{"course": dc, "file": ddoc}])
+            ctx = "\n\n".join(f"[{b['title']}] {b['source']['data']}" for b in blocks)[:120000]
+        except Exception:
+            ctx = ""
+    if not ctx:
+        ctx = "\n\n".join(merged[:48])[:16000]
     try:
         v, _ = _create_final(
             c, model=ANSWER_MODEL, max_tokens=600,
@@ -3266,7 +3278,7 @@ def api_audit_recheck():
                     "genuinely bear it out. STRICT JSON: {\"verdict\",\"note\":one precise line,"
                     "\"correct_authority\":optional}. No fences."),
             messages=[{"role": "user", "content": json.dumps(
-                {"authority": authority, "claim": claim, "corpus": ctx})[:20000]}])
+                {"authority": authority, "claim": claim, "corpus": ctx})[:200000]}])
         d = _parse_json(_text_of(v))
         if not isinstance(d, dict):
             d = {"verdict": "unverified"}
