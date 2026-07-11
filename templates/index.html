@@ -83,6 +83,24 @@
   .cmark:hover .tip { display: block; }
   .cmark .tip b { color: #8fb4ff; }
   .cmark .tip hr { border: 0; border-top: 1px solid #3a4660; margin: 7px 0; }
+  /* hover-to-cite (chat): the cited phrase itself is highlighted and reveals its
+     source on hover — the answer flows as prose, provenance sits under each fact. */
+  .ans-flow { line-height: 1.62; }
+  .csrc { position: relative; cursor: help; border-radius: 3px; padding: 0 1px;
+          background: rgba(59,111,224,.08); box-shadow: inset 0 -2px 0 rgba(59,111,224,.42);
+          transition: background .12s, box-shadow .12s; }
+  .csrc:hover { background: rgba(59,111,224,.20); box-shadow: inset 0 -2px 0 #3b6fe0; }
+  .csrc.web { background: rgba(31,138,91,.09); box-shadow: inset 0 -2px 0 rgba(31,138,91,.42); }
+  .csrc.web:hover { background: rgba(31,138,91,.20); box-shadow: inset 0 -2px 0 #1f8a5b; }
+  .csrc .tip { display: none; position: absolute; left: 0; top: 1.7em; width: 360px; max-width: 90vw;
+               max-height: 260px; overflow-y: auto; background: #1c2330; color: #e6e9ef;
+               padding: 11px 13px; border-radius: 8px; font-size: 12.5px; line-height: 1.5;
+               white-space: normal; font-style: normal; z-index: 20;
+               box-shadow: 0 6px 22px rgba(0,0,0,.35); }
+  .csrc:hover .tip { display: block; }
+  .csrc .tip b { color: #8fb4ff; }
+  .csrc .tip .srclink { color: #8fb4ff; }
+  .csrc .tip hr { border: 0; border-top: 1px solid #3a4660; margin: 7px 0; }
   /* hamburger + drawer backdrop (hidden on desktop) */
   #navToggle { display: none; position: fixed; top: 10px; left: 10px; z-index: 60;
                width: 42px; height: 42px; border: 0; border-radius: 10px;
@@ -241,7 +259,8 @@
   <div id="chat"></div>
   <div id="composer">
     <select id="fmt" title="Output format" style="width:auto; padding:0 8px; border-radius:8px; border:1px solid #cfd5e0;">
-      <option value="essay">Essay</option>
+      <option value="chat">Chat</option>
+      <option value="essay">Essay (full)</option>
       <option value="memo">Memo</option>
       <option value="report">Report</option>
     </select>
@@ -679,6 +698,17 @@ function citeHTML(c) {
   return '<span class="pin">' + head + '</span>' +
          (c.quote ? '<span class="quote">“' + esc(c.quote) + '”</span>' : '');
 }
+// Chat mode: render one segment INLINE so short prose reads as a flowing sentence.
+// A segment that carries citations becomes a highlighted, hover-to-cite span —
+// hovering that exact phrase reveals the source(s) behind it. No end-of-answer list.
+function segInline(seg) {
+  const t = mdInline((seg.text || "").trim()).replace(/\n{2,}/g, '<br><br>').replace(/\n/g, ' ');
+  if (!(seg.cites && seg.cites.length)) return t + ' ';
+  const tip = seg.cites.map(citeHTML).join('<hr>');
+  const anyWeb = seg.cites.some(c => c.url);
+  return '<span class="csrc' + (anyWeb ? ' web' : '') + '">' + t
+       + '<span class="tip">' + tip + '</span></span> ';
+}
 
 function bubble(cls, html) {
   const d = document.createElement("div");
@@ -757,30 +787,39 @@ async function ask() {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({question: q, course: COURSE, web, format: $("#fmt").value})})).json();
+    const askFmt = $("#fmt").value;
     let html;
     if (r.segments && r.segments.length) {
-      html = r.segments.map(seg => {
-        let t = mdToHtml(seg.text);
-        if (seg.cites && seg.cites.length) {
-          const tip = seg.cites.map(citeHTML).join('<hr>');
-          const anyWeb = seg.cites.some(c => c.url);
-          t += '<span class="cmark' + (anyWeb ? ' web' : '') + '">'
-             + (anyWeb ? '🌐 web' : '🔍 source')
-             + '<span class="tip">' + tip + '</span></span>';
-        }
-        return t;
-      }).join("");
+      if (askFmt === 'chat') {                       // conversational: inline flow, hover-to-cite
+        html = '<div class="ans-flow">' +
+          r.segments.map(segInline).join('')
+            .replace(/\s+([,.;:)\]])/g, '$1').replace(/ {2,}/g, ' ') +
+          '</div>';
+      } else {                                       // essay/memo/report: block + citation chip
+        html = r.segments.map(seg => {
+          let t = mdToHtml(seg.text);
+          if (seg.cites && seg.cites.length) {
+            const tip = seg.cites.map(citeHTML).join('<hr>');
+            const anyWeb = seg.cites.some(c => c.url);
+            t += '<span class="cmark' + (anyWeb ? ' web' : '') + '">'
+               + (anyWeb ? '🌐 web' : '🔍 source')
+               + '<span class="tip">' + tip + '</span></span>';
+          }
+          return t;
+        }).join("");
+      }
     } else { html = mdToHtml(r.answer); }
-    if (r.sources && r.sources.length)
+    // Chat reveals provenance inline on hover (no list); other formats keep the Sources list.
+    if (askFmt !== 'chat' && r.sources && r.sources.length)
       html += '<div class="sources"><h4>Sources</h4>' +
         r.sources.map(s => '<div class="cite">' + citeHTML(s) + '</div>').join("") + '</div>';
     if (r.cost)
       html += '<div class="meta">This answer: $' + r.cost.this_query_usd + '  ·  ' +
         r.cost.input_tokens + ' in / ' + r.cost.output_tokens +
         ' out  ·  running total $' + r.cost.total_usd + '</div>';
-    if (r.sources && r.sources.length)
+    if (askFmt !== 'chat' && r.sources && r.sources.length)
       html += '<button class="btn alt mini oscolaBtn">📑 Copy as OSCOLA</button>';
-    if (r.answer && !r.limit)
+    if (askFmt !== 'chat' && r.answer && !r.limit)
       html += '<button class="btn alt mini wordBtn">⬇ Word</button>';
     wait.innerHTML = html; chat.scrollTop = chat.scrollHeight;
     const ob = wait.querySelector('.oscolaBtn');
