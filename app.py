@@ -3125,8 +3125,12 @@ def api_audit():
                         "applied as if it were the rule); 'unverified' (the passages neither confirm nor "
                         "contradict — it simply was not surfaced here; this needs a manual look and is "
                         "NOT proof the authority is wrong or absent). Prefer 'supported' when the "
-                        "passages genuinely bear it out. STRICT JSON object: {\"verdict\",\"note\":one "
-                        "precise line,\"correct_authority\":optional}. No fences."),
+                        "passages genuinely bear it out. CRITICAL: you see ONLY a small retrieval "
+                        "window, never the whole library — NEVER conclude an instrument is absent, "
+                        "that 'the corpus is only X', or that 'Act NNN does not appear'; if you can't "
+                        "confirm, it is simply 'unverified' for THESE passages, nothing more. STRICT "
+                        "JSON object: {\"verdict\",\"note\":one precise line,\"correct_authority\":optional}. "
+                        "No fences."),
                 messages=[{"role": "user", "content": json.dumps(
                     {"authority": it["authority"], "claim": it.get("claim", ""),
                      "corpus": it.get("_ctx", "")})[:20000]}])
@@ -3163,17 +3167,20 @@ def api_audit():
         ca = (v.get("correct_authority") or "").strip()
         if verdict != "misattributed" or ca.lower() == it["authority"].strip().lower():
             ca = ""
-        # reframe a ❓ so it never reads as "we don't have it"
+        # A ❓ means "this pass didn't retrieve it" — NEVER a claim about the whole
+        # library. Always overwrite the note (the verifier tends to over-conclude from
+        # one window, e.g. "Act 703 does not appear"), and point to the focused re-check.
         if verdict == "unverified":
             k = _instr(it["authority"])
             if k and k in confirmed_instr:
-                note = ("This instrument is in the library — other provisions of it verified in "
-                        "this same check; this specific provision just wasn't surfaced by the "
-                        "spot-check. Confirm it directly. This is a retrieval limit, NOT a finding "
-                        "that the citation is wrong or absent.")
-            elif not note or "not in" in note.lower() or "not surfaced" in note.lower():
-                note = ("Not surfaced in this spot-check — confirm directly. This does not mean the "
-                        "citation is wrong or missing, only that this pass didn't retrieve it.")
+                note = ("This instrument IS in the library — other provisions of it verified in this "
+                        "same check; this one just wasn't surfaced by the spot-check. Click 'Search "
+                        "again' to load the full instrument and settle it. A retrieval limit, NOT a "
+                        "finding that the citation is wrong or that the Act is missing.")
+            else:
+                note = ("Not surfaced in this spot-check — a retrieval limit, NOT a finding that the "
+                        "citation is wrong or that the instrument is missing from the library. Click "
+                        "'Search again' to load the full instrument and settle it.")
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
                     "verdict": verdict, "note": note, "correct_authority": ca})
 
@@ -3268,14 +3275,16 @@ def api_audit_recheck():
     try:
         v, _ = _create_final(
             c, model=ANSWER_MODEL, max_tokens=600,
-            system=("You re-check ONE legal citation against corpus passages, with extra care — this "
-                    "is a focused second look. Judge ONLY against the passages given. Read closely for "
-                    "the exact section/article number, the recipient/party, figures, and any exception. "
-                    "Verdicts: 'supported' (passages confirm the claim AND the number/name matches); "
-                    "'misattributed' (right substance, wrong section/article — give correct_authority); "
-                    "'contradicted' (passages say otherwise); 'unverified' (still not in these passages "
-                    "— a retrieval limit, not proof it is wrong). Prefer 'supported' when the passages "
-                    "genuinely bear it out. STRICT JSON: {\"verdict\",\"note\":one precise line,"
+            system=("You re-check ONE legal citation. You are usually given the FULL text of the "
+                    "relevant instrument (e.g. the whole Act) — read it closely for the exact "
+                    "section/article number, the recipient/party, figures, and any exception. Judge "
+                    "ONLY against what you are given; NEVER make claims about the wider library or "
+                    "say the corpus 'only contains X'. Verdicts: 'supported' (confirms the claim AND "
+                    "the number/name matches); 'misattributed' (right substance, wrong "
+                    "section/article — give correct_authority); 'contradicted' (text says otherwise); "
+                    "'unverified' (still not found in what you were given — a retrieval limit, not "
+                    "proof it is wrong). Prefer 'supported' when the text genuinely bears it out. "
+                    "STRICT JSON: {\"verdict\",\"note\":one precise line,"
                     "\"correct_authority\":optional}. No fences."),
             messages=[{"role": "user", "content": json.dumps(
                 {"authority": authority, "claim": claim, "corpus": ctx})[:200000]}])
