@@ -2289,7 +2289,7 @@ async function runResearch(focus) {
   try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
   if (meta.error) { st.textContent = meta.error; go.disabled = false; return; }
   out.style.whiteSpace = "normal";
-  out.innerHTML = mdToHtml(doc);                        // final formatted render
+  out.innerHTML = '<div id="researchDoc">' + mdToHtml(doc) + '</div>';   // wrapped so audit-fix can replace it
   const cost = meta.cost ? (meta.cost.this_usd || 0) : 0;
   st.textContent = cost ? ("Done · $" + Number(cost).toFixed(4)) : "Done.";
   if (meta.sources && meta.sources.length) {
@@ -2298,37 +2298,54 @@ async function runResearch(focus) {
       meta.sources.map(s => esc(s.title || "")).join(" · ") + `</div>`;
   }
   out.innerHTML += `<div style="margin-top:14px;border-top:1px solid #2a3344;padding-top:10px">`
-    + `<button class="btn alt" id="auditBtn" style="width:auto;font-size:12px">🔍 Audit the authorities</button>`
-    + `<span style="font-size:11px;color:#6b7488;margin-left:8px">re-checks every section/case against the corpus</span>`
+    + `<button class="btn alt" id="auditBtn" style="width:auto;font-size:12px">🔍 Audit &amp; fix authorities</button>`
+    + `<span style="font-size:11px;color:#6b7488;margin-left:8px">re-checks every section/case against the corpus and corrects what it can</span>`
     + `<div id="auditOut" style="margin-top:8px"></div></div>`;
   $("#auditBtn").onclick = () => runAudit(doc, courses);
   go.disabled = false;
 }
 async function runAudit(doc, courses) {
   const btn = $("#auditBtn"), out = $("#auditOut");
-  btn.disabled = true; btn.textContent = "🔍 Auditing…";
+  btn.disabled = true; btn.textContent = "🔍 Auditing & fixing…";
+  const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•");
+  const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
+  const listHtml = items => !items.length
+    ? `<span style="font-size:12px;color:#6b7488">No specific authorities to check.</span>`
+    : items.map(it =>
+      `<div style="font-size:12px;border-left:3px solid ${col(it.verdict)};padding:5px 9px;margin:5px 0;background:#11151d;border-radius:4px">`
+      + `${badge(it.verdict)} <b>${esc(it.authority)}</b>`
+      + (it.correct_authority ? ` → <span style="color:#e0b050">${esc(it.correct_authority)}</span>` : "")
+      + `<div style="color:#8b93a7;margin-top:2px">${esc(it.note || it.claim || "")}</div></div>`).join("");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: doc, courses})});
+      body: JSON.stringify({answer: doc, courses, fix: true})});
     const d = await r.json();
-    if (d.error) { out.textContent = d.error; btn.disabled = false; btn.textContent = "🔍 Audit the authorities"; return; }
+    if (d.error) { out.textContent = d.error; btn.disabled = false; btn.textContent = "🔍 Audit & fix authorities"; return; }
     const items = d.items || [];
-    if (!items.length) {
-      out.innerHTML = `<span style="font-size:12px;color:#6b7488">${esc(d.note || "No specific authorities to check.")}</span>`;
+    if (d.corrected && d.fixed_count) {
+      const fixedItems = items.filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
+      const docEl = $("#researchDoc");
+      if (docEl) docEl.innerHTML = mdToHtml(d.corrected);              // corrected doc replaces the original
+      $("#auditBtn").onclick = () => runAudit(d.corrected, courses);   // re-audit the corrected version
+      out.innerHTML =
+        `<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 Corrected ${d.fixed_count} authority issue(s) — applied to the document above:</div>`
+        + `<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">`
+        + fixedItems.map(x => `<div style="font-size:12px">${badge(x.verdict)} <b>${esc(x.authority)}</b>`
+            + (x.correct_authority ? ` → <span style="color:#7fdca0">${esc(x.correct_authority)}</span>` : "")
+            + (x.note ? `<div style="color:#8b93a7;margin-left:16px">${esc(x.note)}</div>` : "") + `</div>`).join("")
+        + `</div>`
+        + `<button class="btn alt" id="showOrigResearch" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before fix)</button>`
+        + `<div id="origResearchBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">${esc(doc)}</div>`
+        + `<div style="margin-top:8px;font-size:11px;color:#6b7488">Full audit (${items.length}):</div>` + listHtml(items);
+      const sb = $("#showOrigResearch");
+      if (sb) sb.onclick = () => { const b = $("#origResearchBox"); const sh = b.style.display === "none"; b.style.display = sh ? "block" : "none"; sb.textContent = (sh ? "⌃ Hide" : "⌄ Show") + " original (before fix)"; };
     } else {
-      const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•");
-      const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
-      const bad = items.filter(i => i.verdict !== "supported").length;
-      out.innerHTML = `<div style="font-size:12px;color:#aab4c6;margin-bottom:6px">`
-        + (bad ? `⚠️ ${bad} of ${items.length} authorities need attention:` : `✅ all ${items.length} authorities check out:`) + `</div>`
-        + items.map(it =>
-        `<div style="font-size:12px;border-left:3px solid ${col(it.verdict)};padding:5px 9px;margin:5px 0;background:#11151d;border-radius:4px">`
-        + `${badge(it.verdict)} <b>${esc(it.authority)}</b>`
-        + (it.correct_authority ? ` → <span style="color:#e0b050">should be ${esc(it.correct_authority)}</span>` : "")
-        + `<div style="color:#8b93a7;margin-top:2px">${esc(it.note || it.claim || "")}</div></div>`).join("");
+      const clean = !items.some(x => x.verdict !== "supported");
+      out.innerHTML = `<div style="font-size:12px;color:${clean ? '#7fdca0' : '#aab4c6'};margin-bottom:6px">`
+        + (clean ? `✅ all ${items.length} authorities check out:` : `⚠️ authorities to review (nothing auto-fixable):`) + `</div>` + listHtml(items);
     }
     btn.textContent = "🔍 Re-audit";
-  } catch (e) { out.textContent = "Audit error — try again."; btn.textContent = "🔍 Audit the authorities"; }
+  } catch (e) { out.textContent = "Audit error — try again."; btn.textContent = "🔍 Audit & fix authorities"; }
   btn.disabled = false;
 }
 // the facts can be cumbersome — surface the key legal issues at a glance the
