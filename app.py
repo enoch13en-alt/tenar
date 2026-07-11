@@ -3211,6 +3211,79 @@ def api_audit():
     return jsonify(result)
 
 
+@app.route("/api/audit/recheck", methods=["POST"])
+def api_audit_recheck():
+    """Focused re-check of ONE authority the batch audit couldn't surface. Throws the
+    full retrieval effort at just this citation — many angles incl. the raw section
+    number in provision form, deep — then re-judges it. Turns most ❓ into ✅/❌."""
+    body = request.json or {}
+    authority = (body.get("authority") or "").strip()
+    claim = (body.get("claim") or "").strip()
+    courses = [safe_course(x) for x in (body.get("courses") or []) if x]
+    if not courses and body.get("course"):
+        courses = [safe_course(body.get("course"))]
+    courses = [x for x in courses if _may_read_course(x)]
+    if not authority or not courses:
+        return jsonify({"error": "Need the authority and a course."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    multi = len(courses) > 1
+    # build many retrieval angles, including the pinpoint number in provision form
+    mnum = re.search(r"(?:s\.?|section|art\.?|article|clause|reg\.?|regulation)\s*(\d+)",
+                     authority.lower())
+    pin = mnum.group(1) if mnum else None
+    queries = [(claim + " " + authority).strip(), authority, claim]
+    if pin:
+        queries += [f"section {pin}", f"{pin}. (1)", f"article {pin}", f"clause {pin}", pin]
+    merged, seen = [], set()
+    for qy in queries:
+        if not qy.strip():
+            continue
+        hits = search_multi(courses, qy, k=16) if multi else search(courses[0], qy, k=16)
+        for h in hits:
+            hc = h.get("_course", courses[0])
+            key = (hc, h["doc"], h.get("page"))
+            if key in seen:
+                continue
+            seen.add(key)
+            pdir, _ = course_paths(hc)
+            pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+            merged.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
+        if len(merged) >= 48:
+            break
+    ctx = "\n\n".join(merged[:48])[:16000]
+    try:
+        v, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=600,
+            system=("You re-check ONE legal citation against corpus passages, with extra care — this "
+                    "is a focused second look. Judge ONLY against the passages given. Read closely for "
+                    "the exact section/article number, the recipient/party, figures, and any exception. "
+                    "Verdicts: 'supported' (passages confirm the claim AND the number/name matches); "
+                    "'misattributed' (right substance, wrong section/article — give correct_authority); "
+                    "'contradicted' (passages say otherwise); 'unverified' (still not in these passages "
+                    "— a retrieval limit, not proof it is wrong). Prefer 'supported' when the passages "
+                    "genuinely bear it out. STRICT JSON: {\"verdict\",\"note\":one precise line,"
+                    "\"correct_authority\":optional}. No fences."),
+            messages=[{"role": "user", "content": json.dumps(
+                {"authority": authority, "claim": claim, "corpus": ctx})[:20000]}])
+        d = _parse_json(_text_of(v))
+        if not isinstance(d, dict):
+            d = {"verdict": "unverified"}
+    except Exception:
+        d = {"verdict": "unverified"}
+    verdict = d.get("verdict", "unverified")
+    ca = (d.get("correct_authority") or "").strip()
+    if verdict != "misattributed" or ca.lower() == authority.lower():
+        ca = ""
+    note = (d.get("note") or "").strip()
+    if verdict == "unverified" and not note:
+        note = ("Still not surfaced even on a focused search — confirm directly. Not a finding that "
+                "it is wrong.")
+    return jsonify({"verdict": verdict, "note": note, "correct_authority": ca,
+                    "searched": len(merged)})
+
+
 POLISH_INSTRUCTION = (
     "You are an expert legal-writing editor. Rewrite the student's OWN draft below "
     "to a distinction standard by APPLYING THE HOUSE STYLE — the clarity and "

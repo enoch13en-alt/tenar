@@ -1119,14 +1119,44 @@ $("#examAuto").onclick = runFullPipeline;
 
 function auditBadge(v){ return ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•"); }
 function auditCol(v){ return ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556"); }
+// One audit row — with a focused "Search again" button on every ❓ (unverified).
+function auditRowHtml(x, coursesJson){
+  const arrow = (x.correct_authority && x.correct_authority !== x.authority)
+    ? ' → <span style="color:#7fdca0">'+esc(x.correct_authority)+'</span>' : '';
+  const again = (x.verdict === 'unverified')
+    ? '<button class="btn alt recheckBtn" data-auth="'+esc(x.authority)+'" data-claim="'+esc(x.claim||'')
+      +'" data-courses="'+esc(coursesJson||'[]')+'" style="width:auto;font-size:10px;margin-top:4px">🔎 Search again for this one</button>'
+    : '';
+  return '<div class="auditRow" style="font-size:12px;border-left:3px solid '+auditCol(x.verdict)
+    +';padding:5px 9px;margin:4px 0;background:#11151d;border-radius:4px">'
+    + auditBadge(x.verdict)+' <b>'+esc(x.authority)+'</b>'+arrow
+    + (x.note ? ('<div style="color:#8b93a7;margin-top:2px">'+esc(x.note)+'</div>') : '')
+    + again + '</div>';
+}
+async function recheckAuthority(btn){
+  const row = btn.closest('.auditRow');
+  btn.disabled = true; btn.textContent = "🔎 Searching harder…";
+  let courses; try { courses = JSON.parse(btn.dataset.courses || "[]"); } catch(e){ courses = []; }
+  try {
+    const r = await fetch("/api/audit/recheck", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({authority: btn.dataset.auth, claim: btn.dataset.claim, courses})});
+    const d = await r.json();
+    if (d.error){ btn.textContent = d.error; btn.disabled = false; return; }
+    const x = {authority: btn.dataset.auth, claim: btn.dataset.claim,
+               verdict: d.verdict, note: d.note, correct_authority: d.correct_authority};
+    if (row) row.outerHTML = auditRowHtml(x, btn.dataset.courses);
+  } catch(e){ btn.textContent = "error — retry"; btn.disabled = false; }
+}
+document.addEventListener("click", e => {
+  const b = (e.target.closest ? e.target.closest(".recheckBtn") : null);
+  if (b){ e.preventDefault(); recheckAuthority(b); }
+});
 // Full audit report for one issue (passed + corrected + flagged), used by 'Do it all'.
 function issueAuditHtml(it, idx) {
   const a = it._audit; if (!a || !a.length) return "";
   const passed = a.filter(x => x.verdict === "supported").length;
   const flagged = a.filter(x => x.verdict === "unverified").length;
-  const rows = a.map(x => '<div style="margin:1px 0">' + auditBadge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
-    + (x.correct_authority ? (' → <span style="color:#7fdca0">' + esc(x.correct_authority) + '</span>') : '')
-    + (x.note ? ('<span style="color:#8b93a7"> — ' + esc(x.note) + '</span>') : '') + '</div>').join("");
+  const rows = a.map(x => auditRowHtml(x, JSON.stringify([COURSE]))).join("");
   const orig = it._auditOriginal
     ? '<button class="btn alt showOrigAuto" data-i="' + idx + '" style="width:auto;font-size:10px;margin-top:4px">⌄ show original (before fix)</button>'
       + '<div class="origAutoBox" data-i="' + idx + '" style="display:none;white-space:pre-wrap;color:#98a2b3;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:6px;margin-top:4px">' + esc(it._auditOriginal) + '</div>'
@@ -1368,11 +1398,7 @@ async function auditAndFixIssue(i) {
     const items = d.items || [];
     const list = !items.length
       ? '<span style="font-size:11px;color:#6b7488">' + esc(d.note || "No specific authorities to check.") + '</span>'
-      : items.map(x =>
-        '<div style="font-size:11px;border-left:3px solid ' + col(x.verdict) + ';padding:3px 8px;margin:3px 0;background:#11151d;border-radius:4px">'
-        + badge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
-        + (x.correct_authority ? (' → <span style="color:#e0b050">' + esc(x.correct_authority) + '</span>') : '')
-        + (x.note ? ('<div style="color:#8b93a7">' + esc(x.note) + '</div>') : '') + '</div>').join("");
+      : items.map(x => auditRowHtml(x, JSON.stringify([COURSE]))).join("");
     if (d.corrected && d.fixed_count) {
       const fixedItems = items.filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
       it.answer = d.corrected; it.answer_annotated = "";      // fix AT SOURCE
@@ -2336,15 +2362,10 @@ async function runResearch(focus) {
 async function runAudit(doc, courses) {
   const btn = $("#auditBtn"), out = $("#auditOut");
   btn.disabled = true; btn.textContent = "🔍 Auditing & fixing…";
-  const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•");
-  const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
+  const badge = auditBadge, col = auditCol;
   const listHtml = items => !items.length
     ? `<span style="font-size:12px;color:#6b7488">No specific authorities to check.</span>`
-    : items.map(it =>
-      `<div style="font-size:12px;border-left:3px solid ${col(it.verdict)};padding:5px 9px;margin:5px 0;background:#11151d;border-radius:4px">`
-      + `${badge(it.verdict)} <b>${esc(it.authority)}</b>`
-      + (it.correct_authority ? ` → <span style="color:#e0b050">${esc(it.correct_authority)}</span>` : "")
-      + `<div style="color:#8b93a7;margin-top:2px">${esc(it.note || it.claim || "")}</div></div>`).join("");
+    : items.map(it => auditRowHtml(it, JSON.stringify(courses))).join("");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({answer: doc, courses, fix: true})});
