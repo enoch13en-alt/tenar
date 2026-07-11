@@ -1092,9 +1092,14 @@ async function runFullPipeline() {
     $("#examStatus").textContent = "🔍 Auditing every issue's authorities against the corpus…";
     const nFixed = await auditFixAll();
     renderExam();
-    $("#examStatus").textContent = nFixed
-      ? ("✅ Corrected " + nFixed + " authority issue(s) before compiling.")
-      : "Authorities checked — clean.";
+    let auPassed = 0, auFlag = 0;
+    EXAM.issues.forEach(it => (it._audit || []).forEach(x => {
+      if (x.verdict === "supported") auPassed++; else if (x.verdict === "unverified") auFlag++;
+    }));
+    $("#examStatus").textContent = "🔍 Audit done — ✅ " + auPassed + " passed"
+      + (nFixed ? (" · 🔧 " + nFixed + " corrected") : "")
+      + (auFlag ? (" · ❓ " + auFlag + " to verify") : "")
+      + " (details under each issue). Compiling…";
     // ④ compile the final document
     stage("④ Compiling…");
     await compileExam();
@@ -1112,6 +1117,26 @@ async function runFullPipeline() {
 }
 $("#examAuto").onclick = runFullPipeline;
 
+function auditBadge(v){ return ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•"); }
+function auditCol(v){ return ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556"); }
+// Full audit report for one issue (passed + corrected + flagged), used by 'Do it all'.
+function issueAuditHtml(it, idx) {
+  const a = it._audit; if (!a || !a.length) return "";
+  const passed = a.filter(x => x.verdict === "supported").length;
+  const flagged = a.filter(x => x.verdict === "unverified").length;
+  const rows = a.map(x => '<div style="margin:1px 0">' + auditBadge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
+    + (x.correct_authority ? (' → <span style="color:#7fdca0">' + esc(x.correct_authority) + '</span>') : '')
+    + (x.note ? ('<span style="color:#8b93a7"> — ' + esc(x.note) + '</span>') : '') + '</div>').join("");
+  const orig = it._auditOriginal
+    ? '<button class="btn alt showOrigAuto" data-i="' + idx + '" style="width:auto;font-size:10px;margin-top:4px">⌄ show original (before fix)</button>'
+      + '<div class="origAutoBox" data-i="' + idx + '" style="display:none;white-space:pre-wrap;color:#98a2b3;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:6px;margin-top:4px">' + esc(it._auditOriginal) + '</div>'
+    : '';
+  return '<div style="font-size:11px;margin-top:5px;border-left:3px solid #3a4556;padding:5px 9px;background:#0f131a;border-radius:4px">'
+    + '<div style="color:#aab4c6;margin-bottom:3px">🔍 Audit — ✅ ' + passed + ' passed'
+    + (it._autoFixed ? ('  ·  🔧 ' + it._autoFixed + ' corrected') : '')
+    + (flagged ? ('  ·  ❓ ' + flagged + ' to verify') : '') + '</div>'
+    + rows + orig + '</div>';
+}
 function renderExam() {
   let h = "";
   if (EXAM.facts.length) {
@@ -1128,11 +1153,7 @@ function renderExam() {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
-        const autofix = it._autoFixed
-          ? '<div style="font-size:11px;color:#7fdca0;margin-top:4px">🔧 Auto-corrected '+it._autoFixed+' authority issue(s): '
-            + (it._autoFixList||[]).map(x=>'<b>'+esc(x.authority)+'</b>'+(x.correct_authority?(' → '+esc(x.correct_authority)):'')).join('; ')
-            + '</div>' : '';
-        body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + autofix
+        body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + issueAuditHtml(it, idx)
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
@@ -1153,6 +1174,12 @@ function renderExam() {
     b.onclick = () => gatherIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
+    const box = $("#examOut").querySelector('.origAutoBox[data-i="' + b.dataset.i + '"]');
+    if (!box) return; const sh = box.style.display === "none";
+    box.style.display = sh ? "block" : "none";
+    b.textContent = (sh ? "⌃ hide" : "⌄ show") + " original (before fix)";
+  });
   const sendFup = i => {
     const sel = document.querySelector('.modeSel[data-i="' + i + '"]');
     if (sel && sel.value === "voice") addVoice(i); else askFollowup(i);
@@ -1385,17 +1412,19 @@ async function auditFixAll() {
   async function worker() {
     while (idx < targets.length) {
       const it = targets[idx++];
+      const original = it.answer;
       try {
         const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
         const d = await r.json();
+        it._audit = d.items || [];                      // FULL report for every issue (passed + flagged)
+        it._autoFixed = d.fixed_count || 0;
         if (d.corrected && d.fixed_count) {
+          it._auditOriginal = original;
           it.answer = d.corrected; it.answer_annotated = "";
-          it._autoFixed = (it._autoFixed || 0) + d.fixed_count;   // trace for the UI
-          it._autoFixList = (d.items || []).filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
           fixed += d.fixed_count;
         }
-      } catch (e) {}
+      } catch (e) { if (!it._audit) it._audit = []; }
     }
   }
   await Promise.all([worker(), worker(), worker()]);   // 3 at a time
