@@ -1120,9 +1120,11 @@ function renderExam() {
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + followHTML(it, idx);
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
+      const link = (it.link && it.link.toLowerCase() !== 'standalone')
+        ? '<div class="why" style="color:#c9a86a;margin-top:2px">↳ '+esc(it.link)+'</div>' : '';
       return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+'</h5>'
         + '<div class="why">'+esc(it.why||'')+(it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
-        + body + '</div>';
+        + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
       + '<button class="btn gold" id="examCompile" style="width:auto">Compile final document</button></div>';

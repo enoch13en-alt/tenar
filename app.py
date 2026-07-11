@@ -642,7 +642,13 @@ FACT_DISCIPLINE = (
     "is a deduction, not a bonus, and it dilutes the issues that matter.\n"
     "- STAND BEHIND EVERY AUTHORITY. Cite only a case, section or instrument you can "
     "ground in the materials or are genuinely certain of; anything else you omit or "
-    "flag plainly to verify — never dress an unchecked citation as settled law.")
+    "flag plainly to verify — never dress an unchecked citation as settled law.\n"
+    "- REASON ACROSS ISSUES, NOT IN SILOS. When a problem raises several issues they "
+    "INTERACT: a threshold issue gates the rest, and one issue's finding feeds the "
+    "next (validity → remedy, liability → quantum, one party's right → another's "
+    "exposure). Resolve them as a connected chain — settle the gateway first and carry "
+    "its outcome forward, and make explicit where a finding on one issue drives "
+    "another. Never treat the issues as independent points that ignore each other.")
 
 # Foundation & hierarchy of validity — a legal answer should show the law's pedigree
 # (constitution/grundnorm → statute → regulation → case law → international law)
@@ -4690,11 +4696,16 @@ def api_exam_breakdown():
         '- "assumptions": array of strings — gaps or ambiguities in the facts to '
         "state as assumptions or argue in the alternative (do NOT fill them with "
         "invented facts).\n"
-        '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\"} — n is '
+        '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\", \"link\"} — n is '
         "the order number, issue is a sub-question to answer, why ties it to the "
         "specific facts, law briefly names the relevant rule/source from the "
-        "materials. Order the issues logically so that answering all of them "
-        "answers the whole question. Put any THRESHOLD / GATEWAY issues FIRST — "
+        "materials, and LINK states how this issue CONNECTS to the others — which it "
+        "is a threshold/gateway to, which it depends on the outcome of, or which its "
+        "finding feeds into (e.g. 'threshold to issues 3-6', 'only reached if issue 2 "
+        "succeeds', 'its finding drives quantum in issue 7'); use 'standalone' only if "
+        "it genuinely connects to none. Order the issues logically so that answering "
+        "all of them answers the whole question AND the chain flows — an issue whose "
+        "outcome gates or feeds another comes before it. Put any THRESHOLD / GATEWAY issues FIRST — "
         "jurisdiction, applicable law, capacity/standing, limitation/time-bars, "
         "arbitrability, conditions precedent or other procedural bars the matter "
         "engages — before the merits issues.\n"
@@ -4913,7 +4924,16 @@ def api_exam_assemble():
         "ASSEMBLY TASK — apply ALL the rules above to the final document, and: "
         "synthesise the per-issue analyses into ONE coherent, well-structured "
         "legal answer that applies the law to the scenario's facts and flows as "
-        "a single argued piece (not stapled blocks; remove repetition). PRESERVE "
+        "a single argued piece (not stapled blocks; remove repetition). "
+        "MODEL THE FLOW BETWEEN ISSUES — they are NOT independent. Resolve any "
+        "threshold/gateway issue first and CARRY ITS OUTCOME FORWARD so it gates "
+        "what follows ('the lease being valid, the royalty question arises…'; 'if "
+        "the stabilisation clause fails, the fiscal issues below fall away'). Where "
+        "one issue's finding drives another — liability feeding quantum, validity "
+        "feeding remedy, one party's right constraining another's — make the "
+        "dependency explicit and reason ACROSS it, carrying earlier conclusions "
+        "into later ones. The answer must read as a connected chain, never parallel "
+        "mini-essays that ignore each other. PRESERVE "
         "the opposing views, alternative approaches, and their attribution (who "
         "holds each — author, institution, court, jurisdiction) that appear in "
         "the analyses; do not flatten a genuine debate into one view. If an "
