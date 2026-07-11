@@ -3052,8 +3052,15 @@ REASONING_UPGRADE = (
     "presenting both sides.\n\n"
     "GUARDRAILS. Do not pad — every addition must REPLACE weaker text, not sit on "
     "top of it. No new coverage as a substitute for depth; adding a section is not "
-    "a lift. Citation integrity: any authority you invoke must be real and "
-    "pinpointed — if unsure a source exists, say so rather than invent it; keep "
+    "a lift. CITATION GROUNDING LOCK — this pass runs with NO source retrieval; you "
+    "work ONLY from the text in front of you. You must NOT introduce any new case, "
+    "statute, section/article number, or other specific authority that is not ALREADY "
+    "present in that text. Move 2 dissects a comparator the answer ITSELF already "
+    "cites — never import a fresh one (a foreign case, a constitutional article) from "
+    "memory, and never state a section or article number you cannot see in the text: "
+    "with nothing to check it against, an unverifiable pinpoint is a fabrication (this "
+    "is exactly how a wrong 'article 257(6)' slips in). If the answer lacks a good "
+    "comparator or an exact pinpoint, deepen the PRINCIPLE without one. Keep "
     "every existing footnote marker [n] and every Footnotes/Bibliography/Table "
     "entry intact and correctly numbered. Preserve the answer's existing thesis "
     "and VOICE — you are sharpening it, not rewriting it. Be honest about the "
@@ -3094,7 +3101,7 @@ def api_deepen():
     consume("deepens")
 
     system = (WRITING_STYLE + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD
-              + "\n\n" + CASE_APPLICATION
+              + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
               + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\n" + REASONING_UPGRADE)
