@@ -1324,8 +1324,8 @@ async function auditAndFixIssue(i) {
   const outEl = document.querySelector('.auditIssueOut[data-i="' + i + '"]');
   if (btn) { btn.disabled = true; btn.textContent = "🔍 Auditing…"; }
   if (outEl) outEl.innerHTML = '<span style="font-size:11px;color:#8b93a7">Re-checking authorities against the corpus…</span>';
-  const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",not_in_corpus:"❓"}[v] || "•");
-  const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",not_in_corpus:"#8fb4ff"}[v] || "#556");
+  const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•");
+  const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
@@ -2285,8 +2285,8 @@ async function runAudit(doc, courses) {
     if (!items.length) {
       out.innerHTML = `<span style="font-size:12px;color:#6b7488">${esc(d.note || "No specific authorities to check.")}</span>`;
     } else {
-      const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",not_in_corpus:"❓"}[v] || "•");
-      const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",not_in_corpus:"#8fb4ff"}[v] || "#556");
+      const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•");
+      const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
       const bad = items.filter(i => i.verdict !== "supported").length;
       out.innerHTML = `<div style="font-size:12px;color:#aab4c6;margin-bottom:6px">`
         + (bad ? `⚠️ ${bad} of ${items.length} authorities need attention:` : `✅ all ${items.length} authorities check out:`) + `</div>`

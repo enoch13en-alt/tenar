@@ -3045,10 +3045,12 @@ def api_audit():
     if not items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
-    # 2) re-retrieve corpus support for each
+    # 2) re-retrieve corpus support for each. Query claim-first (the SUBSTANCE terms
+    # discriminate better than 'section 23'), at a generous depth so a real provision
+    # is not falsely reported 'not found' just because it ranked below a shallow window.
     for it in items:
-        qy = (it.get("authority", "") + " " + it.get("claim", "")).strip()
-        hits = search_multi(courses, qy, k=6) if len(courses) > 1 else search(courses[0], qy, k=6)
+        qy = (it.get("claim", "") + " " + it.get("authority", "")).strip()
+        hits = search_multi(courses, qy, k=20) if len(courses) > 1 else search(courses[0], qy, k=20)
         ctx = []
         for h in hits:
             hc = h.get("_course", courses[0])
@@ -3069,9 +3071,15 @@ def api_audit():
                     "'supported' (passages confirm the claim AND the cited section/article number "
                     "matches); 'misattributed' (corpus supports the substance but under a DIFFERENT "
                     "section/article than cited — give the correct one in correct_authority); "
-                    "'contradicted' (corpus says otherwise); 'not_in_corpus' (no passage confirms it "
-                    "— e.g. a foreign case; must be verified externally). STRICT JSON: array of "
-                    "{\"n\",\"verdict\",\"note\":one short line,\"correct_authority\":optional}. No fences."),
+                    "'contradicted' (corpus says otherwise); 'unverified' (the retrieved passages "
+                    "neither confirm nor contradict it — this means it was NOT SURFACED in this "
+                    "check, NOT that the authority is wrong or absent; a real provision can land "
+                    "here if it wasn't retrieved, and a foreign case not in the library lands here "
+                    "too — either way it needs a manual look). Prefer 'supported' whenever the "
+                    "passages genuinely bear it out; use 'unverified' only when they truly say "
+                    "nothing either way. You MUST return exactly ONE object for EVERY n given — "
+                    "never omit an item. STRICT JSON: array of {\"n\",\"verdict\",\"note\":one short "
+                    "line,\"correct_authority\":optional}. No fences."),
             messages=[{"role": "user", "content": json.dumps(payload)[:26000]}])
         verdicts = _parse_json(_text_of(ver))
     except Exception:
