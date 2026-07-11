@@ -2184,6 +2184,23 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n"
                   + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
                   + TEMPORAL_SUCCESSION)
+    elif mode == "gather":
+        # Focused issue-gather: a DIRECT, law-backed answer to ONE issue — never an
+        # essay. Lean grounding stack + a direct-answer directive; short by design so
+        # it completes and reads as an answer, not a lecture.
+        system = (CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
+                  + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n"
+                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
+                  + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
+                  "FOCUSED ISSUE ANSWER — NOT AN ESSAY. You are answering ONE specific issue for "
+                  "a larger analysis. Be DIRECT and concise: (1) LEAD WITH THE ANSWER — open with "
+                  "your conclusion on this issue in a sentence; (2) THEN THE LAW — the governing "
+                  "rule and its pinpoint authority (the specific section/article/case that decides "
+                  "it, not a survey); (3) THEN APPLY it to THIS problem's facts in one or two "
+                  "sentences and state the consequence for the party. STOP THERE. No introduction, "
+                  "no background lecture, no restating the facts, no 'further facts would sharpen "
+                  "this' digression, no summing-up. A tight paragraph or two — direct, specific, "
+                  "backed by law. Depth is the right authority on the right fact, not length.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -2754,8 +2771,9 @@ def api_ask():
     consume("questions")
     if include_web:
         consume("comparative")
-    # brief = exam-gather (kept tight for cost); report needs the most room for
-    # a full pyramid; other formats get a generous cap so nothing truncates.
+    # brief = exam-gather: a DIRECT, law-backed issue answer (mode='gather'), not an
+    # essay — so it stays short and completes. report needs the most room for a full
+    # pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
         max_out = 4000
     elif fmt == "chat":
@@ -2764,7 +2782,8 @@ def api_ask():
         max_out = 9000
     else:
         max_out = 8000
-    return jsonify(answer_question(course, q, include_web, fmt, max_out))
+    mode = "gather" if body.get("brief") else "answer"
+    return jsonify(answer_question(course, q, include_web, fmt, max_out, mode))
 
 
 @app.route("/api/cases", methods=["POST"])
