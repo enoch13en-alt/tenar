@@ -392,7 +392,7 @@
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
       </label>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → compile the final document → Deepen it to top-band standard. Uses the credits each step would (questions + one compile + one Deepen).">🚀 Do it all → Deepen</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → AUDIT & fix each issue's authorities against the corpus → compile → Deepen to top-band standard. The audit adds a per-issue check (extra question-credits) but catches misattributed sections before they reach the final document.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1086,12 +1086,21 @@ async function runFullPipeline() {
     if (!EXAM.issues.some(it => it.done && it.answer)) {
       $("#examStatus").textContent = "Couldn't gather any issue — check your plan limits."; return;
     }
-    // ③ compile the final document
-    stage("③ Compiling…");
+    // ②½ audit every issue's authorities against the corpus and fix them AT SOURCE
+    //    — before they can propagate into the compiled document
+    stage("③ Auditing authorities…");
+    $("#examStatus").textContent = "🔍 Auditing every issue's authorities against the corpus…";
+    const nFixed = await auditFixAll();
+    renderExam();
+    $("#examStatus").textContent = nFixed
+      ? ("✅ Corrected " + nFixed + " authority issue(s) before compiling.")
+      : "Authorities checked — clean.";
+    // ④ compile the final document
+    stage("④ Compiling…");
     await compileExam();
     if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
-    // ④ deepen it (the final step)
-    stage("④ Deepening…");
+    // ⑤ deepen it (the final step)
+    stage("⑤ Deepening…");
     const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
     if (deepBtn) { deepBtn.click(); $("#examStatus").textContent = "🔬 Deepening the final document — it appears below."; }
     else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
@@ -1341,6 +1350,25 @@ async function auditAndFixIssue(i) {
     if (outEl) outEl.innerHTML = (clean ? '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Authorities check out.</div>' : '') + list;
     if (btn) { btn.disabled = false; btn.textContent = "🔍 Re-audit"; }
   } catch (e) { if (outEl) outEl.textContent = "Audit error — try again."; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } }
+}
+// Audit + fix every gathered issue's authorities (limited concurrency), correcting
+// AT SOURCE. Returns how many authority issues were fixed. Used by 'Do it all'.
+async function auditFixAll() {
+  const targets = EXAM.issues.filter(it => it.answer && !String(it.answer).startsWith("Error"));
+  let fixed = 0, idx = 0;
+  async function worker() {
+    while (idx < targets.length) {
+      const it = targets[idx++];
+      try {
+        const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
+        const d = await r.json();
+        if (d.corrected && d.fixed_count) { it.answer = d.corrected; it.answer_annotated = ""; fixed += d.fixed_count; }
+      } catch (e) {}
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);   // 3 at a time
+  return fixed;
 }
 async function gatherAll() {
   $("#examStatus").textContent = "Gathering all issues (one at a time)…";
