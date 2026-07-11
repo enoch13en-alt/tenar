@@ -3003,6 +3003,89 @@ def api_research_issues():
         return jsonify({"issues": []})
 
 
+@app.route("/api/audit", methods=["POST"])
+def api_audit():
+    """Independent citation auditor. Extracts the answer's checkable authorities, RE-
+    RETRIEVES each from the corpus, and judges it against the retrieved text only —
+    supported / misattributed / contradicted / not-in-corpus. The safety net for the
+    substantive slips an LLM drafter can still make (wrong section, misattributed
+    content, a foreign case cited from memory)."""
+    body = request.json or {}
+    answer = (body.get("answer") or body.get("text") or "").strip()
+    courses = [safe_course(x) for x in (body.get("courses") or []) if x]
+    if not courses and body.get("course"):
+        courses = [safe_course(body.get("course"))]
+    courses = [x for x in courses if _may_read_course(x)]
+    if not answer or not courses:
+        return jsonify({"error": "Need an answer to audit and a course to check it against."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+
+    # 1) extract the checkable authority-claims
+    try:
+        ext, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1500,
+            system=("You audit a legal answer. Extract each CHECKABLE assertion that rests on a "
+                    "SPECIFIC legal authority — a named section/subsection/article of a statute or "
+                    "constitution, or a rule expressly attributed to one. For each give the authority "
+                    "exactly as cited and the claim the answer makes about it. Skip purely "
+                    "argumentative sentences with no specific authority. STRICT JSON: array of "
+                    "{\"authority\":\"e.g. s.23(2) Act 703 / article 257(6)\",\"claim\":\"what the "
+                    "answer says that authority provides\"}. Max 12, the most load-bearing. No fences."),
+            messages=[{"role": "user", "content": answer[:16000]}])
+        items = _parse_json(_text_of(ext))
+    except Exception:
+        items = []
+    items = [it for it in items if isinstance(it, dict) and it.get("authority")][:12]
+    if not items:
+        return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
+
+    # 2) re-retrieve corpus support for each
+    for it in items:
+        qy = (it.get("authority", "") + " " + it.get("claim", "")).strip()
+        hits = search_multi(courses, qy, k=6) if len(courses) > 1 else search(courses[0], qy, k=6)
+        ctx = []
+        for h in hits:
+            hc = h.get("_course", courses[0])
+            pdir, _ = course_paths(hc)
+            pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+            ctx.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
+        it["_ctx"] = "\n\n".join(ctx)[:6000]
+
+    # 3) verify each against ITS retrieved corpus text only
+    payload = [{"n": i + 1, "authority": it["authority"], "claim": it.get("claim", ""),
+                "corpus": it["_ctx"]} for i, it in enumerate(items)]
+    try:
+        ver, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2600,
+            system=("You are a citation auditor. For each item you get the AUTHORITY cited, the CLAIM "
+                    "made about it, and CORPUS passages actually retrieved from the library. Judge "
+                    "ONLY against the corpus passages — never your own knowledge. Verdicts: "
+                    "'supported' (passages confirm the claim AND the cited section/article number "
+                    "matches); 'misattributed' (corpus supports the substance but under a DIFFERENT "
+                    "section/article than cited — give the correct one in correct_authority); "
+                    "'contradicted' (corpus says otherwise); 'not_in_corpus' (no passage confirms it "
+                    "— e.g. a foreign case; must be verified externally). STRICT JSON: array of "
+                    "{\"n\",\"verdict\",\"note\":one short line,\"correct_authority\":optional}. No fences."),
+            messages=[{"role": "user", "content": json.dumps(payload)[:26000]}])
+        verdicts = _parse_json(_text_of(ver))
+    except Exception:
+        verdicts = []
+    vmap = {v.get("n"): v for v in verdicts if isinstance(v, dict)}
+    out = []
+    for i, it in enumerate(items):
+        v = vmap.get(i + 1, {})
+        out.append({"authority": it["authority"], "claim": it.get("claim", ""),
+                    "verdict": v.get("verdict", "unchecked"), "note": v.get("note", ""),
+                    "correct_authority": v.get("correct_authority", "")})
+    return jsonify({"items": out})
+
+
 POLISH_INSTRUCTION = (
     "You are an expert legal-writing editor. Rewrite the student's OWN draft below "
     "to a distinction standard by APPLYING THE HOUSE STYLE — the clarity and "
