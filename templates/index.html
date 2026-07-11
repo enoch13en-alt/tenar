@@ -1118,7 +1118,10 @@ function renderExam() {
     h += EXAM.issues.map((it, idx) => {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
-      else if (it.answer) body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + followHTML(it, idx);
+      else if (it.answer) body = '<div class="ans">'+linkify(esc(it.answer))+'</div>'
+        + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
+        + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+        + followHTML(it, idx);
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
       const link = (it.link && it.link.toLowerCase() !== 'standalone')
         ? '<div class="why" style="color:#c9a86a;margin-top:2px">↳ '+esc(it.link)+'</div>' : '';
@@ -1133,6 +1136,8 @@ function renderExam() {
   $("#examOut").innerHTML = h;
   $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
+    b.onclick = () => auditAndFixIssue(+b.dataset.i));
   const sendFup = i => {
     const sel = document.querySelector('.modeSel[data-i="' + i + '"]');
     if (sel && sel.value === "voice") addVoice(i); else askFollowup(i);
@@ -1300,6 +1305,42 @@ async function gatherIssue(i) {
     $("#examStatus").textContent = "Exam session cost so far $" + EXAM.cost.toFixed(4);
   } catch (e) { it.answer = "Error gathering: " + e; }
   it.done = true; it.loading = false; renderExam();
+}
+// Audit an issue's gathered answer against the corpus and auto-correct flagged
+// authorities AT SOURCE — before they can propagate into the compiled document.
+async function auditAndFixIssue(i) {
+  const it = EXAM.issues[i];
+  if (!it || !it.answer) return;
+  const btn = document.querySelector('.auditIssueBtn[data-i="' + i + '"]');
+  const outEl = document.querySelector('.auditIssueOut[data-i="' + i + '"]');
+  if (btn) { btn.disabled = true; btn.textContent = "🔍 Auditing…"; }
+  if (outEl) outEl.innerHTML = '<span style="font-size:11px;color:#8b93a7">Re-checking authorities against the corpus…</span>';
+  const badge = v => ({supported:"✅",misattributed:"⚠️",contradicted:"❌",not_in_corpus:"❓"}[v] || "•");
+  const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",not_in_corpus:"#8fb4ff"}[v] || "#556");
+  try {
+    const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
+    const d = await r.json();
+    if (d.error) { if (outEl) outEl.textContent = d.error; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } return; }
+    const items = d.items || [];
+    const list = !items.length
+      ? '<span style="font-size:11px;color:#6b7488">' + esc(d.note || "No specific authorities to check.") + '</span>'
+      : items.map(x =>
+        '<div style="font-size:11px;border-left:3px solid ' + col(x.verdict) + ';padding:3px 8px;margin:3px 0;background:#11151d;border-radius:4px">'
+        + badge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
+        + (x.correct_authority ? (' → <span style="color:#e0b050">' + esc(x.correct_authority) + '</span>') : '')
+        + (x.note ? ('<div style="color:#8b93a7">' + esc(x.note) + '</div>') : '') + '</div>').join("");
+    if (d.corrected && d.fixed_count) {
+      it.answer = d.corrected; it.answer_annotated = "";      // fix AT SOURCE
+      renderExam();                                            // re-render corrected answer
+      const o2 = document.querySelector('.auditIssueOut[data-i="' + i + '"]');
+      if (o2) o2.innerHTML = '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Corrected ' + d.fixed_count + ' authority issue(s) — answer updated above.</div>' + list;
+      return;
+    }
+    const clean = !items.some(x => x.verdict !== "supported");
+    if (outEl) outEl.innerHTML = (clean ? '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Authorities check out.</div>' : '') + list;
+    if (btn) { btn.disabled = false; btn.textContent = "🔍 Re-audit"; }
+  } catch (e) { if (outEl) outEl.textContent = "Audit error — try again."; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } }
 }
 async function gatherAll() {
   $("#examStatus").textContent = "Gathering all issues (one at a time)…";

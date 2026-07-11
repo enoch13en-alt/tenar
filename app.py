@@ -3083,7 +3083,39 @@ def api_audit():
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
                     "verdict": v.get("verdict", "unchecked"), "note": v.get("note", ""),
                     "correct_authority": v.get("correct_authority", "")})
-    return jsonify({"items": out})
+
+    # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
+    # grounded in the corpus text the audit already retrieved. Everything else verbatim.
+    result = {"items": out}
+    if bool(body.get("fix")):
+        flagged = [(items[i], out[i]) for i in range(len(items))
+                   if out[i]["verdict"] in ("misattributed", "contradicted")]
+        corrected = None
+        if flagged:
+            fixes = [{"cited": it["authority"], "problem": v["verdict"],
+                      "correct_authority": v.get("correct_authority", ""),
+                      "note": v.get("note", ""), "corpus": it.get("_ctx", "")[:2500]}
+                     for it, v in flagged]
+            try:
+                cor, _ = _create_final(
+                    c, model=ANSWER_MODEL, max_tokens=8000,
+                    system=("You correct the FLAGGED citations in a legal answer and nothing else. "
+                            "For each flagged item you get the citation as written, what is wrong, "
+                            "the correct authority, and the CORPUS text. Fix ONLY the flagged "
+                            "citations/claims — put the correct section/article number and align the "
+                            "claim to what the corpus actually says, using ONLY the corpus provided. "
+                            "Do NOT touch any other sentence, do NOT add new authorities, do NOT "
+                            "change the argument, conclusions or style. Return ONLY the corrected "
+                            "answer text — no preamble, no notes."),
+                    messages=[{"role": "user", "content":
+                               "ANSWER:\n" + answer + "\n\nFLAGGED (fix these only):\n"
+                               + json.dumps(fixes)}])
+                corrected = _text_of(cor).strip()
+            except Exception:
+                corrected = None
+        result["corrected"] = corrected
+        result["fixed_count"] = len(flagged)
+    return jsonify(result)
 
 
 POLISH_INSTRUCTION = (
