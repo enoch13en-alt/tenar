@@ -3029,19 +3029,23 @@ def api_audit():
     # 1) extract the checkable authority-claims
     try:
         ext, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=1500,
-            system=("You audit a legal answer. Extract each CHECKABLE assertion that rests on a "
-                    "SPECIFIC legal authority — a named section/subsection/article of a statute or "
-                    "constitution, or a rule expressly attributed to one. For each give the authority "
-                    "exactly as cited and the claim the answer makes about it. Skip purely "
-                    "argumentative sentences with no specific authority. STRICT JSON: array of "
-                    "{\"authority\":\"e.g. s.23(2) Act 703 / article 257(6)\",\"claim\":\"what the "
-                    "answer says that authority provides\"}. Max 12, the most load-bearing. No fences."),
-            messages=[{"role": "user", "content": answer[:16000]}])
+            c, model=ANSWER_MODEL, max_tokens=4000,
+            system=("You audit a legal answer for a marker. Extract EVERY checkable assertion — miss "
+                    "nothing a marker could challenge. Include: (a) every statute/constitution "
+                    "SECTION, subsection or ARTICLE cited; (b) every named CASE; (c) every DIRECT "
+                    "QUOTATION attributed to a statute, case or instrument; (d) every specific FIGURE, "
+                    "rate, percentage or monetary amount tied to a source; (e) every specific legal "
+                    "RULE or proposition ascribed to a named authority. Be EXHAUSTIVE — list each as "
+                    "its OWN item even if several rest on the same section, and split a compound claim "
+                    "into its checkable parts. For each give the authority exactly as cited and the "
+                    "precise claim the answer makes about it. Skip only pure argument/opinion with no "
+                    "checkable authority or figure. STRICT JSON: array of {\"authority\",\"claim\"}. "
+                    "No cap on how many. No fences."),
+            messages=[{"role": "user", "content": answer[:24000]}])
         items = _parse_json(_text_of(ext))
     except Exception:
         items = []
-    items = [it for it in items if isinstance(it, dict) and it.get("authority")][:12]
+    items = [it for it in items if isinstance(it, dict) and it.get("authority")][:60]
     if not items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
@@ -3059,35 +3063,40 @@ def api_audit():
             ctx.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
         it["_ctx"] = "\n\n".join(ctx)[:6000]
 
-    # 3) verify each against ITS retrieved corpus text only
-    payload = [{"n": i + 1, "authority": it["authority"], "claim": it.get("claim", ""),
-                "corpus": it["_ctx"]} for i, it in enumerate(items)]
-    try:
-        ver, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=2600,
-            system=("You are a citation auditor. For each item you get the AUTHORITY cited, the CLAIM "
-                    "made about it, and CORPUS passages actually retrieved from the library. Judge "
-                    "ONLY against the corpus passages — never your own knowledge. Verdicts: "
-                    "'supported' (passages confirm the claim AND the cited section/article number "
-                    "matches); 'misattributed' (corpus supports the substance but under a DIFFERENT "
-                    "section/article than cited — give the correct one in correct_authority); "
-                    "'contradicted' (corpus says otherwise); 'unverified' (the retrieved passages "
-                    "neither confirm nor contradict it — this means it was NOT SURFACED in this "
-                    "check, NOT that the authority is wrong or absent; a real provision can land "
-                    "here if it wasn't retrieved, and a foreign case not in the library lands here "
-                    "too — either way it needs a manual look). Prefer 'supported' whenever the "
-                    "passages genuinely bear it out; use 'unverified' only when they truly say "
-                    "nothing either way. You MUST return exactly ONE object for EVERY n given — "
-                    "never omit an item. STRICT JSON: array of {\"n\",\"verdict\",\"note\":one short "
-                    "line,\"correct_authority\":optional}. No fences."),
-            messages=[{"role": "user", "content": json.dumps(payload)[:26000]}])
-        verdicts = _parse_json(_text_of(ver))
-    except Exception:
-        verdicts = []
-    vmap = {v.get("n"): v for v in verdicts if isinstance(v, dict)}
+    # 3) verify EACH item with its OWN focused call, in parallel. A dedicated call per
+    #    citation catches far more than one diluted batch pass — recall is the point of
+    #    an audit, and we spend the calls to get it.
+    import concurrent.futures
+
+    def _verify_one(it):
+        try:
+            v, _ = _create_final(
+                c, model=ANSWER_MODEL, max_tokens=500,
+                system=("You audit ONE legal citation against the corpus passages given. Judge ONLY "
+                        "against those passages, never your own knowledge. Read them carefully for the "
+                        "exact section/article NUMBER, the recipient or party, any FIGURE, and any "
+                        "EXCEPTION or default-vs-carve-out structure. Verdicts: 'supported' (the "
+                        "passages confirm the claim AND the cited number/name matches); 'misattributed' "
+                        "(the substance is right but sits under a DIFFERENT section/article than cited "
+                        "— put the correct one in correct_authority); 'contradicted' (the passages say "
+                        "otherwise — including a wrong recipient, a mis-stated figure, or an exception "
+                        "applied as if it were the rule); 'unverified' (the passages neither confirm nor "
+                        "contradict — it simply was not surfaced here; this needs a manual look and is "
+                        "NOT proof the authority is wrong or absent). Prefer 'supported' when the "
+                        "passages genuinely bear it out. STRICT JSON object: {\"verdict\",\"note\":one "
+                        "precise line,\"correct_authority\":optional}. No fences."),
+                messages=[{"role": "user", "content": json.dumps(
+                    {"authority": it["authority"], "claim": it.get("claim", ""),
+                     "corpus": it.get("_ctx", "")})[:20000]}])
+            d = _parse_json(_text_of(v))
+            return d if isinstance(d, dict) else {"verdict": "unchecked"}
+        except Exception:
+            return {"verdict": "unchecked"}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        verdicts = list(pool.map(_verify_one, items))
     out = []
-    for i, it in enumerate(items):
-        v = vmap.get(i + 1, {})
+    for it, v in zip(items, verdicts):
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
                     "verdict": v.get("verdict", "unchecked"), "note": v.get("note", ""),
                     "correct_authority": v.get("correct_authority", "")})
