@@ -848,6 +848,49 @@ PRIMARY_FIRST = (
     "honest when the section itself isn't in front of you."
 )
 
+TEMPORAL_SUCCESSION = (
+    "LAW LIVES IN TIME — READ IT DIACHRONICALLY. A legal regime is never a flat pile "
+    "of equally-live rules; it is a sequence in which later instruments act on earlier "
+    "ones. When more than one instrument in your materials governs the same ground, the "
+    "later one is not merely 'also present' — by operation of law it AMENDS, REPLACES or "
+    "REPEALS the earlier (a comprehensive re-enactment supersedes its predecessor; lex "
+    "posterior derogat priori; an express repeal or savings clause controls). Your task "
+    "is to work out the state of the law AS IT NOW STANDS and reason from that, while "
+    "showing how it came to stand there.\n"
+    "- DON'T LABEL — TRACE THE FLOW. Do NOT merely tag an older instrument '(historical)' "
+    "and drop it, and NEVER argue from a superseded provision as if it were live. Carry "
+    "the reader through the movement instead: what the position WAS, WHAT changed it (the "
+    "amending or repealing instrument), what it IS now, and — where the materials show a "
+    "direction of travel (a recent Act recentralising a regime, a pending reform, a policy "
+    "signalling change) — where it is HEADING. Past, present and trajectory as ONE line of "
+    "reasoning, not three labels. A reader should feel the law move.\n"
+    "- THE CURRENT INSTRUMENT GOVERNS; THE OLD ONE EXPLAINS. Lead every operative "
+    "statement of law with the instrument in force now; use the repealed or earlier one to "
+    "explain WHY the present rule takes the shape it does, or HOW FAR the law has travelled "
+    "— never as the rule itself. (E.g. a 1972 decree's 55% compulsory State stake is spent: "
+    "the live rule is the 10% free carried interest under the current Act — cite the current "
+    "Act as the law and invoke the 1972 decree only to measure the distance travelled.) An "
+    "old rule set beside the current one WITHOUT that relationship stated silently misleads "
+    "the reader into thinking it still binds.\n"
+    "- A REFERENCE TO A REPEALED ENACTMENT READS AS ITS REPLACEMENT. Where a live "
+    "instrument still names an older one since replaced (e.g. a section requiring "
+    "incorporation 'under the Companies Code 1963' when a later Companies Act has replaced "
+    "it), apply the ordinary interpretive rule that a reference to a repealed enactment is "
+    "read as a reference to its current successor — state the requirement by the SUCCESSOR "
+    "instrument, not the dead one, noting the re-designation.\n"
+    "- STAY GROUNDED ABOUT STATUS — NEVER INVENT A REPEAL OR A SUCCESSOR. Succession is a "
+    "FACT, so the calibrated-precision rule still binds it. Assert that an instrument is "
+    "amended, repealed or replaced only where the materials show it (a repeal or savings "
+    "clause, an express amendment, a later instrument plainly re-enacting the same ground) "
+    "or where it is a matter of settled legal record. Do NOT manufacture a successor Act — "
+    "its title, its year or its section numbers — to complete the arc. Where you can see a "
+    "regime has moved on but the current instrument is not in front of you, name the "
+    "direction and flag it ('this appears superseded by the later Act — confirm the current "
+    "provision') rather than either citing the dead law as live OR inventing the new one. "
+    "Check currency exactly as you check a pinpoint: as specific as the source supports, and "
+    "no more."
+)
+
 # ---------------------------------------------------------------- config
 def load_config():
     cfg = {"system_prompt": DEFAULT_PROMPT, "total_cost_usd": 0.0,
@@ -2013,7 +2056,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
                   + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
-                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
+                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
@@ -2698,7 +2741,7 @@ def api_research():
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
               + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
-              + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n"
+              + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n"
               + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY)
     if FORMATS.get(fmt):
         system = system + "\n\n" + FORMATS[fmt]
@@ -2923,7 +2966,7 @@ def api_deepen():
     system = (WRITING_STYLE + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD
               + "\n\n" + CASE_APPLICATION
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
-              + "\n\n" + ARGUMENTATIVE_COMMITMENT
+              + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\n" + REASONING_UPGRADE)
     if FORMATS.get(fmt):
         system = system + "\n\n" + FORMATS[fmt]
@@ -4153,7 +4196,7 @@ def api_advisory():
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
               + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
-              + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
+              + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
               + "\n\n" + ECONOMY + "\n\n" + ADVISORY_TASK
               + "\n\nOSCOLA RULES:\n" + OSCOLA_GUIDE)
     if FORMATS.get(deliverable):
@@ -4368,7 +4411,7 @@ def api_exam_voice():
     ctx = course_context(course, issue + "\n" + view, 30)  # wider window: a fair
     # grounding check needs to actually see the authority the view may rest on
     system = (VOICE_EVAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
-              + "\n\n" + ARGUMENTATIVE_COMMITMENT
+              + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\nReturn STRICT JSON only, no prose, no markdown fences.")
     user = (
         f"RETRIEVED MATERIAL (the only law you may rely on):\n{ctx}\n\n"
@@ -4762,7 +4805,7 @@ def api_exam_assemble():
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
         + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
-        + "\n\n" + ARGUMENTATIVE_COMMITMENT
+        + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document, and: "
         "synthesise the per-issue analyses into ONE coherent, well-structured "
