@@ -3065,10 +3065,13 @@ def api_audit():
                     "rate, percentage or monetary amount tied to a source; (e) every specific legal "
                     "RULE or proposition ascribed to a named authority. Be EXHAUSTIVE — list each as "
                     "its OWN item even if several rest on the same section, and split a compound claim "
-                    "into its checkable parts. For each give the authority exactly as cited and the "
-                    "precise claim the answer makes about it. Skip only pure argument/opinion with no "
-                    "checkable authority or figure. STRICT JSON: array of {\"authority\",\"claim\"}. "
-                    "No cap on how many. No fences."),
+                    "into its checkable parts. Give the AUTHORITY as the PRECISE instrument + pinpoint "
+                    "the answer provides — 's.9(1) Act 703', 'article 268(1) Constitution', 'Standard "
+                    "Mining Lease clause 1(f)' — NEVER a vague category label like 'institutional "
+                    "materials', 'the Constitution generally' or 'mining policy'; if the answer names a "
+                    "source, name it precisely. Then the precise claim the answer makes about it. Skip "
+                    "only pure argument/opinion with no checkable authority or figure. STRICT JSON: "
+                    "array of {\"authority\",\"claim\"}. No cap on how many. No fences."),
             messages=[{"role": "user", "content": answer[:24000]}])
         items = _parse_json(_text_of(ext))
     except Exception:
@@ -3077,19 +3080,30 @@ def api_audit():
     if not items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
-    # 2) re-retrieve corpus support for each. Query claim-first (the SUBSTANCE terms
-    # discriminate better than 'section 23'), at a generous depth so a real provision
-    # is not falsely reported 'not found' just because it ranked below a shallow window.
+    # 2) re-retrieve corpus support for each — TWO-PRONGED for recall: a SEMANTIC pull
+    # on the claim (finds the substance) AND a KEYWORD pull on the authority (the hybrid
+    # boost surfaces the provision by its number/name), merged. So a provision that IS in
+    # the corpus rarely lands in 'unverified' just because one query angle missed it.
+    def _retrieve(qy, k):
+        return (search_multi(courses, qy, k=k) if len(courses) > 1 else search(courses[0], qy, k=k))
     for it in items:
-        qy = (it.get("claim", "") + " " + it.get("authority", "")).strip()
-        hits = search_multi(courses, qy, k=20) if len(courses) > 1 else search(courses[0], qy, k=20)
-        ctx = []
-        for h in hits:
-            hc = h.get("_course", courses[0])
-            pdir, _ = course_paths(hc)
-            pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
-            ctx.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
-        it["_ctx"] = "\n\n".join(ctx)[:6000]
+        auth = (it.get("authority", "") or "").strip()
+        claim = (it.get("claim", "") or "").strip()
+        queries = [q for q in [(claim + " " + auth).strip(), auth, claim] if q]
+        merged, seen = [], set()
+        for qy in queries:
+            for h in _retrieve(qy, 12):
+                hc = h.get("_course", courses[0])
+                key = (hc, h["doc"], h.get("page"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                pdir, _ = course_paths(hc)
+                pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+                merged.append(f"[{display_name(h['doc'])} — p.{pg}] {h['text']}")
+            if len(merged) >= 28:
+                break
+        it["_ctx"] = "\n\n".join(merged[:28])[:9000]
 
     # 3) verify EACH item with its OWN focused call, in parallel. A dedicated call per
     #    citation catches far more than one diluted batch pass — recall is the point of
@@ -3125,9 +3139,14 @@ def api_audit():
         verdicts = list(pool.map(_verify_one, items))
     out = []
     for it, v in zip(items, verdicts):
+        # a correction arrow only makes sense for a GENUINE misattribution where the
+        # corrected authority actually differs — otherwise drop it (no 'X → X' noise).
+        ca = (v.get("correct_authority") or "").strip()
+        if v.get("verdict") != "misattributed" or ca.lower() == it["authority"].strip().lower():
+            ca = ""
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
                     "verdict": v.get("verdict", "unchecked"), "note": v.get("note", ""),
-                    "correct_authority": v.get("correct_authority", "")})
+                    "correct_authority": ca})
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
     # grounded in the corpus text the audit already retrieved. Everything else verbatim.
