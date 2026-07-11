@@ -1153,7 +1153,7 @@ function renderExam() {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
-        body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + issueAuditHtml(it, idx)
+        body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + issueAuditHtml(it, idx)
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
