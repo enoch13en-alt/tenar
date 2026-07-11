@@ -1728,19 +1728,53 @@ def reindex(course):
         st["running"] = False
 
 
+# Hybrid retrieval: blend embedding similarity with a lexical keyword-overlap score
+# so exact-term queries ('carried interest', 'stability clause', 's.43') surface the
+# chunk that literally contains them even when pure vector search ranks it below the
+# window. This is what fixed Act 703 s.43 being indexed but never retrieved.
+_SEARCH_STOP = frozenset((
+    "the a an and or of to in on for with by as at is are was were be been being it "
+    "its this that these those from into under over per not no which who whom whose "
+    "what when where how why does do can could would should shall may must if then "
+    "than about take takes taken position regime provision provisions law act ghana "
+    "ghanas ghanaian whats give tell explain").split())
+
+def _kw(text):
+    return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+            if w not in _SEARCH_STOP}
+
+def _index_kw(course):
+    """Per-chunk keyword sets, built once and cached on the loaded index."""
+    idx = INDEXES[course]
+    if "kw" not in idx:
+        idx["kw"] = [_kw(c.get("text", "")) for c in idx["chunks"]]
+    return idx["kw"]
+
+def _blend(sims, course, query):
+    """Add a lexical boost (fraction of the query's keywords the chunk contains) to
+    the vector similarities, so literal-term matches are not buried."""
+    qk = _kw(query)
+    if not qk:
+        return sims
+    kw = _index_kw(course)
+    lex = np.fromiter((len(qk & kw[i]) / len(qk) for i in range(len(kw))),
+                      dtype=np.float32, count=len(kw))
+    return sims + 0.45 * lex
+
+
 def search(course, query, k=TOP_K):
     ensure_loaded(course)
     chunks = INDEXES[course]["chunks"]
     if not chunks:
         return []
     qv = embed_texts([query])[0]
-    sims = INDEXES[course]["emb"] @ qv
+    sims = _blend(INDEXES[course]["emb"] @ qv, course, query)
     return [chunks[i] for i in np.argsort(-sims)[:k]]
 
 
 def search_multi(courses, query, k=TOP_K):
     """Consultant research: retrieve across a SELECTED SET of courses and merge by
-    similarity, returning the global top-k. Every embedding uses the same model, so
+    hybrid score, returning the global top-k. Every embedding uses the same model, so
     scores are comparable across courses. Each returned chunk is tagged with its
     source course (`_course`) so page labels resolve to the right PDF folder."""
     qv = embed_texts([query])[0]
@@ -1750,7 +1784,7 @@ def search_multi(courses, query, k=TOP_K):
         idx = INDEXES.get(course)
         if not idx or not idx["chunks"]:
             continue
-        sims = idx["emb"] @ qv
+        sims = _blend(idx["emb"] @ qv, course, query)
         chunks = idx["chunks"]
         for i in np.argsort(-sims)[:k]:
             ch = dict(chunks[i]); ch["_course"] = course
