@@ -3262,14 +3262,37 @@ def api_audit_recheck():
     # THE definitive move: load the most-relevant document IN FULL, so the re-check
     # reads the WHOLE instrument (e.g. all of Act 703) rather than chunks — a small
     # section like s.11 that never ranks in a window is simply present in the full text.
-    ctx = ""
-    if doc_freq:
-        (dc, ddoc), _ = doc_freq.most_common(1)[0]
+    # Load the document that IS the cited instrument — matched by NAME (Act number,
+    # L.I. number, or 'Constitution'), NOT merely the most-retrieved doc, since
+    # retrieval can surface a different instrument entirely (that's how s.69 wrongly
+    # loaded the Constitution instead of Act 703).
+    a = authority.lower()
+    mact = re.search(r"act\s*(\d{2,4})", a)
+    mli = re.search(r"\bl\.?\s?i\.?\s*(\d{3,4})", a)
+    want_const = "constitution" in a
+    target = None
+    for course in courses:
+        for f in course_pdfs(course):
+            fl = (f + " " + display_name(f)).lower()
+            if (mact and re.search(r"\b" + mact.group(1) + r"\b", fl)) \
+               or (mli and mli.group(1) in fl) \
+               or (want_const and "constitution" in fl):
+                target = (course, f)
+                break
+        if target:
+            break
+    candidates = ([target] if target else []) + \
+                 ([doc_freq.most_common(1)[0][0]] if doc_freq else [])
+    ctx, loaded_doc = "", None
+    for cand in candidates:
         try:
-            blocks, _k = load_full_docs([{"course": dc, "file": ddoc}])
-            ctx = "\n\n".join(f"[{b['title']}] {b['source']['data']}" for b in blocks)[:120000]
+            blocks, _k = load_full_docs([{"course": cand[0], "file": cand[1]}])
+            if blocks:
+                ctx = "\n\n".join(f"[{b['title']}] {b['source']['data']}" for b in blocks)[:120000]
+                loaded_doc = display_name(cand[1])
+                break
         except Exception:
-            ctx = ""
+            continue
     if not ctx:
         ctx = "\n\n".join(merged[:48])[:16000]
     try:
@@ -3302,7 +3325,7 @@ def api_audit_recheck():
         note = ("Still not surfaced even on a focused search — confirm directly. Not a finding that "
                 "it is wrong.")
     return jsonify({"verdict": verdict, "note": note, "correct_authority": ca,
-                    "searched": len(merged)})
+                    "searched": len(merged), "read": loaded_doc})
 
 
 POLISH_INSTRUCTION = (
