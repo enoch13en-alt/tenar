@@ -258,12 +258,6 @@
   </div>
   <div id="chat"></div>
   <div id="composer">
-    <select id="fmt" title="Output format" style="width:auto; padding:0 8px; border-radius:8px; border:1px solid #cfd5e0;">
-      <option value="chat">Chat</option>
-      <option value="essay">Essay (full)</option>
-      <option value="memo">Memo</option>
-      <option value="report">Report</option>
-    </select>
     <input id="q" placeholder="Ask a question about this course's documents…" autofocus>
     <button class="btn" id="send" style="width:auto">Ask</button>
     <button class="btn gold" id="findCases" style="width:auto" title="Find decided cases that can be applied to this question — each verified online with a link (uses one web credit).">⚖️ Cases</button>
@@ -786,8 +780,8 @@ async function ask() {
   try {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question: q, course: COURSE, web, format: $("#fmt").value})})).json();
-    const askFmt = $("#fmt").value;
+      body: JSON.stringify({question: q, course: COURSE, web, format: "chat"})})).json();
+    const askFmt = "chat";
     let html;
     if (r.segments && r.segments.length) {
       if (askFmt === 'chat') {                       // conversational: inline flow, hover-to-cite
