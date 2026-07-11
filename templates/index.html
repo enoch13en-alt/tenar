@@ -1127,10 +1127,16 @@ function renderExam() {
     h += EXAM.issues.map((it, idx) => {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
-      else if (it.answer) body = '<div class="ans">'+linkify(esc(it.answer))+'</div>'
-        + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
-        + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
-        + followHTML(it, idx);
+      else if (it.answer) {
+        const autofix = it._autoFixed
+          ? '<div style="font-size:11px;color:#7fdca0;margin-top:4px">🔧 Auto-corrected '+it._autoFixed+' authority issue(s): '
+            + (it._autoFixList||[]).map(x=>'<b>'+esc(x.authority)+'</b>'+(x.correct_authority?(' → '+esc(x.correct_authority)):'')).join('; ')
+            + '</div>' : '';
+        body = '<div class="ans">'+linkify(esc(it.answer))+'</div>' + autofix
+          + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
+          + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + followHTML(it, idx);
+      }
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
       const link = (it.link && it.link.toLowerCase() !== 'standalone')
         ? '<div class="why" style="color:#c9a86a;margin-top:2px">↳ '+esc(it.link)+'</div>' : '';
@@ -1320,6 +1326,7 @@ async function gatherIssue(i) {
 async function auditAndFixIssue(i) {
   const it = EXAM.issues[i];
   if (!it || !it.answer) return;
+  const original = it.answer;                 // keep the pre-fix text for before/after proof
   const btn = document.querySelector('.auditIssueBtn[data-i="' + i + '"]');
   const outEl = document.querySelector('.auditIssueOut[data-i="' + i + '"]');
   if (btn) { btn.disabled = true; btn.textContent = "🔍 Auditing…"; }
@@ -1340,10 +1347,29 @@ async function auditAndFixIssue(i) {
         + (x.correct_authority ? (' → <span style="color:#e0b050">' + esc(x.correct_authority) + '</span>') : '')
         + (x.note ? ('<div style="color:#8b93a7">' + esc(x.note) + '</div>') : '') + '</div>').join("");
     if (d.corrected && d.fixed_count) {
+      const fixedItems = items.filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
       it.answer = d.corrected; it.answer_annotated = "";      // fix AT SOURCE
-      renderExam();                                            // re-render corrected answer
+      renderExam();                                            // re-render corrected answer above
       const o2 = document.querySelector('.auditIssueOut[data-i="' + i + '"]');
-      if (o2) o2.innerHTML = '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Corrected ' + d.fixed_count + ' authority issue(s) — answer updated above.</div>' + list;
+      if (o2) {
+        const fixedHtml = fixedItems.map(x =>
+          '<div style="font-size:11px;margin:2px 0">' + badge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
+          + (x.correct_authority ? (' → <span style="color:#7fdca0">' + esc(x.correct_authority) + '</span>') : '')
+          + (x.note ? ('<div style="color:#8b93a7;margin-left:16px">' + esc(x.note) + '</div>') : '') + '</div>').join("");
+        o2.innerHTML =
+          '<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 Corrected ' + d.fixed_count
+          + ' authority issue(s) — applied to the answer above:</div>'
+          + '<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">' + fixedHtml + '</div>'
+          + '<button class="btn alt showOrigBtn" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before fix)</button>'
+          + '<div class="origBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">' + esc(original) + '</div>'
+          + '<div style="margin-top:8px;font-size:11px;color:#6b7488">Full audit (' + items.length + '):</div>' + list;
+        const sb = o2.querySelector(".showOrigBtn");
+        if (sb) sb.onclick = () => {
+          const b = o2.querySelector(".origBox"); const show = b.style.display === "none";
+          b.style.display = show ? "block" : "none";
+          sb.textContent = (show ? "⌃ Hide" : "⌄ Show") + " original (before fix)";
+        };
+      }
       return;
     }
     const clean = !items.some(x => x.verdict !== "supported");
@@ -1363,7 +1389,12 @@ async function auditFixAll() {
         const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
         const d = await r.json();
-        if (d.corrected && d.fixed_count) { it.answer = d.corrected; it.answer_annotated = ""; fixed += d.fixed_count; }
+        if (d.corrected && d.fixed_count) {
+          it.answer = d.corrected; it.answer_annotated = "";
+          it._autoFixed = (it._autoFixed || 0) + d.fixed_count;   // trace for the UI
+          it._autoFixList = (d.items || []).filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
+          fixed += d.fixed_count;
+        }
       } catch (e) {}
     }
   }
