@@ -3137,16 +3137,45 @@ def api_audit():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         verdicts = list(pool.map(_verify_one, items))
+    # Which instruments verified SOMEWHERE in this audit? A ❓ on another provision of
+    # the SAME instrument is then plainly a search miss, not a gap — say so, so a ❓ on
+    # s.11 doesn't imply we lack Act 703 when s.9/s.23/s.43 of it all confirmed.
+    def _instr(a):
+        a = (a or "").lower()
+        m = re.search(r"act\s*(\d{2,4})", a)
+        if m: return "act " + m.group(1)
+        if "constitution" in a: return "constitution"
+        m = re.search(r"\bl\.?\s?i\.?\s*(\d{3,4})", a)
+        if m: return "li " + m.group(1)
+        m = re.search(r"pndcl\.?\s*(\d+)", a)
+        if m: return "pndcl " + m.group(1)
+        if "lease" in a: return "lease"
+        return None
+    confirmed_instr = {_instr(it["authority"]) for it, v in zip(items, verdicts)
+                       if v.get("verdict") == "supported"}
+    confirmed_instr.discard(None)
+
     out = []
     for it, v in zip(items, verdicts):
-        # a correction arrow only makes sense for a GENUINE misattribution where the
-        # corrected authority actually differs — otherwise drop it (no 'X → X' noise).
+        verdict = v.get("verdict", "unchecked")
+        note = (v.get("note") or "").strip()
+        # correction arrow only for a GENUINE misattribution where it actually differs
         ca = (v.get("correct_authority") or "").strip()
-        if v.get("verdict") != "misattributed" or ca.lower() == it["authority"].strip().lower():
+        if verdict != "misattributed" or ca.lower() == it["authority"].strip().lower():
             ca = ""
+        # reframe a ❓ so it never reads as "we don't have it"
+        if verdict == "unverified":
+            k = _instr(it["authority"])
+            if k and k in confirmed_instr:
+                note = ("This instrument is in the library — other provisions of it verified in "
+                        "this same check; this specific provision just wasn't surfaced by the "
+                        "spot-check. Confirm it directly. This is a retrieval limit, NOT a finding "
+                        "that the citation is wrong or absent.")
+            elif not note or "not in" in note.lower() or "not surfaced" in note.lower():
+                note = ("Not surfaced in this spot-check — confirm directly. This does not mean the "
+                        "citation is wrong or missing, only that this pass didn't retrieve it.")
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
-                    "verdict": v.get("verdict", "unchecked"), "note": v.get("note", ""),
-                    "correct_authority": ca})
+                    "verdict": verdict, "note": note, "correct_authority": ca})
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
     # grounded in the corpus text the audit already retrieved. Everything else verbatim.
