@@ -624,6 +624,26 @@ CASE_APPLICATION = (
     "only cases genuinely in the materials or that you are certain of, and where a "
     "point needs case support you don't have, say so plainly.")
 
+# Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
+# problem actually raises, and stand behind every authority. This is the counterweight
+# to COVERAGE — cover everything the facts raise, but nothing they don't.
+FACT_DISCIPLINE = (
+    "APPLICATION & SCOPE — a marker rewards law APPLIED to THESE facts and penalises "
+    "abstract recitation, invented issues and unverified authority:\n"
+    "- APPLY, DON'T RECITE. Tie every legal proposition to a SPECIFIC fact in the "
+    "problem and state the consequence for it ('because the lease predates the 2015 "
+    "amendment, the stabilisation point turns on whether…'). A correct rule never "
+    "applied to a given fact earns little — do not leave rules hanging in the abstract "
+    "for the reader to apply.\n"
+    "- ONLY THE ISSUES THE FACTS RAISE. Cover every issue the facts genuinely put in "
+    "play — including one the parties overlooked — but do NOT manufacture speculative "
+    "issues the problem does not support in order to look thorough. Test each issue: "
+    "can you point to the fact that raises it? If not, cut it. A padded, unraised issue "
+    "is a deduction, not a bonus, and it dilutes the issues that matter.\n"
+    "- STAND BEHIND EVERY AUTHORITY. Cite only a case, section or instrument you can "
+    "ground in the materials or are genuinely certain of; anything else you omit or "
+    "flag plainly to verify — never dress an unchecked citation as settled law.")
+
 # Foundation & hierarchy of validity — a legal answer should show the law's pedigree
 # (constitution/grundnorm → statute → regulation → case law → international law)
 # before the operative detail, adapting to the legal order the question engages.
@@ -2133,7 +2153,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
@@ -2822,7 +2842,7 @@ def api_research():
 
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
               + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n"
               + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY)
@@ -4278,7 +4298,7 @@ def api_advisory():
     ctx = course_context(course, instructions, 18)     # labelled matter passages
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
               + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
               + "\n\n" + ECONOMY + "\n\n" + ADVISORY_TASK
               + "\n\nOSCOLA RULES:\n" + OSCOLA_GUIDE)
@@ -4886,7 +4906,7 @@ def api_exam_assemble():
     system = (
         CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
-        + CASE_APPLICATION + "\n\n" + REFORM_METHOD + "\n\n"
+        + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
