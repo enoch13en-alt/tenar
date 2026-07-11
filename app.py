@@ -848,6 +848,35 @@ PRIMARY_FIRST = (
     "honest when the section itself isn't in front of you."
 )
 
+CONVERSATIONAL = (
+    "CONVERSATIONAL REGISTER — this is a chat, not an essay. Answer like a sharp "
+    "friend who happens to be a lawyer, sitting across the table: get to the point in "
+    "the FIRST sentence, then give just enough to make it land. Length is a few "
+    "sentences — at most a short paragraph or two. NO headings, no 'Issue/Rule/"
+    "Application', no numbered parts, no multi-section thread, no restating the "
+    "question back. Plain, warm, direct language; contractions are fine. Stop the "
+    "moment the question is answered — do not pad, do not add a survey of everything "
+    "related.\n"
+    "- GROUNDED, JUST NOT FOOTNOTED. Every legal claim still rests on real law — but "
+    "weave the authority into the sentence the way a person speaks it: 'rental income "
+    "is taxed as investment income under s.9 of Act 592', 'the State takes a 10% free "
+    "carried interest under Act 703 s.43'. Name the instrument/provision or case that "
+    "backs the point; never drop an unsupported assertion. The citation lives in the "
+    "prose, on the fact it supports.\n"
+    "- DO NOT LIST SOURCES. Never end with a 'Sources', 'References' or 'Authorities' "
+    "section, and never dump a bibliography — the interface reveals each source when "
+    "the reader hovers the relevant text. Your job is the answer, grounded inline; the "
+    "provenance UI does the rest.\n"
+    "- HONESTY STAYS SHORT TOO. If the real answer is 'it depends', say so in a line "
+    "and say on what. If the materials don't ground it, say that in a sentence rather "
+    "than padding — a candid short answer beats a confident long one. All the "
+    "grounding rules above still bind (never invent a section, figure, quote or "
+    "successor); they just get expressed conversationally, not in an essay.\n"
+    "- ONE FOLLOW-UP, MAYBE. If a genuinely useful next question or caveat is worth a "
+    "single clause, add it; otherwise don't. Depth is available on request — the "
+    "reader can always ask you to go deeper, open Exam Coach, or Deepen a point."
+)
+
 TEMPORAL_SUCCESSION = (
     "LAW LIVES IN TIME — READ IT DIACHRONICALLY. A legal regime is never a flat pile "
     "of equally-live rules; it is a sequence in which later instruments act on earlier "
@@ -2052,6 +2081,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # reserved for the once-per-exam Compile step.
     if mode == "cases":
         system = CASE_FINDER               # standalone case-research instruction
+    elif fmt == "chat":
+        # Normal chat: conversational + concise, but still fully grounded. Drops the
+        # long-form drivers (DEPTH/COVERAGE/STRESS_TEST/ARGUMENTATIVE) and keeps the
+        # grounding stack (citation integrity, precision, primary-first, succession).
+        # Sources are shown inline on hover, so no end-of-answer source list.
+        system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n"
+                  + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
+                  + TEMPORAL_SUCCESSION)
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -2626,6 +2663,8 @@ def api_ask():
     # a full pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
         max_out = 4000
+    elif fmt == "chat":
+        max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
         max_out = 9000
     else:
