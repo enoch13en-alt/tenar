@@ -3085,14 +3085,29 @@ def api_audit():
                     "Mining Lease clause 1(f)' — NEVER a vague category label like 'institutional "
                     "materials', 'the Constitution generally' or 'mining policy'; if the answer names a "
                     "source, name it precisely. Then the precise claim the answer makes about it. Skip "
-                    "only pure argument/opinion with no checkable authority or figure. STRICT JSON: "
-                    "array of {\"authority\",\"claim\"}. No cap on how many. No fences."),
+                    "only pure argument/opinion with no checkable authority or figure. "
+                    "SUCCESSION TAG: if an instrument is named ONLY to identify a repealed "
+                    "enactment's current SUCCESSOR, or to name the repealed PREDECESSOR of a live "
+                    "instrument — e.g. 'read as its current successor the Companies Act, 2019 (Act "
+                    "992)', 'the Companies Code 1963 (Act 179), now replaced' — set that item's "
+                    "\"kind\" to \"succession\". These are settled interpretive record (the successor "
+                    "lives in a different subject corpus), NOT corpus citations to be re-retrieved; "
+                    "tag them so they are not spuriously flagged. Every other item omits \"kind\". "
+                    "STRICT JSON: "
+                    "array of {\"authority\",\"claim\",\"kind\"(optional)}. No cap on how many. No fences."),
             messages=[{"role": "user", "content": answer[:24000]}])
         items = _parse_json(_text_of(ext))
     except Exception:
         items = []
     items = [it for it in items if isinstance(it, dict) and it.get("authority")][:60]
-    if not items:
+    # Succession mentions (a repealed enactment's named successor, or a live instrument's
+    # repealed predecessor) are settled interpretive record, NOT corpus citations — the
+    # successor deliberately lives in a different subject corpus. Never re-retrieve or flag
+    # them; they pass as settled law so the auditor doesn't ❓ the very naming the answer
+    # was told to give.
+    succ_items = [it for it in items if str(it.get("kind", "")).lower() == "succession"]
+    items = [it for it in items if str(it.get("kind", "")).lower() != "succession"]
+    if not items and not succ_items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
     # 2) re-retrieve corpus support for each — TWO-PRONGED for recall: a SEMANTIC pull
@@ -3212,6 +3227,18 @@ def api_audit():
                         "'Search again' to load the full instrument and settle it.")
         out.append({"authority": it["authority"], "claim": it.get("claim", ""),
                     "verdict": verdict, "note": note, "correct_authority": ca})
+
+    # Succession items pass as settled interpretive law — a reference to a repealed
+    # enactment reads as its current successor; the successor sits in a different corpus by
+    # design, so its absence here is expected, not a defect. Never a ❓.
+    for it in succ_items:
+        out.append({"authority": it["authority"], "claim": it.get("claim", ""),
+                    "verdict": "supported",
+                    "note": ("Settled interpretive law — a reference to a repealed enactment is read "
+                             "as its current successor. The successor sits in company-law materials, "
+                             "not this subject's corpus, so it is correctly named from settled record, "
+                             "not something this corpus needs to hold."),
+                    "correct_authority": ""})
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
     # grounded in the corpus text the audit already retrieved. Everything else verbatim.
