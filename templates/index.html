@@ -6,7 +6,9 @@
 <title>TENAR</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, Segoe UI, Arial, sans-serif;
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+         "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+         -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
          background: #f4f5f7; color: #1c2330; height: 100vh; display: flex; }
   #side { width: 310px; background: #1c2330; color: #e6e9ef; padding: 16px;
           overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
@@ -55,10 +57,11 @@
   .a { align-self: flex-start; background: #fff; padding: 16px 20px;
        border-radius: 12px 12px 12px 2px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
        line-height: 1.7; font-size: 15.5px; color: #14181f; }
-  .a .ans-h { font-weight: 700; color: #0f1319; margin: 16px 0 6px; }
+  .a .ans-h { font-weight: 700; color: #0f1319; margin: 18px 0 7px; letter-spacing: -.01em; }
   .a h3.ans-h { font-size: 17px; } .a h4.ans-h { font-size: 15px; } .a h5.ans-h { font-size: 14px; color:#2b3444; }
-  .ans-p { margin: 9px 0; } .ans-ul { margin: 8px 0 8px 22px; } .ans-ul li { margin: 4px 0; }
-  .ans-hr { border: 0; border-top: 1px solid #e3e6ec; margin: 10px 0; }
+  .ans-p { margin: 11px 0; } .ans-ul { margin: 10px 0 10px 22px; padding-left: 4px; }
+  .ans-ul li { margin: 7px 0; line-height: 1.6; padding-left: 3px; }
+  .ans-hr { border: 0; border-top: 1px solid #e3e6ec; margin: 14px 0; }
   .sources { margin-top: 12px; border-top: 1px solid #e3e6ec; padding-top: 10px; }
   .sources h4 { margin: 0 0 6px; font-size: 12.5px; color: #3a4250;
                 text-transform: uppercase; letter-spacing: .05em; }
@@ -138,13 +141,16 @@
   .nameRow { margin-bottom: 10px; }
   .nameRow label { font-size: 11px; color: #aab4c6; display: block; }
   .rowbtn { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-  .issue { background: #11151d; border: 1px solid #2a3344; border-radius: 6px;
-           padding: 10px; margin: 8px 0; }
+  .issue { background: #11151d; border: 1px solid #2a3344; border-radius: 8px;
+           padding: 14px 16px; margin: 10px 0; }
   .issue.done { border-left: 3px solid #6fcf97; }
-  .issue h5 { margin: 0 0 4px; font-size: 13px; }
-  .issue .why { font-size: 12px; color: #aab4c6; }
-  .issue .ans { font-size: 12px; color: #cdd5e6; margin-top: 8px; white-space: pre-wrap;
-                max-height: 180px; overflow: auto; border-top: 1px solid #2a3344; padding-top: 6px; }
+  .issue h5 { margin: 0 0 5px; font-size: 14px; line-height: 1.4; }
+  .issue .why { font-size: 12.5px; color: #aab4c6; line-height: 1.5; }
+  .issue .ans { font-size: 13.5px; color: #d6dced; margin-top: 11px; line-height: 1.64;
+                border-top: 1px solid #2a3344; padding-top: 11px; }
+  .issue .ans .ans-h { font-weight: 700; color: #eaf0fb; margin: 14px 0 5px; font-size: 13.5px; }
+  .issue .ans strong, .issue .ans b { color: #eaf0fb; }
+  .issue .ans .ans-ul { margin: 8px 0 8px 18px; } .issue .ans .ans-ul li { margin: 6px 0; }
   .fact { font-size: 12px; margin: 3px 0; }
   .fact b { color: #8fb4ff; }
   .modeSel { font-size: 12px; padding: 4px 6px; background: #0d1017; color: #cdd5e6;
@@ -168,9 +174,10 @@
   .cue b { color: #8fb4ff; }
   .cueEmpty { color: #6b7488; font-style: italic; }
   #examDoc { background: #fff; border: 1px solid #e3e6ec; color: #1c2330;
-             border-radius: 6px; padding: 16px; font-size: 13px; line-height: 1.6;
-             max-height: 52vh; overflow: auto; }
-  #examDoc .ans-h { font-weight: 700; margin: 12px 0 4px; }
+             border-radius: 8px; padding: 22px 26px; font-size: 14px; line-height: 1.68;
+             max-height: 60vh; overflow: auto; }
+  #examDoc .ans-h { font-weight: 700; margin: 18px 0 6px; letter-spacing: -.01em; }
+  #examDoc .ans-p { margin: 11px 0; }
   .btn.mini { width: auto; padding: 5px 10px; margin-top: 6px; font-size: 12px; }
   .mm-skel { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
   .mm-skel span { background:#2a3344; color:#cdd5e6; font-size:11px; padding:3px 8px;
@@ -660,8 +667,16 @@ function mdInline(s){
   s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
   return linkify(s);
 }
+// The Citations feature stitches quote-blocks in without a separator, so a quoted
+// provision can butt the prose ("…10%.Under section 43…"). Restore the missing space
+// after sentence punctuation — conservatively (won't touch 's.9', 'e.g.', '3.5%').
+function deJam(t){
+  return (t||"")
+    .replace(/([a-z0-9%"'\)\]]{2,})([.:;])(?=[A-Za-z"'“])/g, '$1$2 ')
+    .replace(/(”)(?=[A-Za-z])/g, '$1 ');
+}
 function mdToHtml(raw){
-  const lines = (raw||"").split("\n");
+  const lines = deJam(raw||"").split("\n");
   let html = "", inList = false;
   const closeList = () => { if(inList){ html += "</ul>"; inList = false; } };
   for (const ln of lines){
