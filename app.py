@@ -3133,11 +3133,11 @@ def api_audit():
     if not ok:
         return jsonify({"error": msg, "limit": True})
     # Cost-reflective metering. A plain spot-check audit is ~one question; a STRICT
-    # 'valid-only' fix additionally loads whole instruments (one ~$0.18 full-Act read per
-    # ❓, ≈ one question each) and rewrites the answer, so it carries a heavier base. We
-    # charge the base up front and add one question per full-instrument recheck actually
-    # performed below — so a clean answer costs little and a heavy one pays its true cost,
-    # while verification is NEVER capped.
+    # 'valid-only' fix additionally loads whole instruments (~$0.18 per full-Act read) and
+    # rewrites the answer, so it carries a heavier base. We charge the base up front and add
+    # one question per UNIQUE instrument actually loaded below (deduped by the run cache, so
+    # three ❓ citing the same Act cost one, not three) — a clean answer costs little, a
+    # heavy one pays its true cost, and verification is NEVER capped.
     _strict_fix = bool(body.get("fix")) and bool(body.get("strict"))
     consume("questions", 3 if _strict_fix else 1)
 
@@ -3331,11 +3331,17 @@ def api_audit():
             # settle every ❓ against the FULL instrument first, so removal only ever hits a
             # claim that is genuinely ungrounded after reading the whole document.
             unv = [i for i in range(len(items)) if out[i]["verdict"] == "unverified"]
+            # ONE shared cache for this audit run: rechecks that hit the same instrument
+            # load it once, not once per ❓. Keyed by the matched document, so each item is
+            # still verified against its OWN correct instrument — caching only skips
+            # re-reading the same static file (authenticity unchanged, see _recheck_authority).
+            doc_cache, cache_lock = {}, threading.Lock()
 
             def _rc(i):
                 try:
                     return i, _recheck_authority(c, courses, items[i]["authority"],
-                                                 items[i].get("claim", ""))
+                                                 items[i].get("claim", ""),
+                                                 doc_cache, cache_lock)
                 except Exception:
                     return i, None
             if unv:
@@ -3353,10 +3359,12 @@ def api_audit():
                         if vv == "misattributed" and ca2 and \
                                 ca2.lower() != items[i]["authority"].strip().lower():
                             out[i]["correct_authority"] = ca2
-            # one extra question per full-instrument recheck actually performed — the real
-            # cost driver, so the meter tracks the work done (verification stays uncapped).
-            if unv:
-                consume("questions", len(unv))
+            # Meter the real cost driver: one question per UNIQUE full instrument loaded,
+            # not per recheck — so auditing three ❓ that all cite Act 703 costs one, not
+            # three. Verification is uncapped; the meter just tracks documents actually read.
+            n_unique = sum(1 for v in doc_cache.values() if v and v[0])
+            if n_unique:
+                consume("questions", n_unique)
             # anything STILL unverified after the full read is genuinely ungrounded -> cut it
             removed = [(items[i], out[i]) for i in range(len(items))
                        if out[i]["verdict"] == "unverified"]
@@ -3407,12 +3415,19 @@ def api_audit():
     return jsonify(result)
 
 
-def _recheck_authority(c, courses, authority, claim):
+def _recheck_authority(c, courses, authority, claim, doc_cache=None, cache_lock=None):
     """Full-instrument re-check of ONE authority. Loads the WHOLE matched instrument
     (e.g. all of Act 703) and re-judges the citation against it, so a provision that
     never ranks in a spot-check window is simply present in the full text. Returns
     {verdict, note, correct_authority, searched, read}. Shared by the /recheck endpoint
-    and the strict 'valid-only' audit cleanup."""
+    and the strict 'valid-only' audit cleanup.
+
+    doc_cache (optional {(course, file): (ctx, loaded_doc)}) dedupes the expensive
+    full-instrument LOAD across rechecks in one run: three ❓ that all cite Act 703 load
+    it once, not three times. The cache is keyed by the MATCHED document and the per-item
+    name-matching still runs for every authority, so each citation is still judged against
+    its OWN correct instrument by its OWN verification call — caching skips re-reading the
+    same static file, nothing more. Authenticity is unchanged; only I/O is saved."""
     multi = len(courses) > 1
     # build many retrieval angles, including the pinpoint number in provision form
     mnum = re.search(r"(?:s\.?|section|art\.?|article|clause|reg\.?|regulation)\s*(\d+)",
@@ -3470,16 +3485,44 @@ def _recheck_authority(c, courses, authority, claim):
                 best, target = score, (course, f)
     candidates = ([target] if target else []) + \
                  ([doc_freq.most_common(1)[0][0]] if doc_freq else [])
+    def _load_one(cand):
+        """Load one candidate's full text — via the run cache if provided. The load is
+        serialised per key by the lock so concurrent rechecks of the SAME instrument load
+        it once; different instruments still load independently."""
+        key = (cand[0], cand[1])
+        if doc_cache is None:
+            try:
+                blocks, _k = load_full_docs([{"course": cand[0], "file": cand[1]}])
+                if blocks:
+                    return ("\n\n".join(f"[{b['title']}] {b['source']['data']}"
+                                        for b in blocks)[:120000], display_name(cand[1]))
+            except Exception:
+                pass
+            return ("", None)
+        if cache_lock:
+            cache_lock.acquire()
+        try:
+            if key in doc_cache:                 # same instrument already read this run
+                return doc_cache[key]
+            val = ("", None)
+            try:
+                blocks, _k = load_full_docs([{"course": cand[0], "file": cand[1]}])
+                if blocks:
+                    val = ("\n\n".join(f"[{b['title']}] {b['source']['data']}"
+                                       for b in blocks)[:120000], display_name(cand[1]))
+            except Exception:
+                val = ("", None)
+            doc_cache[key] = val                 # cache hit or miss, keyed by matched doc
+            return val
+        finally:
+            if cache_lock:
+                cache_lock.release()
+
     ctx, loaded_doc = "", None
     for cand in candidates:
-        try:
-            blocks, _k = load_full_docs([{"course": cand[0], "file": cand[1]}])
-            if blocks:
-                ctx = "\n\n".join(f"[{b['title']}] {b['source']['data']}" for b in blocks)[:120000]
-                loaded_doc = display_name(cand[1])
-                break
-        except Exception:
-            continue
+        ctx, loaded_doc = _load_one(cand)
+        if ctx:
+            break
     if not ctx:
         ctx = "\n\n".join(merged[:48])[:16000]
     try:
