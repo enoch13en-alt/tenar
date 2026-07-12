@@ -4880,6 +4880,63 @@ def api_primary_find():
     return jsonify({"candidates": cands[:4]})
 
 
+@app.route("/api/verify_fact", methods=["POST"])
+def api_verify_fact():
+    """Verify ONE real-world '[Verify]' assumption on the web so the student can click to
+    confirm it and state it as fact with a source, instead of leaving it as an assumption.
+    Handles the verifiable-status matters: is a treaty in force, is a State a party/member,
+    does a named institution/programme exist and operate. Metered as one question."""
+    body = request.json or {}
+    claim = (body.get("claim") or "").strip()
+    context = (body.get("question") or "").strip()
+    claim = re.sub(r'^\s*\[[^\]]+\]\s*', '', claim)          # drop a leading [Verify] tag
+    if len(claim) < 5:
+        return jsonify({"error": "nothing to verify"}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You verify ONE real-world factual/status matter using web search — e.g. whether a named "
+        "treaty/convention is in force and its entry-into-force date, whether a named State has "
+        "ratified / is a party or member, or whether a named institution or programme exists and "
+        "currently operates. This is a matter of public record, NOT a proposition of legal doctrine. "
+        "Run SEVERAL searches against authoritative sources (the treaty depositary or official body, "
+        "UN / regional-organisation / government sites, reputable institutional reports). "
+        "Return STRICT JSON: {\"verdict\":\"verified|unconfirmed|refuted\", \"statement\":\"the fact "
+        "stated precisely as it should read in a memo — include dates and named parties\", "
+        "\"source\":\"short source name\", \"url\":\"the source URL you actually saw in results\", "
+        "\"note\":\"one line: any caveat, or why it is unconfirmed and should be argued in the "
+        "alternative\"}. Use 'verified' only where authoritative sources bear it out; 'unconfirmed' if "
+        "you cannot establish it; 'refuted' if sources contradict it. Never invent a URL you did not "
+        "see. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1200,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Problem context (for relevance only): " + context[:1200] + "\n\n") if context else "")
+                       + "Verify this matter: " + claim}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    if not isinstance(data, dict):
+        return jsonify({"verdict": "unconfirmed", "statement": claim,
+                        "note": "Could not verify automatically — check manually and argue in the alternative."})
+    return jsonify({"verdict": data.get("verdict", "unconfirmed"),
+                    "statement": data.get("statement", claim),
+                    "source": data.get("source", ""), "url": data.get("url", ""),
+                    "note": data.get("note", "")})
+
+
 @app.route("/api/updates", methods=["POST"])
 def api_updates():
     """Web-scan a course's legal domain for recent changes and stream a verified,

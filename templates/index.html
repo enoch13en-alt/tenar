@@ -1253,9 +1253,21 @@ function renderExam() {
     h += EXAM.facts.map(f => '<div class="fact">• <b>'+esc(f.fact||'')+'</b> — '
       + esc(f.characteristic||'') + ' → <i>' + esc(f.trigger||'') + '</i></div>').join("");
   }
-  if (EXAM.assumptions.length)
-    h += "<h4 style='margin:12px 0 4px'>Assumptions to state</h4>"
-      + EXAM.assumptions.map(a => '<div class="fact">– '+esc(a)+'</div>').join("");
+  if (EXAM.assumptions.length) {
+    h += "<h4 style='margin:12px 0 4px'>Assumptions to state</h4>";
+    h += EXAM.assumptions.map((a, ai) => {
+      let row = '<div class="fact">– '+esc(a)+'</div>';
+      if (/^\s*\[verify\]/i.test(a)) {
+        const done = (EXAM.verified && EXAM.verified[ai]) ? EXAM.verified[ai] : null;
+        row += '<div style="margin:-2px 0 8px 16px">'
+          + '<button class="btn mini verifyBtn" data-a="'+ai+'">'
+          + (done ? '↻ Re-verify' : '🔎 Verify on the web') + '</button>'
+          + '<span class="verifyOut" data-a="'+ai+'" style="margin-left:8px;font-size:12px">'
+          + (done ? done : '') + '</span></div>';
+      }
+      return row;
+    }).join("");
+  }
   if (EXAM.issues.length) {
     h += "<h4 style='margin:14px 0 4px'>Issues to answer</h4>";
     h += EXAM.issues.map((it, idx) => {
@@ -1283,6 +1295,8 @@ function renderExam() {
     h += '<div id="examDocWrap"></div>';
   }
   $("#examOut").innerHTML = h;
+  $("#examOut").querySelectorAll(".verifyBtn").forEach(b =>
+    b.onclick = () => verifyAssumption(+b.dataset.a, b));
   $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
@@ -1437,6 +1451,35 @@ async function askFollowup(i) {
     $("#examStatus").textContent = r.cost ? ("Running total $"+r.cost.total_usd) : "";
   } catch (e) { it.followups.push({q, answer: "Error: " + e, sources: []}); }
   it.fupLoading = false; renderExam();
+}
+
+// Verify one [Verify] assumption on the web — confirm it and state it with a source
+// rather than leave it as an assumption.
+async function verifyAssumption(ai, btn) {
+  const out = $("#examOut").querySelector('.verifyOut[data-a="' + ai + '"]');
+  if (!out) return;
+  btn.disabled = true; btn.textContent = "Verifying…"; out.innerHTML =
+    '<span style="color:#8b93a7">searching authoritative sources… (10–25s)</span>';
+  try {
+    const r = await (await fetch("/api/verify_fact", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({claim: EXAM.assumptions[ai], question: EXAM.question || ""})})).json();
+    if (r.error) { out.innerHTML = '⚠️ ' + esc(r.error);
+      btn.disabled = false; btn.textContent = "🔎 Verify on the web"; return; }
+    const icon = r.verdict === "verified" ? "✅" : r.verdict === "refuted" ? "❌" : "⚠️";
+    let html = icon + ' <b>' + esc(r.verdict || "unconfirmed") + '</b>';
+    if (r.statement) html += ' — ' + esc(r.statement);
+    if (r.source || r.url) html += ' <span style="color:#8b93a7">['
+      + esc(r.source || "source")
+      + (r.url ? ' · <a href="' + esc(r.url) + '" target="_blank" rel="noopener">link</a>' : '')
+      + ']</span>';
+    if (r.note) html += '<br><span style="color:#8b93a7">' + esc(r.note) + '</span>';
+    out.innerHTML = html;
+    EXAM.verified = EXAM.verified || {}; EXAM.verified[ai] = html;   // persist across re-render
+    btn.disabled = false; btn.textContent = "↻ Re-verify";
+  } catch (e) {
+    out.innerHTML = 'Error — try again.'; btn.disabled = false; btn.textContent = "🔎 Verify on the web";
+  }
 }
 
 async function gatherIssue(i) {
