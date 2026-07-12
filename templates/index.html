@@ -933,8 +933,9 @@ $("#pasteAdd").onclick = async () => {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, title, text})})).json();
     if (r.error) { st.textContent = "⚠️ " + r.error; }
+    else if (r.indexed === false) { st.textContent = "⚠️ saved but not indexed — " + (r.why || "try Re-index"); refresh(); }
     else {
-      st.textContent = "✅ added “" + (r.title || "context") + "” — indexing…";
+      st.textContent = "✅ added “" + (r.title || "context") + "” — " + (r.chunks_added || 0) + " chunks, searchable now";
       $("#pasteTitle").value = ""; $("#pasteBody").value = "";
       refresh();
     }

@@ -1903,6 +1903,43 @@ def reindex(course):
         st["running"] = False
 
 
+def index_one_doc(course, fname):
+    """Add (or replace) a SINGLE document's chunks in the existing index without a full
+    rebuild. A full reindex re-embeds every doc, which is CPU-bound enough on a single
+    worker to block the health-check and get the container restarted mid-run — so a small
+    paste/upload never survived to persist. This embeds just this doc's handful of chunks
+    and appends them to the live index, so it finishes in well under a second."""
+    ensure_loaded(course)
+    pdf_dir, _ = course_paths(course)
+    path = os.path.join(pdf_dir, fname)
+    dc = extract_doc_chunks(path, fname)
+    if not dc:
+        return 0
+    embs = []
+    for i in range(0, len(dc), 128):
+        embs.append(embed_texts([c["text"] for c in dc[i:i + 128]]))
+    new_emb = np.vstack(embs) if embs else np.zeros((0, EMBED_DIM), dtype=np.float32)
+    cf, ef, mf = index_files(course)
+    with _lock:
+        idx = INDEXES[course]
+        # replace any prior chunks for this doc (re-paste / re-upload), keep the rest
+        keep = [i for i, ch in enumerate(idx["chunks"]) if ch["doc"] != fname]
+        chunks = [idx["chunks"][i] for i in keep] + dc
+        emb = np.vstack([idx["emb"][keep], new_emb]) if keep else new_emb
+        INDEXES[course] = {"chunks": chunks, "emb": emb}
+        _write_json(cf, chunks, indent=None)
+        np.save(ef, emb)
+        manifest = {}
+        if os.path.exists(mf):
+            try:
+                manifest = json.load(open(mf))
+            except Exception:
+                manifest = {}
+        manifest[fname] = file_sig(path)
+        _write_json(mf, manifest, indent=None)
+    return len(dc)
+
+
 # Hybrid retrieval: blend embedding similarity with a lexical keyword-overlap score
 # so exact-term queries ('carried interest', 'stability clause', 's.43') surface the
 # chunk that literally contains them even when pure vector search ranks it below the
@@ -2884,8 +2921,33 @@ def api_paste():
         f.write(f"# {title}\n\n" + text)
     SOURCES[fn] = title
     save_sources()
-    threading.Thread(target=reindex, args=(course,), daemon=True).start()
-    return jsonify({"ok": True, "file": fn, "title": title, "reindexing": True})
+    # index just this doc — a full reindex re-embeds everything and can get the worker
+    # health-check-killed before it persists, which is exactly why pastes weren't sticking
+    try:
+        n = index_one_doc(course, fn)
+    except Exception as e:
+        return jsonify({"ok": True, "file": fn, "title": title,
+                        "indexed": False, "why": f"saved but indexing failed: {str(e)[:120]}"})
+    return jsonify({"ok": True, "file": fn, "title": title, "indexed": True, "chunks_added": n})
+
+
+@app.route("/api/doc/index", methods=["POST"])
+def api_doc_index():
+    """Incrementally index ONE file already saved in the course (no full rebuild). Recovers
+    a doc whose add-time indexing was interrupted (e.g. a paste whose reindex got the worker
+    health-check-killed). Owner/admin-gated."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can index a shared course's document."}), 403
+    fn = (body.get("file") or "").strip()
+    if fn not in course_pdfs(course):
+        return jsonify({"error": "That file isn't in this course."}), 404
+    try:
+        n = index_one_doc(course, fn)
+    except Exception as e:
+        return jsonify({"error": f"indexing failed: {str(e)[:140]}"}), 500
+    return jsonify({"ok": True, "file": fn, "chunks_added": n})
 
 
 # ---------------------------------------------------------------- browser extension
