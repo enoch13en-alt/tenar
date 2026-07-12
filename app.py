@@ -3266,21 +3266,30 @@ def api_audit_recheck():
     # L.I. number, or 'Constitution'), NOT merely the most-retrieved doc, since
     # retrieval can surface a different instrument entirely (that's how s.69 wrongly
     # loaded the Constitution instead of Act 703).
-    a = authority.lower()
-    mact = re.search(r"act\s*(\d{2,4})", a)
-    mli = re.search(r"\bl\.?\s?i\.?\s*(\d{3,4})", a)
-    want_const = "constitution" in a
-    target = None
+    # Match the cited instrument to a DOCUMENT by name-word overlap — handles Acts,
+    # L.I.s, the Constitution AND leases/other instruments. 'clause 8(b) of the lease'
+    # -> the lease doc, not whatever retrieval happened to surface.
+    _STOP = {"clause", "subclause", "section", "subsection", "article", "paragraph",
+             "recital", "of", "the", "and", "no", "under", "per", "in", "to", "a", "an"}
+    def _kw(s):
+        out = set()
+        for t in re.findall(r"[a-z0-9]+", (s or "").lower()):
+            if t in _STOP:
+                continue
+            if t.isdigit():
+                if len(t) >= 3:          # Act/L.I. numbers, not clause/section numbers
+                    out.add(t)
+            elif len(t) >= 3:
+                out.add(t)
+        return out
+    akw = _kw(authority)
+    target, best = None, 0
     for course in courses:
         for f in course_pdfs(course):
-            fl = (f + " " + display_name(f)).lower()
-            if (mact and re.search(r"\b" + mact.group(1) + r"\b", fl)) \
-               or (mli and mli.group(1) in fl) \
-               or (want_const and "constitution" in fl):
-                target = (course, f)
-                break
-        if target:
-            break
+            hit = akw & _kw(f + " " + display_name(f))
+            score = len(hit) + 3 * sum(1 for t in hit if t.isdigit())   # boost Act/L.I. number match
+            if score > best:
+                best, target = score, (course, f)
     candidates = ([target] if target else []) + \
                  ([doc_freq.most_common(1)[0][0]] if doc_freq else [])
     ctx, loaded_doc = "", None
