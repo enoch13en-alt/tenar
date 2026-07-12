@@ -1930,6 +1930,28 @@ def _blend(sims, idx, query):
     return sims + 0.45 * lex
 
 
+def _with_neighbors(chunks, positions, span=1):
+    """Return the chunks at `positions` (in rank order) PLUS the ±span adjacent chunks
+    from the SAME document — so a provision split across chunks (e.g. Art 28(1) definition
+    in one chunk and Art 28(2) notification duty in the next) comes through whole, not as
+    a fragment that stops mid-sentence. Chunks are stored in document order, so a list-
+    neighbour with the same `doc` is the physically preceding/following passage."""
+    top = [int(i) for i in positions]
+    keep, seen = [], set()
+    for i in top:
+        if i not in seen:
+            seen.add(i)
+            keep.append(i)
+    for i in top:
+        for d in range(1, span + 1):
+            for j in (i - d, i + d):
+                if 0 <= j < len(chunks) and j not in seen \
+                        and chunks[j].get("doc") == chunks[i].get("doc"):
+                    seen.add(j)
+                    keep.append(j)
+    return [chunks[i] for i in keep]
+
+
 def search(course, query, k=TOP_K):
     ensure_loaded(course)
     idx = INDEXES[course]                 # capture once — eviction can't KeyError us
@@ -1938,7 +1960,7 @@ def search(course, query, k=TOP_K):
         return []
     qv = embed_texts([query])[0]
     sims = _blend(idx["emb"] @ qv, idx, query)
-    return [chunks[i] for i in np.argsort(-sims)[:k]]
+    return _with_neighbors(chunks, np.argsort(-sims)[:k])
 
 
 def search_multi(courses, query, k=TOP_K):
@@ -1955,11 +1977,17 @@ def search_multi(courses, query, k=TOP_K):
             continue
         sims = _blend(idx["emb"] @ qv, idx, query)
         chunks = idx["chunks"]
-        for i in np.argsort(-sims)[:k]:
+        top = np.argsort(-sims)[:k]
+        for i in top:
             ch = dict(chunks[i]); ch["_course"] = course
             scored.append((float(sims[i]), ch))
+        # complete split provisions with same-doc neighbours (ranked just below their hit)
+        base = float(sims[top[0]]) if len(top) else 0.0
+        for ch in _with_neighbors(chunks, top)[len(top):]:
+            nc = dict(ch); nc["_course"] = course
+            scored.append((base - 1e6, nc))          # keep, but never outrank a real hit
     scored.sort(key=lambda x: -x[0])
-    return [c for _, c in scored[:k]]
+    return [c for _, c in scored[:max(k, k + 10)]]
 
 
 def expand_queries(client, question):
@@ -2002,7 +2030,10 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
     for q in queries:
         hits = search_multi(courses, q, k=per) if multi else search(courses[0], q, k=per)
         for h in hits:
-            key = (h.get("_course", ""), h.get("doc"), h.get("page"))
+            # dedup by chunk identity, not just doc+page — two provisions (Art 28(1) and
+            # 28(2)) can share a page, and neighbour expansion relies on keeping both
+            key = (h.get("_course", ""), h.get("doc"), h.get("page"),
+                   (h.get("text") or "")[:60])
             if key not in seen:
                 seen.add(key)
                 merged.append(h)
