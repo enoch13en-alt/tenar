@@ -1520,7 +1520,7 @@ async function auditFixAll() {
       } catch (e) { if (!it._audit) it._audit = []; }
     }
   }
-  await Promise.all([worker(), worker(), worker()]);   // 3 at a time
+  await Promise.all([worker(), worker()]);   // 2 at a time (bounds peak memory: each strict audit loads whole instruments)
   return {fixed, removed};
 }
 async function gatherAll() {

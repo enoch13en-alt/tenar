@@ -1762,10 +1762,38 @@ def extract_doc_chunks(path, fname):
     return out
 
 # ---------------------------------------------------------------- index state
-INDEXES = {}        # course -> {"chunks": [...], "emb": ndarray}
+INDEXES = {}        # course -> {"chunks": [...], "emb": ndarray, "kw": [...]}
 STATUS = {}         # course -> {"running": bool, "message": str}
 NAME_STATUS = {}    # course -> str
 _lock = threading.Lock()
+
+# Keep only the N most-recently-used course indexes resident. Each loaded index holds
+# chunk text + embeddings + per-chunk keyword sets (tens of MB for a big course), and
+# previously every course ever touched stayed in RAM for the life of the process. Evict
+# the least-recently-used beyond the cap to bound memory. Readers capture the index dict
+# once (see search/_blend), so an eviction never KeyErrors a live read — the ndarray stays
+# alive via that reference until the request finishes, then is freed.
+_INDEX_LRU = []                 # course access order, most-recent last
+INDEX_CACHE_MAX = 6
+
+
+def _touch_index(course):
+    try:
+        _INDEX_LRU.remove(course)
+    except ValueError:
+        pass
+    _INDEX_LRU.append(course)
+    while len(INDEXES) > INDEX_CACHE_MAX:
+        victim = next((c for c in _INDEX_LRU
+                       if c in INDEXES and c != course
+                       and not STATUS.get(c, {}).get("running")), None)
+        if victim is None:
+            break
+        INDEXES.pop(victim, None)
+        try:
+            _INDEX_LRU.remove(victim)
+        except ValueError:
+            pass
 
 
 def _status(course):
@@ -1790,6 +1818,7 @@ def load_index(course):
 def ensure_loaded(course):
     if course not in INDEXES:
         load_index(course)
+    _touch_index(course)                 # mark MRU + evict least-recently-used beyond cap
 
 
 def file_sig(path):
@@ -1872,20 +1901,20 @@ def _kw(text):
     return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
             if w not in _SEARCH_STOP}
 
-def _index_kw(course):
-    """Per-chunk keyword sets, built once and cached on the loaded index."""
-    idx = INDEXES[course]
+def _index_kw(idx):
+    """Per-chunk keyword sets, built once and cached on the (captured) loaded index."""
     if "kw" not in idx:
         idx["kw"] = [_kw(c.get("text", "")) for c in idx["chunks"]]
     return idx["kw"]
 
-def _blend(sims, course, query):
+def _blend(sims, idx, query):
     """Add a lexical boost (fraction of the query's keywords the chunk contains) to
-    the vector similarities, so literal-term matches are not buried."""
+    the vector similarities, so literal-term matches are not buried. Takes the CAPTURED
+    index dict (not the course name) so index eviction can't race a live search."""
     qk = _kw(query)
     if not qk:
         return sims
-    kw = _index_kw(course)
+    kw = _index_kw(idx)
     lex = np.fromiter((len(qk & kw[i]) / len(qk) for i in range(len(kw))),
                       dtype=np.float32, count=len(kw))
     return sims + 0.45 * lex
@@ -1893,11 +1922,12 @@ def _blend(sims, course, query):
 
 def search(course, query, k=TOP_K):
     ensure_loaded(course)
-    chunks = INDEXES[course]["chunks"]
+    idx = INDEXES[course]                 # capture once — eviction can't KeyError us
+    chunks = idx["chunks"]
     if not chunks:
         return []
     qv = embed_texts([query])[0]
-    sims = _blend(INDEXES[course]["emb"] @ qv, course, query)
+    sims = _blend(idx["emb"] @ qv, idx, query)
     return [chunks[i] for i in np.argsort(-sims)[:k]]
 
 
@@ -1913,7 +1943,7 @@ def search_multi(courses, query, k=TOP_K):
         idx = INDEXES.get(course)
         if not idx or not idx["chunks"]:
             continue
-        sims = _blend(idx["emb"] @ qv, course, query)
+        sims = _blend(idx["emb"] @ qv, idx, query)
         chunks = idx["chunks"]
         for i in np.argsort(-sims)[:k]:
             ch = dict(chunks[i]); ch["_course"] = course
