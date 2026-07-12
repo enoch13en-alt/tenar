@@ -4615,6 +4615,7 @@ def api_primary_find():
     try:
         # run the blocking web-search off the gevent hub so many concurrent Find
         # clicks don't serialise on the worker and time the browser out
+        import gevent
         data = gevent.get_hub().threadpool.apply(_run)
         cands = data.get("candidates") if isinstance(data, dict) else data
         if not isinstance(cands, list):
