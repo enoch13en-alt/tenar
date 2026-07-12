@@ -2638,11 +2638,14 @@ $("#outlineScan").onclick = async () => {
         + (present.length + GAPS.length) + " instrument(s): ✅ " + present.length
         + " already held · ⚠️ " + GAPS.length + " missing.";
       if (present.length) {
+        const tag = p => (p.basis === "inferred"
+          ? ' <span style="color:#7a8296">· inferred from “' + esc(p.topic||"") + '”</span>'
+          : (p.topic ? ' <span style="color:#7a8296">· ' + esc(p.topic) + '</span>' : ''));
         $("#coverageHave").innerHTML =
-          '<div style="font-size:12px;color:#6fcf97;margin:4px 0 2px">✅ Held (required by the outline & present):</div>'
+          '<div style="font-size:12px;color:#6fcf97;margin:4px 0 2px">✅ Held (required by the outline & present) — ' + present.length + ':</div>'
           + '<div style="font-size:12px;color:#aab4c6;line-height:1.7">'
-          + present.map(p => '• ' + esc(p.name || p)).join("<br>") + '</div>'
-          + (GAPS.length ? '<div style="font-size:12px;color:#e0b050;margin:8px 0 2px">⚠️ Missing (required but not held as text):</div>' : "");
+          + present.map(p => '• ' + esc(p.name || p) + tag(p)).join("<br>") + '</div>'
+          + (GAPS.length ? '<div style="font-size:12px;color:#e0b050;margin:8px 0 2px">⚠️ Missing (required but not held as text) — ' + GAPS.length + ':</div>' : "");
       }
       const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
       renderGaps(GAPS, allowed);
@@ -2661,7 +2664,8 @@ function renderGaps(missing, allowed) {
   host.innerHTML = missing.map((m, i) => {
     const lb = (m.load_bearing || "").toLowerCase();
     return '<div class="gapRow" data-i="' + i + '" style="margin:8px 0;padding:8px;border:1px solid #2a3344;border-radius:6px">'
-      + '<div style="font-size:13px"><span style="color:' + (col[lb]||"#8b93a7") + ';font-weight:600">[' + esc(lb||"?") + ']</span> ' + esc(m.name||"") + '</div>'
+      + '<div style="font-size:13px"><span style="color:' + (col[lb]||"#8b93a7") + ';font-weight:600">[' + esc(lb||"?") + ']</span> ' + esc(m.name||"")
+      + (m.topic ? ' <span style="color:#7a8296;font-size:11px">· ' + (m.basis==="inferred"?"inferred from ":"") + '“' + esc(m.topic) + '”</span>' : "") + '</div>'
       + (m.provisions ? '<div style="font-size:12px;color:#8b93a7">leans on: ' + esc(m.provisions) + '</div>' : "")
       + (m.why_absent ? '<div style="font-size:12px;color:#8b93a7">' + esc(m.why_absent) + '</div>' : "")
       + (allowed ? '<div class="gapAct" style="margin-top:6px"><button class="btn mini gapFind" data-i="' + i + '" style="width:auto">🔎 Find official text</button></div>' : "")
