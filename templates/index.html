@@ -1188,6 +1188,27 @@ function issueAuditHtml(it, idx) {
     + (flagged ? ('  ·  ❓ ' + flagged + ' to verify') : '') + '</div>'
     + rows + orig + '</div>';
 }
+// Copy plain text to the clipboard, flashing the button to confirm. Uses the async
+// Clipboard API (site is https) with a textarea/execCommand fallback for older browsers.
+function copyText(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const orig = btn.innerHTML;
+    btn.innerHTML = "✓ Copied";
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1400);
+  };
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) { if (btn) btn.innerHTML = "Copy failed"; }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  else fallback();
+}
 function renderExam() {
   let h = "";
   if (EXAM.facts.length) {
@@ -1205,6 +1226,7 @@ function renderExam() {
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
         body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + issueAuditHtml(it, idx)
+          + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px">📋 Copy answer</button>'
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
@@ -1225,6 +1247,8 @@ function renderExam() {
     b.onclick = () => gatherIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
+    b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(it.answer || "", b); });
   $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
     const box = $("#examOut").querySelector('.origAutoBox[data-i="' + b.dataset.i + '"]');
     if (!box) return; const sh = box.style.display === "none";
