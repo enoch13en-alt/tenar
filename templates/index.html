@@ -1254,7 +1254,7 @@ function renderExam() {
       + esc(f.characteristic||'') + ' → <i>' + esc(f.trigger||'') + '</i></div>').join("");
   }
   if (EXAM.assumptions.length) {
-    h += "<h4 style='margin:12px 0 4px'>Assumptions to state</h4>";
+    h += "<h4 style='margin:12px 0 4px'>Additional facts material to the advice</h4>";
     h += EXAM.assumptions.map((a, ai) => {
       let row = '<div class="fact">– '+esc(a)+'</div>';
       if (/^\s*\[verify\]/i.test(a)) {
