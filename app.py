@@ -5005,15 +5005,7 @@ def api_ocr():
         return jsonify({"ok": True, "file": fn, "title": title,
                         "status": OCR_STATUS.get(course, "OCR starting…")})
     except Exception as e:
-        import traceback
-        return jsonify({"error": "OCR trigger failed", "detail": repr(e),
-                        "tb": traceback.format_exc()[-600:]}), 500
-
-
-@app.route("/api/ocr/status", methods=["GET"])
-def api_ocr_status():
-    course = safe_course(request.args.get("course", ""))
-    return jsonify({"status": OCR_STATUS.get(course, "")})
+        return jsonify({"error": "OCR trigger failed — " + str(e)[:140]}), 500
 
 
 def _ocr_and_index(course, pdf_fn, title):
