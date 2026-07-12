@@ -2854,6 +2854,40 @@ def api_upload():
     return jsonify({"saved": saved, "skipped": skipped})
 
 
+@app.route("/api/paste", methods=["POST"])
+def api_paste():
+    """Add pasted text straight into the course as a searchable .md — for facts,
+    situation reports, or any record that has no clean file (a webpage-print would
+    otherwise land as an unreadable image scan). Same index pipeline as a Word upload."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can add to a shared course."}), 403
+    title = (body.get("title", "") or "").strip()
+    text = (body.get("text", "") or "").strip()
+    if len(text) < 40:
+        return jsonify({"error": "Paste a bit more text — need at least a short paragraph."}), 400
+    if not title:
+        # first non-empty line, trimmed, makes a reasonable default title
+        title = next((ln.strip() for ln in text.splitlines() if ln.strip()), "Pasted context")[:80]
+    pdf_dir, _ = course_paths(course)
+    safe = re.sub(r'[^\w %()&.,-]', '_', title).strip()[:80] or "context"
+    fn = f"Context — {safe}.md"
+    # dedup: replace any prior paste of the same title
+    old = os.path.join(pdf_dir, fn)
+    if os.path.exists(old):
+        try:
+            os.remove(old)
+        except Exception:
+            pass
+    with open(os.path.join(pdf_dir, fn), "w", encoding="utf-8") as f:
+        f.write(f"# {title}\n\n" + text)
+    SOURCES[fn] = title
+    save_sources()
+    threading.Thread(target=reindex, args=(course,), daemon=True).start()
+    return jsonify({"ok": True, "file": fn, "title": title, "reindexing": True})
+
+
 # ---------------------------------------------------------------- browser extension
 # A browser extension pushes the PDF you're viewing straight into a course. The
 # BROWSER does the fetch, so it defeats what the server can't: modern TLS, JS-rendered
