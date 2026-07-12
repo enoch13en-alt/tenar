@@ -4581,29 +4581,32 @@ def api_primary_find():
     if not c:
         return jsonify({"candidates": []})
     sys = (
-        "Find the AUTHORITATIVE published full TEXT of the named legal instrument "
-        "online — the official treaty depositary (e.g. UN Treaty Collection, IAEA), "
-        "an official gazette, or a government legislation site. Prefer a DIRECT link "
-        "to the instrument's OWN text, PDF where possible — NOT commentary, a "
-        "summary, a casebrief, or a news article about it.\n"
-        "PREFER A DIRECT FILE URL, NOT A LANDING PAGE. A URL ending in '.pdf' that "
-        "points straight at the document (e.g. an IAEA file like "
-        "'iaea.org/sites/default/files/infcirc567.pdf', or a gazette/govt PDF) is "
-        "far more fetchable than a topic/overview page ('/topics/…', "
-        "'/publications/<number>/…'), which official sites often bot-block with a "
-        "403. When you know the document's series number (e.g. IAEA INFCIRC/NNN), "
-        "prefer the direct file form of it. Put the most directly-fetchable file URL "
-        "FIRST, and include a landing page only as a lower-ranked fallback.\n"
-        "Use web search. Return "
-        'STRICT JSON: {"candidates":[{"title":..., "url":..., "kind":'
-        '"official|unofficial", "note":...}]} best first, max 4. If you cannot find '
-        "an authoritative text, return an empty candidates list rather than guessing "
-        "a URL.")
+        "Find where the FULL TEXT of the named legal instrument is authoritatively "
+        "published online, and return the best fetchable sources. Give the instrument's "
+        "OWN text — NOT commentary, a summary, a casebrief, or a news article about it.\n"
+        "A DIRECT PDF is ideal, but an OFFICIAL HTML PAGE that carries the instrument's "
+        "FULL TEXT is a perfectly good candidate — the fetcher extracts text from HTML, so "
+        "do NOT discard a good official page just because it is not a .pdf. Rank a direct "
+        "file URL first and an official full-text HTML page next; a topic/overview landing "
+        "page that only DESCRIBES the instrument is the weakest and should come last or be "
+        "omitted.\n"
+        "USE THE OBVIOUS OFFICIAL HOME for well-known instrument types: UN General Assembly "
+        "resolutions at undocs.org (e.g. https://undocs.org/A/RES/64/292) or "
+        "documents.un.org; core UN human-rights treaties and CESCR General Comments at "
+        "ohchr.org; law-of-the-sea texts (UNCLOS, the 1994 Part XI Agreement) at "
+        "un.org/Depts/los; multilateral treaties at treaties.un.org; national statutes at "
+        "the government gazette or the national legislation/parliament site. Run SEVERAL "
+        "searches (try the official-site name, the document symbol/number, and 'full text "
+        "pdf') before giving up.\n"
+        "Use web search. Return STRICT JSON: {\"candidates\":[{\"title\":..., \"url\":..., "
+        "\"kind\":\"official|unofficial\", \"note\":...}]} best first, up to 4. Return the "
+        "best authoritative source(s) you can locate; only return an EMPTY list if you "
+        "genuinely cannot find the instrument's text anywhere authoritative. Never invent a "
+        "URL you did not see in the search results.")
     def _run():
-        # fewer web searches (3) so it returns before a browser fetch times out
         resp, _ = _create_final(
             c, model=ANSWER_MODEL, max_tokens=1200,
-            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}],
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}],
             system=sys,
             messages=[{"role": "user", "content":
                        f"Instrument: {name}\nSearch hint: {query}\n\nFind its "
