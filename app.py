@@ -4982,6 +4982,33 @@ def _ocr_pdf_text(pdf_path, course=None, per_call=3, dpi=150, max_pages=400):
     return "\n\n".join(out).strip()
 
 
+@app.route("/api/doc/delete", methods=["POST"])
+def api_doc_delete():
+    """Remove a document from a course (prune junk/wrong/corrupt files), then reindex.
+    A corrupt web-fetched PDF can segfault the extractor and abort the WHOLE reindex, so
+    being able to delete it is what unblocks indexing. Admin/owner-gated."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    fn = (body.get("file") or "").strip()
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "Only an admin can remove a shared course's document."}), 403
+    pdfs = course_pdfs(course)
+    if fn not in pdfs:
+        return jsonify({"error": "That file isn't in this course."}), 404
+    try:
+        os.remove(pdfs[fn])
+    except Exception as e:
+        return jsonify({"error": "Delete failed — " + str(e)[:120]}), 500
+    SOURCES.pop(fn, None)
+    DOCTYPES.pop(fn, None)
+    save_sources()
+    save_doctypes()
+    if not bool(body.get("no_reindex")):
+        threading.Thread(target=reindex, args=(course,), daemon=True).start()
+    return jsonify({"ok": True, "deleted": fn, "reindexing": not bool(body.get("no_reindex"))})
+
+
 @app.route("/api/ocr", methods=["POST"])
 def api_ocr():
     """Force OCR on an existing scanned PDF that indexed to no searchable text (a FAOLEX/
