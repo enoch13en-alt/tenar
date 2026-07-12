@@ -4404,6 +4404,55 @@ def api_primary_gaps():
                     "cost": record_cost(resp, ANSWER_MODEL)})
 
 
+_INSTR_STOP = {"the", "of", "and", "for", "act", "law", "new", "republic", "ghana",
+               "convention", "regulations", "regulation", "agreement", "statutes",
+               "statute", "authority", "international", "national", "protocol", "treaty"}
+
+
+def _instr_tokens(s):
+    """Distinctive tokens of an instrument name: Act/L.I./year NUMBERS (>=3 digits) and
+    significant words (>=4 chars, not common legal-boilerplate). Used to match an
+    instrument by name to a held document."""
+    toks = set()
+    for t in re.findall(r"[a-z0-9]+", (s or "").lower()):
+        if t.isdigit():
+            if len(t) >= 3:
+                toks.add(t)
+        elif len(t) >= 4 and t not in _INSTR_STOP:
+            toks.add(t)
+    return toks
+
+
+def _docs_matching_instrument(name, exclude_course):
+    """Find documents in OTHER courses that ARE the named instrument's text — so a gap in
+    one course can be filled from a copy already held elsewhere instead of a web fetch.
+    Requires the Act/L.I. NUMBER to match when the name has one (prevents matching the
+    wrong statute); else demands strong word overlap. Returns best matches (course, file)."""
+    want = _instr_tokens(name)
+    if not want:
+        return []
+    wnums = {t for t in want if t.isdigit()}
+    hits = []
+    for course in list_courses(visible_only=True):
+        if course == exclude_course or not _may_read_course(course):
+            continue
+        try:
+            files = course_pdfs(course)
+        except Exception:
+            continue
+        for f in files:
+            dt = _instr_tokens(f + " " + display_name(f))
+            common = want & dt
+            nums = wnums & dt
+            score = len(common) + 3 * len(nums)
+            strong = (nums if wnums else len(common) >= 3)
+            if strong and score >= 3:
+                hits.append({"course": course, "file": f,
+                             "title": display_name(f), "score": score})
+    hits.sort(key=lambda h: -h["score"])
+    return hits[:3]
+
+
 OUTLINE_COVERAGE = (
     "You audit a course's document COVERAGE against its OUTLINE / SYLLABUS. You are given "
     "(a) the course OUTLINE text and (b) the TITLES of the documents the corpus already "
@@ -4492,6 +4541,13 @@ def api_outline_coverage():
     missing = data.get("missing") if isinstance(data, dict) else []
     present = present if isinstance(present, list) else []
     missing = missing if isinstance(missing, list) else []
+    # cross-course reuse: for each missing instrument, note if ANOTHER course already
+    # holds its text — so it can be copied in internally instead of re-fetched from the web.
+    for m in missing:
+        if isinstance(m, dict) and m.get("name"):
+            held = _docs_matching_instrument(m["name"], course)
+            if held:
+                m["held_in"] = held
     return jsonify({"present": present, "missing": missing, "have_count": len(titles),
                     "outline": display_name(outline_file),
                     "cost": record_cost(resp, ANSWER_MODEL)})
@@ -4946,6 +5002,39 @@ def api_updates_fetch():
         save_sources()
         threading.Thread(target=reindex, args=(course,), daemon=True).start()
     return jsonify({"results": results, "added": added})
+
+
+@app.route("/api/updates/copy", methods=["POST"])
+def api_updates_copy():
+    """Cross-course reuse: copy a document the corpus ALREADY holds in one course into
+    another course that needs it (a coverage gap the outline scan found held elsewhere) —
+    no web round-trip, guaranteed the same verified text. Admin/owner gated, then reindex."""
+    import shutil
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))            # target
+    src_course = safe_course(body.get("source_course", ""))
+    src_file = (body.get("file") or "").strip()
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "Only an admin can add to a shared course."}), 403
+    if not src_course or not src_file or not _may_read_course(src_course):
+        return jsonify({"error": "Nothing to copy."}), 400
+    src_pdfs = course_pdfs(src_course)
+    if src_file not in src_pdfs:                             # exact match → no path traversal
+        return jsonify({"error": "Source document not found."}), 404
+    tgt_dir, _ = course_paths(course)
+    dst_path = os.path.join(tgt_dir, src_file)
+    if os.path.exists(dst_path):
+        return jsonify({"ok": True, "file": src_file, "why": "already present in this course"})
+    try:
+        shutil.copy2(src_pdfs[src_file], dst_path)
+    except Exception as e:
+        return jsonify({"error": f"copy failed ({e})"}), 500
+    SOURCES[src_file] = SOURCES.get(src_file) or display_name(src_file)
+    save_sources()
+    threading.Thread(target=reindex, args=(course,), daemon=True).start()
+    return jsonify({"ok": True, "file": src_file, "title": SOURCES.get(src_file),
+                    "from": src_course, "reindexing": True})
 
 
 @app.route("/api/updates/verdict", methods=["POST"])
