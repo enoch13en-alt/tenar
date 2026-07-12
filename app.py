@@ -4449,6 +4449,10 @@ def _docs_matching_instrument(name, exclude_course):
         except Exception:
             continue
         for f in files:
+            low = (f + " " + display_name(f)).lower()
+            if any(k in low for k in ("outline", "syllabus", "schedule", "course guide",
+                                      "course info", "reading list", "lecture")):
+                continue                              # never offer an outline as an instrument
             dt = _instr_tokens(f + " " + display_name(f))
             sw = want_words & {t for t in dt if not t.isdigit()}
             si = want_ids & {t for t in dt if t.isdigit() and not _yearish(t)}
