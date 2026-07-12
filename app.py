@@ -3325,7 +3325,6 @@ def api_audit():
     # absent, never on a mere spot-check miss.
     strict = bool(body.get("strict"))
     result = {"items": out}
-    result_debug = None
     if bool(body.get("fix")):
         removed = []
         if strict:
@@ -3336,21 +3335,30 @@ def api_audit():
             # load it once, not once per ❓. Keyed by the matched document, so each item is
             # still verified against its OWN correct instrument — caching only skips
             # re-reading the same static file (authenticity unchanged, see _recheck_authority).
-            doc_cache, cache_lock = {}, threading.Lock()
-            _dbg = []
-
-            def _rc(i):
-                try:
-                    return i, _recheck_authority(c, courses, items[i]["authority"],
-                                                 items[i].get("claim", ""),
-                                                 doc_cache, cache_lock)
-                except Exception as e:
-                    import traceback
-                    _dbg.append(repr(e) + " :: " + traceback.format_exc()[-400:])
-                    return i, None
+            doc_cache = {}
             if unv:
+                # Phase 1 — retrieval + full-instrument load, SEQUENTIAL. This touches shared
+                # INDEXES; running it on the thread pool races the index and the load can
+                # come back empty, silently downgrading the recheck to chunk-fallback. Load
+                # once per unique instrument via doc_cache.
+                ctxs = {}
+                for i in unv:
+                    try:
+                        ctxs[i] = _recheck_context(courses, items[i]["authority"],
+                                                   items[i].get("claim", ""), doc_cache)
+                    except Exception:
+                        ctxs[i] = ("", None, 0)
+
+                # Phase 2 — model verify, PARALLEL (pure API calls, no shared state).
+                def _rv(i):
+                    cx = ctxs.get(i) or ("", None, 0)
+                    try:
+                        return i, _recheck_verify(c, items[i]["authority"],
+                                                  items[i].get("claim", ""), cx[0], cx[1], cx[2])
+                    except Exception:
+                        return i, None
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-                    for i, rv in pool.map(_rc, unv):
+                    for i, rv in pool.map(_rv, unv):
                         if not rv:
                             continue
                         vv = rv.get("verdict", "unverified")
@@ -3369,20 +3377,6 @@ def api_audit():
             n_unique = sum(1 for v in doc_cache.values() if v and v[0])
             if n_unique:
                 consume("questions", n_unique)
-            _idx = INDEXES.get(courses[0]) or {}
-            _docnames = sorted({c.get("doc") for c in _idx.get("chunks", [])})
-            _probe = []
-            for (ck, cf) in list(doc_cache.keys()):
-                try:
-                    _b, _ = load_full_docs([{"course": ck, "file": cf}])
-                    _probe.append([cf, len(_b), safe_course(ck), ck in INDEXES])
-                except Exception as e:
-                    _probe.append([cf, "ERR:" + repr(e)])
-            result_debug = {"errors": _dbg,
-                            "cache_keys": [list(k) + [bool(v and v[0])] for k, v in doc_cache.items()],
-                            "n_unique": n_unique, "unv": len(unv),
-                            "course0": courses[0], "indexes_keys": list(INDEXES.keys()),
-                            "probe_reload": _probe, "index_docnames": _docnames[:40]}
             # anything STILL unverified after the full read is genuinely ungrounded -> cut it
             removed = [(items[i], out[i]) for i in range(len(items))
                        if out[i]["verdict"] == "unverified"]
@@ -3430,23 +3424,24 @@ def api_audit():
         result["removed_count"] = len(removed)
         result["removed"] = [{"authority": it["authority"], "claim": it.get("claim", "")}
                              for it, v in removed]
-        result["_debug"] = result_debug
     return jsonify(result)
 
 
-def _recheck_authority(c, courses, authority, claim, doc_cache=None, cache_lock=None):
-    """Full-instrument re-check of ONE authority. Loads the WHOLE matched instrument
-    (e.g. all of Act 703) and re-judges the citation against it, so a provision that
-    never ranks in a spot-check window is simply present in the full text. Returns
-    {verdict, note, correct_authority, searched, read}. Shared by the /recheck endpoint
-    and the strict 'valid-only' audit cleanup.
+def _recheck_context(courses, authority, claim, doc_cache=None, cache_lock=None):
+    """Retrieval + full-instrument LOAD for ONE authority — NO model call. Returns
+    (ctx, loaded_doc, searched).
 
-    doc_cache (optional {(course, file): (ctx, loaded_doc)}) dedupes the expensive
-    full-instrument LOAD across rechecks in one run: three ❓ that all cite Act 703 load
-    it once, not three times. The cache is keyed by the MATCHED document and the per-item
-    name-matching still runs for every authority, so each citation is still judged against
-    its OWN correct instrument by its OWN verification call — caching skips re-reading the
-    same static file, nothing more. Authenticity is unchanged; only I/O is saved."""
+    This touches shared INDEXES (retrieval AND the full-document load), so it MUST run
+    single-threaded. Running loads concurrently races the index and can transiently return
+    an EMPTY load, silently degrading the recheck to chunk-fallback (which defeats the
+    'read the whole instrument before cutting' guarantee). The strict audit therefore calls
+    this sequentially and parallelises only the model verify below.
+
+    doc_cache (optional {(course, file): (ctx, loaded_doc)}) dedupes the load across
+    rechecks in one run: three ❓ that all cite Act 703 load it once, not three times.
+    Keyed by the MATCHED document, and the per-item name-matching still runs for every
+    authority — so each citation is still judged against its OWN correct instrument. The
+    cache only skips re-reading the same static file; authenticity is unchanged."""
     multi = len(courses) > 1
     # build many retrieval angles, including the pinpoint number in provision form
     mnum = re.search(r"(?:s\.?|section|art\.?|article|clause|reg\.?|regulation)\s*(\d+)",
@@ -3544,6 +3539,12 @@ def _recheck_authority(c, courses, authority, claim, doc_cache=None, cache_lock=
             break
     if not ctx:
         ctx = "\n\n".join(merged[:48])[:16000]
+    return ctx, loaded_doc, len(merged)
+
+
+def _recheck_verify(c, authority, claim, ctx, loaded_doc, searched):
+    """Model verify of ONE authority against an already-loaded ctx. Pure API call, no
+    shared-state access — SAFE to run in parallel. Returns the verdict dict."""
     try:
         v, _ = _create_final(
             c, model=ANSWER_MODEL, max_tokens=600,
@@ -3574,7 +3575,16 @@ def _recheck_authority(c, courses, authority, claim, doc_cache=None, cache_lock=
         note = ("Still not surfaced even on a focused search — confirm directly. Not a finding that "
                 "it is wrong.")
     return {"verdict": verdict, "note": note, "correct_authority": ca,
-            "searched": len(merged), "read": loaded_doc}
+            "searched": searched, "read": loaded_doc}
+
+
+def _recheck_authority(c, courses, authority, claim, doc_cache=None, cache_lock=None):
+    """Full-instrument re-check of ONE authority: load then verify. Used by the /recheck
+    endpoint (a single call, so load+verify together is fine). The strict audit instead
+    calls _recheck_context sequentially and _recheck_verify in parallel, to keep the
+    index-touching load off the thread pool (see _recheck_context)."""
+    ctx, loaded_doc, searched = _recheck_context(courses, authority, claim, doc_cache, cache_lock)
+    return _recheck_verify(c, authority, claim, ctx, loaded_doc, searched)
 
 
 @app.route("/api/audit/recheck", methods=["POST"])
