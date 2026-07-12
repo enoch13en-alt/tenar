@@ -3369,9 +3369,20 @@ def api_audit():
             n_unique = sum(1 for v in doc_cache.values() if v and v[0])
             if n_unique:
                 consume("questions", n_unique)
+            _idx = INDEXES.get(courses[0]) or {}
+            _docnames = sorted({c.get("doc") for c in _idx.get("chunks", [])})
+            _probe = []
+            for (ck, cf) in list(doc_cache.keys()):
+                try:
+                    _b, _ = load_full_docs([{"course": ck, "file": cf}])
+                    _probe.append([cf, len(_b), safe_course(ck), ck in INDEXES])
+                except Exception as e:
+                    _probe.append([cf, "ERR:" + repr(e)])
             result_debug = {"errors": _dbg,
                             "cache_keys": [list(k) + [bool(v and v[0])] for k, v in doc_cache.items()],
-                            "n_unique": n_unique, "unv": len(unv)}
+                            "n_unique": n_unique, "unv": len(unv),
+                            "course0": courses[0], "indexes_keys": list(INDEXES.keys()),
+                            "probe_reload": _probe, "index_docnames": _docnames[:40]}
             # anything STILL unverified after the full read is genuinely ungrounded -> cut it
             removed = [(items[i], out[i]) for i in range(len(items))
                        if out[i]["verdict"] == "unverified"]
