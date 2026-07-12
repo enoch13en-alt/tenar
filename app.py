@@ -4423,15 +4423,23 @@ def _instr_tokens(s):
     return toks
 
 
+def _yearish(t):
+    """A 4-digit YEAR (not an Act/L.I. identifier). A shared year across two titles is not
+    identity — it caused false matches (Part XI Agreement 1994 ~ EPA Act 1994)."""
+    return t.isdigit() and len(t) == 4 and 1500 <= int(t) <= 2099
+
+
 def _docs_matching_instrument(name, exclude_course):
     """Find documents in OTHER courses that ARE the named instrument's text — so a gap in
     one course can be filled from a copy already held elsewhere instead of a web fetch.
-    Requires the Act/L.I. NUMBER to match when the name has one (prevents matching the
-    wrong statute); else demands strong word overlap. Returns best matches (course, file)."""
+    HIGH PRECISION (a false copy pollutes the corpus, worse than a miss): drop year-range
+    numbers, then match ONLY on a shared Act/L.I. identifier number OR >=2 shared
+    distinctive name-words. Returns best matches (course, file)."""
     want = _instr_tokens(name)
-    if not want:
+    want_words = {t for t in want if not t.isdigit()}
+    want_ids = {t for t in want if t.isdigit() and not _yearish(t)}   # Act/L.I. numbers
+    if not want_words and not want_ids:
         return []
-    wnums = {t for t in want if t.isdigit()}
     hits = []
     for course in list_courses(visible_only=True):
         if course == exclude_course or not _may_read_course(course):
@@ -4442,13 +4450,11 @@ def _docs_matching_instrument(name, exclude_course):
             continue
         for f in files:
             dt = _instr_tokens(f + " " + display_name(f))
-            common = want & dt
-            nums = wnums & dt
-            score = len(common) + 3 * len(nums)
-            strong = (nums if wnums else len(common) >= 3)
-            if strong and score >= 3:
-                hits.append({"course": course, "file": f,
-                             "title": display_name(f), "score": score})
+            sw = want_words & {t for t in dt if not t.isdigit()}
+            si = want_ids & {t for t in dt if t.isdigit() and not _yearish(t)}
+            if si or len(sw) >= 2:                    # real id match, or strong word overlap
+                hits.append({"course": course, "file": f, "title": display_name(f),
+                             "score": 3 * len(si) + len(sw)})
     hits.sort(key=lambda h: -h["score"])
     return hits[:3]
 
