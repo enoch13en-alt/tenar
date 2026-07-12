@@ -1107,15 +1107,18 @@ async function runFullPipeline() {
     //    — before they can propagate into the compiled document
     stage("③ Auditing authorities…");
     $("#examStatus").textContent = "🔍 Auditing every issue's authorities against the corpus…";
-    const nFixed = await auditFixAll();
+    const auRes = await auditFixAll();
+    const nFixed = auRes.fixed || 0, nRemoved = auRes.removed || 0;
     renderExam();
     let auPassed = 0, auFlag = 0;
     EXAM.issues.forEach(it => (it._audit || []).forEach(x => {
       if (x.verdict === "supported") auPassed++; else if (x.verdict === "unverified") auFlag++;
     }));
+    auFlag = Math.max(0, auFlag - nRemoved);   // strict already cut the still-ungrounded ones
     $("#examStatus").textContent = "🔍 Audit done — ✅ " + auPassed + " passed"
       + (nFixed ? (" · 🔧 " + nFixed + " corrected") : "")
-      + (auFlag ? (" · ❓ " + auFlag + " to verify") : "")
+      + (nRemoved ? (" · 🗑️ " + nRemoved + " ungrounded cut") : "")
+      + (auFlag ? (" · ❓ " + auFlag + " left to verify") : "")
       + " (details under each issue). Compiling…";
     // ④ compile the final document
     stage("④ Compiling…");
@@ -1172,7 +1175,7 @@ document.addEventListener("click", e => {
 function issueAuditHtml(it, idx) {
   const a = it._audit; if (!a || !a.length) return "";
   const passed = a.filter(x => x.verdict === "supported").length;
-  const flagged = a.filter(x => x.verdict === "unverified").length;
+  const flagged = Math.max(0, a.filter(x => x.verdict === "unverified").length - (it._autoRemoved || 0));
   const rows = a.map(x => auditRowHtml(x, JSON.stringify([COURSE]))).join("");
   const orig = it._auditOriginal
     ? '<button class="btn alt showOrigAuto" data-i="' + idx + '" style="width:auto;font-size:10px;margin-top:4px">⌄ show original (before fix)</button>'
@@ -1181,6 +1184,7 @@ function issueAuditHtml(it, idx) {
   return '<div style="font-size:11px;margin-top:5px;border-left:3px solid #3a4556;padding:5px 9px;background:#0f131a;border-radius:4px">'
     + '<div style="color:#aab4c6;margin-bottom:3px">🔍 Audit — ✅ ' + passed + ' passed'
     + (it._autoFixed ? ('  ·  🔧 ' + it._autoFixed + ' corrected') : '')
+    + (it._autoRemoved ? ('  ·  🗑️ ' + it._autoRemoved + ' ungrounded cut') : '')
     + (flagged ? ('  ·  ❓ ' + flagged + ' to verify') : '') + '</div>'
     + rows + orig + '</div>';
 }
@@ -1409,14 +1413,14 @@ async function auditAndFixIssue(i) {
   const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
+      body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true, strict: true})});
     const d = await r.json();
     if (d.error) { if (outEl) outEl.textContent = d.error; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } return; }
     const items = d.items || [];
     const list = !items.length
       ? '<span style="font-size:11px;color:#6b7488">' + esc(d.note || "No specific authorities to check.") + '</span>'
       : items.map(x => auditRowHtml(x, JSON.stringify([COURSE]))).join("");
-    if (d.corrected && d.fixed_count) {
+    if (d.corrected && (d.fixed_count || d.removed_count)) {
       const fixedItems = items.filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
       it.answer = d.corrected; it.answer_annotated = "";      // fix AT SOURCE
       renderExam();                                            // re-render corrected answer above
@@ -1426,10 +1430,16 @@ async function auditAndFixIssue(i) {
           '<div style="font-size:11px;margin:2px 0">' + badge(x.verdict) + ' <b>' + esc(x.authority) + '</b>'
           + (x.correct_authority ? (' → <span style="color:#7fdca0">' + esc(x.correct_authority) + '</span>') : '')
           + (x.note ? ('<div style="color:#8b93a7;margin-left:16px">' + esc(x.note) + '</div>') : '') + '</div>').join("");
+        const removedHtml = (d.removed || []).map(x =>
+          '<div style="font-size:11px;margin:2px 0">🗑️ <b>' + esc(x.authority) + '</b> — cut (could not be grounded in the materials)'
+          + (x.claim ? ('<div style="color:#8b93a7;margin-left:16px">' + esc(x.claim) + '</div>') : '') + '</div>').join("");
         o2.innerHTML =
-          '<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 Corrected ' + d.fixed_count
-          + ' authority issue(s) — applied to the answer above:</div>'
-          + '<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">' + fixedHtml + '</div>'
+          '<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 '
+          + (d.fixed_count ? ('Corrected ' + d.fixed_count + ' authority issue(s)') : '')
+          + (d.fixed_count && d.removed_count ? ' · ' : '')
+          + (d.removed_count ? ('cut ' + d.removed_count + ' ungrounded claim(s)') : '')
+          + ' — applied to the answer above:</div>'
+          + '<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">' + fixedHtml + removedHtml + '</div>'
           + '<button class="btn alt showOrigBtn" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before fix)</button>'
           + '<div class="origBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">' + esc(original) + '</div>'
           + '<div style="margin-top:8px;font-size:11px;color:#6b7488">Full audit (' + items.length + '):</div>' + list;
@@ -1451,27 +1461,30 @@ async function auditAndFixIssue(i) {
 // AT SOURCE. Returns how many authority issues were fixed. Used by 'Do it all'.
 async function auditFixAll() {
   const targets = EXAM.issues.filter(it => it.answer && !String(it.answer).startsWith("Error"));
-  let fixed = 0, idx = 0;
+  let fixed = 0, removed = 0, idx = 0;
   async function worker() {
     while (idx < targets.length) {
       const it = targets[idx++];
       const original = it.answer;
       try {
         const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true})});
+          body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true, strict: true})});
         const d = await r.json();
         it._audit = d.items || [];                      // FULL report for every issue (passed + flagged)
         it._autoFixed = d.fixed_count || 0;
-        if (d.corrected && d.fixed_count) {
+        it._autoRemoved = d.removed_count || 0;
+        it._removed = d.removed || [];
+        if (d.corrected && (d.fixed_count || d.removed_count)) {
           it._auditOriginal = original;
           it.answer = d.corrected; it.answer_annotated = "";
-          fixed += d.fixed_count;
+          fixed += d.fixed_count || 0;
+          removed += d.removed_count || 0;
         }
       } catch (e) { if (!it._audit) it._audit = []; }
     }
   }
   await Promise.all([worker(), worker(), worker()]);   // 3 at a time
-  return fixed;
+  return {fixed, removed};
 }
 async function gatherAll() {
   $("#examStatus").textContent = "Gathering all issues (one at a time)…";
@@ -2385,21 +2398,29 @@ async function runAudit(doc, courses) {
     : items.map(it => auditRowHtml(it, JSON.stringify(courses))).join("");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: doc, courses, fix: true})});
+      body: JSON.stringify({answer: doc, courses, fix: true, strict: true})});
     const d = await r.json();
     if (d.error) { out.textContent = d.error; btn.disabled = false; btn.textContent = "🔍 Audit & fix authorities"; return; }
     const items = d.items || [];
-    if (d.corrected && d.fixed_count) {
+    if (d.corrected && (d.fixed_count || d.removed_count)) {
       const fixedItems = items.filter(x => x.verdict === "misattributed" || x.verdict === "contradicted");
       const docEl = $("#researchDoc");
       if (docEl) docEl.innerHTML = mdToHtml(d.corrected);              // corrected doc replaces the original
       $("#auditBtn").onclick = () => runAudit(d.corrected, courses);   // re-audit the corrected version
+      const removedHtml = (d.removed || []).map(x =>
+        `<div style="font-size:12px">🗑️ <b>${esc(x.authority)}</b> — cut (could not be grounded in the materials)`
+        + (x.claim ? `<div style="color:#8b93a7;margin-left:16px">${esc(x.claim)}</div>` : "") + `</div>`).join("");
       out.innerHTML =
-        `<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 Corrected ${d.fixed_count} authority issue(s) — applied to the document above:</div>`
+        `<div style="font-size:12px;color:#7fdca0;font-weight:600;margin-bottom:4px">🔧 `
+        + (d.fixed_count ? `Corrected ${d.fixed_count} authority issue(s)` : "")
+        + (d.fixed_count && d.removed_count ? ` · ` : "")
+        + (d.removed_count ? `cut ${d.removed_count} ungrounded claim(s)` : "")
+        + ` — applied to the document above:</div>`
         + `<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">`
         + fixedItems.map(x => `<div style="font-size:12px">${badge(x.verdict)} <b>${esc(x.authority)}</b>`
             + (x.correct_authority ? ` → <span style="color:#7fdca0">${esc(x.correct_authority)}</span>` : "")
             + (x.note ? `<div style="color:#8b93a7;margin-left:16px">${esc(x.note)}</div>` : "") + `</div>`).join("")
+        + removedHtml
         + `</div>`
         + `<button class="btn alt" id="showOrigResearch" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before fix)</button>`
         + `<div id="origResearchBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">${esc(doc)}</div>`

@@ -3311,55 +3311,95 @@ def api_audit():
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
     # grounded in the corpus text the audit already retrieved. Everything else verbatim.
+    # STRICT ('valid-only') additionally CUTS any claim that cannot be grounded in the
+    # materials at all — but only after a full-instrument re-check confirms it is genuinely
+    # absent, never on a mere spot-check miss.
+    strict = bool(body.get("strict"))
     result = {"items": out}
     if bool(body.get("fix")):
+        removed = []
+        if strict:
+            # settle every ❓ against the FULL instrument first, so removal only ever hits a
+            # claim that is genuinely ungrounded after reading the whole document.
+            unv = [i for i in range(len(items)) if out[i]["verdict"] == "unverified"]
+
+            def _rc(i):
+                try:
+                    return i, _recheck_authority(c, courses, items[i]["authority"],
+                                                 items[i].get("claim", ""))
+                except Exception:
+                    return i, None
+            if unv:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    for i, rv in pool.map(_rc, unv):
+                        if not rv:
+                            continue
+                        vv = rv.get("verdict", "unverified")
+                        out[i]["verdict"] = vv
+                        if rv.get("note"):
+                            out[i]["note"] = rv["note"]
+                        if rv.get("read"):
+                            out[i]["read"] = rv["read"]
+                        ca2 = (rv.get("correct_authority") or "").strip()
+                        if vv == "misattributed" and ca2 and \
+                                ca2.lower() != items[i]["authority"].strip().lower():
+                            out[i]["correct_authority"] = ca2
+            # anything STILL unverified after the full read is genuinely ungrounded -> cut it
+            removed = [(items[i], out[i]) for i in range(len(items))
+                       if out[i]["verdict"] == "unverified"]
+
         flagged = [(items[i], out[i]) for i in range(len(items))
                    if out[i]["verdict"] in ("misattributed", "contradicted")]
         corrected = None
-        if flagged:
+        if flagged or removed:
             fixes = [{"cited": it["authority"], "problem": v["verdict"],
                       "correct_authority": v.get("correct_authority", ""),
                       "note": v.get("note", ""), "corpus": it.get("_ctx", "")[:2500]}
                      for it, v in flagged]
+            drops = [{"cited": it["authority"], "claim": it.get("claim", "")}
+                     for it, v in removed]
+            sys_fix = ("You correct and, where told, CLEAN a legal answer — nothing else. You get "
+                       "two lists.\n"
+                       "FIX — citations to correct: for each you get the citation as written, what "
+                       "is wrong, the correct authority, and the CORPUS text. Put the correct "
+                       "section/article number and align the claim to what the corpus actually "
+                       "says, using ONLY the corpus provided.\n"
+                       "REMOVE — claims whose authority could NOT be grounded in the materials and "
+                       "must be cut: DELETE the specific claim/sentence that rests on that "
+                       "authority and smooth the surrounding text so it still reads cleanly and the "
+                       "argument stays coherent — no dangling reference, no hanging connective, no "
+                       "orphaned 'and'/'thus'. If removing a claim empties a bullet or sentence, "
+                       "remove that whole bullet/sentence. Remove ONLY what rests on a REMOVE "
+                       "authority; if a sentence also carries a grounded authority, keep the "
+                       "grounded part and cut only the ungrounded clause.\n"
+                       "Touch NOTHING else: keep every other sentence, authority, figure, argument, "
+                       "conclusion and the style verbatim. Do NOT add new authorities. Return ONLY "
+                       "the corrected answer text — no preamble, no notes.")
             try:
                 cor, _ = _create_final(
                     c, model=ANSWER_MODEL, max_tokens=8000,
-                    system=("You correct the FLAGGED citations in a legal answer and nothing else. "
-                            "For each flagged item you get the citation as written, what is wrong, "
-                            "the correct authority, and the CORPUS text. Fix ONLY the flagged "
-                            "citations/claims — put the correct section/article number and align the "
-                            "claim to what the corpus actually says, using ONLY the corpus provided. "
-                            "Do NOT touch any other sentence, do NOT add new authorities, do NOT "
-                            "change the argument, conclusions or style. Return ONLY the corrected "
-                            "answer text — no preamble, no notes."),
+                    system=sys_fix,
                     messages=[{"role": "user", "content":
-                               "ANSWER:\n" + answer + "\n\nFLAGGED (fix these only):\n"
-                               + json.dumps(fixes)}])
+                               "ANSWER:\n" + answer + "\n\nFIX (correct these):\n"
+                               + json.dumps(fixes) + "\n\nREMOVE (cut these):\n"
+                               + json.dumps(drops)}])
                 corrected = _text_of(cor).strip()
             except Exception:
                 corrected = None
         result["corrected"] = corrected
         result["fixed_count"] = len(flagged)
+        result["removed_count"] = len(removed)
+        result["removed"] = [{"authority": it["authority"], "claim": it.get("claim", "")}
+                             for it, v in removed]
     return jsonify(result)
 
 
-@app.route("/api/audit/recheck", methods=["POST"])
-def api_audit_recheck():
-    """Focused re-check of ONE authority the batch audit couldn't surface. Throws the
-    full retrieval effort at just this citation — many angles incl. the raw section
-    number in provision form, deep — then re-judges it. Turns most ❓ into ✅/❌."""
-    body = request.json or {}
-    authority = (body.get("authority") or "").strip()
-    claim = (body.get("claim") or "").strip()
-    courses = [safe_course(x) for x in (body.get("courses") or []) if x]
-    if not courses and body.get("course"):
-        courses = [safe_course(body.get("course"))]
-    courses = [x for x in courses if _may_read_course(x)]
-    if not authority or not courses:
-        return jsonify({"error": "Need the authority and a course."}), 400
-    c = _client()
-    if not c:
-        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+def _recheck_authority(c, courses, authority, claim):
+    """Full-instrument re-check of ONE authority. Loads the WHOLE matched instrument
+    (e.g. all of Act 703) and re-judges the citation against it, so a provision that
+    never ranks in a spot-check window is simply present in the full text. Returns
+    {verdict, note, correct_authority, searched, read}. Shared by the /recheck endpoint
+    and the strict 'valid-only' audit cleanup."""
     multi = len(courses) > 1
     # build many retrieval angles, including the pinpoint number in provision form
     mnum = re.search(r"(?:s\.?|section|art\.?|article|clause|reg\.?|regulation)\s*(\d+)",
@@ -3458,8 +3498,28 @@ def api_audit_recheck():
     if verdict == "unverified" and not note:
         note = ("Still not surfaced even on a focused search — confirm directly. Not a finding that "
                 "it is wrong.")
-    return jsonify({"verdict": verdict, "note": note, "correct_authority": ca,
-                    "searched": len(merged), "read": loaded_doc})
+    return {"verdict": verdict, "note": note, "correct_authority": ca,
+            "searched": len(merged), "read": loaded_doc}
+
+
+@app.route("/api/audit/recheck", methods=["POST"])
+def api_audit_recheck():
+    """Focused re-check of ONE authority the batch audit couldn't surface. Throws the
+    full retrieval effort at just this citation — many angles incl. the raw section
+    number in provision form, deep — then re-judges it. Turns most ❓ into ✅/❌."""
+    body = request.json or {}
+    authority = (body.get("authority") or "").strip()
+    claim = (body.get("claim") or "").strip()
+    courses = [safe_course(x) for x in (body.get("courses") or []) if x]
+    if not courses and body.get("course"):
+        courses = [safe_course(body.get("course"))]
+    courses = [x for x in courses if _may_read_course(x)]
+    if not authority or not courses:
+        return jsonify({"error": "Need the authority and a course."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    return jsonify(_recheck_authority(c, courses, authority, claim))
 
 
 POLISH_INSTRUCTION = (
