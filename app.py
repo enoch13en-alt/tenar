@@ -5826,9 +5826,15 @@ def api_exam_breakdown():
                         "(or upload PDFs and Re-index) before using Exam Coach."})
     system = (
         "You are an exam coach for a law student. Two separate sources of truth: "
-        "FACTS come only from the scenario (treat them as authoritative; never "
-        "invent, override, or import outside facts); LAW comes only from the "
-        "course materials provided (never cite law that isn't there). "
+        "the DISPUTE's facts come only from the scenario (treat them as "
+        "authoritative; never invent, override, or import outside facts about what "
+        "happened); LAW comes only from the course materials provided (never cite "
+        "law that isn't there). BUT do not treat real, named real-world entities as "
+        "fictitious: where the scenario names a real State, a real treaty/convention, "
+        "or a real institution, its EXISTENCE and STATUS (whether a treaty is in "
+        "force, whether a named State is a party/member, whether a body operates) are "
+        "matters of independent verification, NOT assumptions to hedge — unless the "
+        "scenario is clearly hypothetical/fictional. "
         "Return STRICT JSON only, no prose, no markdown fences.")
     user = (
         f"COURSE MATERIALS (the only law you may rely on):\n{ctx}\n\n"
@@ -5837,9 +5843,27 @@ def api_exam_breakdown():
         '- "facts": array of objects {\"fact\", \"characteristic\", \"trigger\"} '
         "— the legally material facts/figures given, what characterises each, and "
         "the legal issue it triggers.\n"
-        '- "assumptions": array of strings — gaps or ambiguities in the facts to '
-        "state as assumptions or argue in the alternative (do NOT fill them with "
-        "invented facts).\n"
+        '- "assumptions": array of strings — ONLY genuine gaps in the SCENARIO\'s '
+        "facts, never invented facts, and each PREFIXED with its correct treatment "
+        "tag so the student knows what to do with it:\n"
+        "   '[Verify] ' — a real-world matter capable of independent verification (a "
+        "treaty's in-force status, whether a named real State is a party/member, "
+        "whether a real institution exists or operates). Do NOT phrase these as "
+        "assumptions to hedge; phrase them as facts to confirm and state with a "
+        "source, and only if unverifiable analyse both possibilities. "
+        "e.g. '[Verify] Whether the VBA Convention is in force and Ghana and Togo are "
+        "parties — capable of verification; state as fact with a source rather than "
+        "assume.'\n"
+        "   '[Alternative] ' — the scenario is silent on a MATERIAL fact (what caused "
+        "an event, whether a required step was taken). Make it a rebuttable assumption "
+        "and argue the alternative. e.g. '[Alternative] The facts do not state whether "
+        "the flooding was a dam release or natural rainfall — analyse both.'\n"
+        "   '[Limitation] ' — a specific figure, volume, date or quoted statement that "
+        "should be checked against the record. State it as a limitation requiring "
+        "verification.\n"
+        "   Reserve plain rebuttable assumptions ('[Alternative]') for what the facts "
+        "genuinely leave open; do NOT dump verifiable real-world facts into "
+        "assumptions.\n"
         '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\", \"link\"} — n is '
         "the order number, issue is a sub-question to answer, why ties it to the "
         "specific facts, law briefly names the relevant rule/source from the "
