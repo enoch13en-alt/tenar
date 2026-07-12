@@ -1871,17 +1871,24 @@ def reindex(course):
                 parts.append(INDEXES[course]["emb"][idxs])
             else:
                 st["message"] = f"reading {fname}..."
-                # one unreadable file (corrupt PDF, Word temp, image-only scan)
-                # must NEVER abort the whole reindex — skip it and carry on
+                # One unreadable/oversized file (corrupt PDF, Word temp, image-only scan,
+                # a huge judgment) must NEVER abort the whole reindex — EXTRACTION *and*
+                # EMBEDDING are both wrapped so a single bad doc is skipped, not fatal, and
+                # embedding runs in capped sub-batches so a very long document can't spike
+                # the embedder into an OOM/crash.
                 try:
                     dc = extract_doc_chunks(pdfs[fname], fname)
+                    if dc:
+                        st["message"] = f"embedding {fname} ({len(dc)} chunks)..."
+                        embs = []
+                        for i in range(0, len(dc), 128):
+                            embs.append(embed_texts([c["text"] for c in dc[i:i + 128]]))
+                        parts.append(np.vstack(embs) if embs else
+                                     np.zeros((0, EMBED_DIM), dtype=np.float32))
+                        new_chunks.extend(dc)
                 except Exception as e:
                     st["message"] = f"skipped {fname}: {e}"
                     continue
-                if dc:
-                    st["message"] = f"embedding {fname} ({len(dc)} chunks)..."
-                    parts.append(embed_texts([c["text"] for c in dc]))
-                    new_chunks.extend(dc)
 
         emb = np.vstack(parts) if parts else np.zeros((0, EMBED_DIM), dtype=np.float32)
         with _lock:
