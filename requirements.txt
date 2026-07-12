@@ -2,7 +2,7 @@ anthropic
 flask
 pymupdf
 fastembed
-numpy
+numpy<2
 python-dotenv
 python-docx
 reportlab
