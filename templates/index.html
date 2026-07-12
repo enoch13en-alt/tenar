@@ -1226,7 +1226,10 @@ function renderExam() {
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
         body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + issueAuditHtml(it, idx)
-          + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px">📋 Copy answer</button>'
+          + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
+          + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
+                         : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
+          + '</button>'
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
@@ -1370,6 +1373,7 @@ async function addVoice(i) {
         need_authority: r.need_authority});
       if (r.verdict === "holds" && r.merged_answer) {
         it.answer = r.merged_answer;      // merged in the essay's voice, attributed
+        it._audited = false;              // merged answer changed — re-audit for a verified copy
         it.done = true; it.attributed = true;
       }
       $("#examStatus").textContent = r.cost ? ("Running total $" + (r.cost.total_usd||0)) : "";
@@ -1416,6 +1420,7 @@ async function gatherIssue(i) {
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, question: gq, web: false, brief: true})})).json();
     it.answer = r.answer || r.error || "";
+    it._audited = false;                        // fresh answer — not yet audited
     it.answer_annotated = r.answer_annotated || "";
     it.sources = r.sources || [];
     EXAM.cost = (EXAM.cost || 0) + (r.cost ? (r.cost.this_query_usd || 0) : 0);
@@ -1441,6 +1446,7 @@ async function auditAndFixIssue(i) {
     const d = await r.json();
     if (d.error) { if (outEl) outEl.textContent = d.error; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } return; }
     const items = d.items || [];
+    it._audited = true;                          // this issue's answer is now verified
     const list = !items.length
       ? '<span style="font-size:11px;color:#6b7488">' + esc(d.note || "No specific authorities to check.") + '</span>'
       : items.map(x => auditRowHtml(x, JSON.stringify([COURSE]))).join("");
@@ -1479,6 +1485,8 @@ async function auditAndFixIssue(i) {
     const clean = !items.some(x => x.verdict !== "supported");
     if (outEl) outEl.innerHTML = (clean ? '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Authorities check out.</div>' : '') + list;
     if (btn) { btn.disabled = false; btn.textContent = "🔍 Re-audit"; }
+    const cb = document.querySelector('.copyIssueBtn[data-i="' + i + '"]');   // relabel Copy → verified
+    if (cb) { cb.textContent = "📋 Copy verified answer"; cb.title = "Audited — ungrounded claims removed and citations checked."; }
   } catch (e) { if (outEl) outEl.textContent = "Audit error — try again."; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } }
 }
 // Audit + fix every gathered issue's authorities (limited concurrency), correcting
@@ -1494,6 +1502,7 @@ async function auditFixAll() {
         const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true, strict: true})});
         const d = await r.json();
+        it._audited = true;                             // answer is now verified
         it._audit = d.items || [];                      // FULL report for every issue (passed + flagged)
         it._autoFixed = d.fixed_count || 0;
         it._autoRemoved = d.removed_count || 0;
