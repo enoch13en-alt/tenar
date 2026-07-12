@@ -78,6 +78,7 @@ os.makedirs(COURSES_DIR, exist_ok=True)
 
 ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
+EXPAND_MODEL = "claude-haiku-4-5"     # cheap/fast model for retrieval query expansion
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 EMBED_DIM = 384
 TOP_K = 25   # retrieved chunks per question — wider window so a broadly-framed
@@ -1951,6 +1952,53 @@ def search_multi(courses, query, k=TOP_K):
     scored.sort(key=lambda x: -x[0])
     return [c for _, c in scored[:k]]
 
+
+def expand_queries(client, question):
+    """Turn a broadly-framed legal issue into a few SHORT retrieval queries aimed at the
+    SPECIFIC operative provisions it turns on. A framing query ('which instruments govern
+    and are the States bound?') is semantically closest to a Charter's preamble/definitions
+    and buries the numbered duty articles (Art 65 'prevention of transboundary damage',
+    Art 66 'consultation') that a precise answer needs. Retrieving on the RULES as well
+    surfaces those articles. Cheap (haiku); returns [] on any failure so retrieval simply
+    falls back to the single-query path."""
+    try:
+        resp, _ = _create_final(
+            client, model=EXPAND_MODEL, max_tokens=300,
+            system=("From the legal issue given, produce 3-5 SHORT search queries aimed at the "
+                    "SPECIFIC operative provisions, duties and rules it turns on — the ones that "
+                    "sit in numbered sections/articles — NOT the high-level framing. Name the "
+                    "doctrines and duties (e.g. 'no significant harm transboundary watercourse', "
+                    "'prior notification of planned measures', 'prevention of transboundary "
+                    "damage', 'equitable and reasonable utilisation', 'free carried interest "
+                    "percentage', 'compensation for compulsory acquisition'). Each query a few "
+                    "words. STRICT JSON: {\"queries\":[...]}. No prose, no fences."),
+            messages=[{"role": "user", "content": (question or "")[:4000]}])
+        d = _first_json_obj(_text_of(resp))
+        qs = d.get("queries") if isinstance(d, dict) else None
+        if isinstance(qs, list):
+            return [str(q).strip() for q in qs if str(q).strip()][:5]
+    except Exception:
+        pass
+    return []
+
+
+def retrieve_expanded(client, courses, question, multi, k=TOP_K):
+    """Multi-query retrieval: search on the original question PLUS targeted sub-queries for
+    the operative provisions, then UNION the results (dedup by doc+page) so numbered
+    articles surface alongside the framing chunks. Falls back to plain single-query search
+    if expansion yields nothing."""
+    queries = [question] + expand_queries(client, question)
+    per = 15 if len(queries) > 1 else k
+    merged, seen = [], set()
+    for q in queries:
+        hits = search_multi(courses, q, k=per) if multi else search(courses[0], q, k=per)
+        for h in hits:
+            key = (h.get("_course", ""), h.get("doc"), h.get("page"))
+            if key not in seen:
+                seen.add(key)
+                merged.append(h)
+    return merged[:max(k, 45)]
+
 # ---------------------------------------------------------------- AI name extraction
 def first_pages_text(path, n=2, limit=3500):
     ext = path.lower().rsplit(".", 1)[-1]
@@ -2241,11 +2289,6 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
     multi = len(courses) > 1
-    retrieved = search_multi(courses, question) if multi else search(courses[0], question)
-    # case-finder can run on the web alone; a normal answer needs the corpus
-    if not retrieved and mode != "cases":
-        return {"answer": "No documents indexed in the selected course(s) yet. Add "
-                "PDFs and click Re-index.", "sources": [], "cost": None}
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -2255,6 +2298,17 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
 
     import anthropic
     client = anthropic.Anthropic(api_key=api_key, max_retries=5)
+    # Multi-query retrieval for the substantive modes (answer/gather): a broad framing
+    # query buries the numbered operative articles under preamble/definitions, so expand
+    # into targeted rule-queries and union. Chat/cases stay single-query (fast).
+    if mode in ("answer", "gather"):
+        retrieved = retrieve_expanded(client, courses, question, multi)
+    else:
+        retrieved = search_multi(courses, question) if multi else search(courses[0], question)
+    # case-finder can run on the web alone; a normal answer needs the corpus
+    if not retrieved and mode != "cases":
+        return {"answer": "No documents indexed in the selected course(s) yet. Add "
+                "PDFs and click Re-index.", "sources": [], "cost": None}
     content = []
     for ch in retrieved:
         # resolve the PDF folder per chunk — in multi-course search each chunk
