@@ -4988,21 +4988,26 @@ def api_ocr():
     ICJ scan whose text cover-page slipped past the auto-scan detector). Transcribes it
     via Claude vision in the background, replaces the image PDF with a searchable .md, and
     reindexes. Poll /api/ocr/status."""
-    body = request.json or {}
-    course = safe_course(body.get("course", ""))
-    fn = (body.get("file") or "").strip()
-    title = (body.get("title") or "").strip()
-    if not ((current_user() or {}).get("is_admin")
-            or (is_matter(course) and owns_matter(current_user(), course))):
-        return jsonify({"error": "Only an admin can OCR a shared course's document."}), 403
-    if fn not in course_pdfs(course):
-        return jsonify({"error": "That file isn't in this course."}), 404
-    if not fn.lower().endswith(".pdf"):
-        return jsonify({"error": "OCR applies to a PDF only."}), 400
-    title = title or SOURCES.get(fn) or display_name(fn)
-    threading.Thread(target=_ocr_and_index, args=(course, fn, title), daemon=True).start()
-    return jsonify({"ok": True, "file": fn, "title": title,
-                    "status": OCR_STATUS.get(course, "OCR starting…")})
+    try:
+        body = request.json or {}
+        course = safe_course(body.get("course", ""))
+        fn = (body.get("file") or "").strip()
+        title = (body.get("title") or "").strip()
+        if not ((current_user() or {}).get("is_admin")
+                or (is_matter(course) and owns_matter(current_user(), course))):
+            return jsonify({"error": "Only an admin can OCR a shared course's document."}), 403
+        if fn not in course_pdfs(course):
+            return jsonify({"error": "That file isn't in this course."}), 404
+        if not fn.lower().endswith(".pdf"):
+            return jsonify({"error": "OCR applies to a PDF only."}), 400
+        title = title or SOURCES.get(fn) or display_name(fn)
+        threading.Thread(target=_ocr_and_index, args=(course, fn, title), daemon=True).start()
+        return jsonify({"ok": True, "file": fn, "title": title,
+                        "status": OCR_STATUS.get(course, "OCR starting…")})
+    except Exception as e:
+        import traceback
+        return jsonify({"error": "OCR trigger failed", "detail": repr(e),
+                        "tb": traceback.format_exc()[-600:]}), 500
 
 
 @app.route("/api/ocr/status", methods=["GET"])
