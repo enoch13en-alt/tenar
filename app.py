@@ -671,6 +671,57 @@ FACT_DISCIPLINE = (
     "its outcome forward, and make explicit where a finding on one issue drives "
     "another. Never treat the issues as independent points that ignore each other.")
 
+# Doctrinal register — how legal propositions must be PHRASED. Even where the substance
+# is right, a precision-minded marker deducts for loose paraphrase, overstated absolutes
+# and collapsed concepts. Codifies the wording discipline that separates a strong answer
+# from a First: name the exact provision, use the instrument's own relationship-words,
+# calibrate absolutes, keep distinct entitlements distinct, and track the statutory verb.
+DOCTRINAL_PRECISION = (
+    "DOCTRINAL REGISTER — hold the EXACT legal language. A marker looking for precision "
+    "deducts on loose paraphrase, overstatement and collapsed concepts even where the "
+    "substance is correct:\n"
+    "- NAME THE PROVISION, NEVER GESTURE AT IT. State a rule by its exact pinpoint in the "
+    "very sentence that states it — 'article 257(6) of the 1992 Constitution vests every "
+    "mineral in its natural state in the President on behalf of, and in trust for, the "
+    "people of Ghana' — NEVER 'the Constitution's minerals article', 'the relevant "
+    "section' or 'the vesting provision'. The named article/section in the operative "
+    "sentence is what earns the mark; gesturing at it, even correctly, does not.\n"
+    "- MATCH THE INSTRUMENT'S OWN RELATIONSHIP-WORDS. Track the exact legal relation the "
+    "instrument uses — VESTED IN … IN TRUST FOR, GRANTED, CONFERRED, LICENSED, HELD ON "
+    "BEHALF OF — and never swap it for a looser proprietary gloss. Property VESTED in an "
+    "office-holder in trust is NOT 'owned' by that office-holder: write 'the minerals are "
+    "vested in the President in trust for the people of Ghana' (the constitutional "
+    "language), never 'the President owns the minerals'. Vesting-in-trust, statutory "
+    "grant and ownership are DIFFERENT legal relations — use the one the instrument "
+    "actually uses, not the nearest everyday word.\n"
+    "- CALIBRATE ABSOLUTES — SAY WHAT IS PRECLUDED, PRESERVE WHAT SURVIVES. A rule that "
+    "defeats ONE claim rarely extinguishes ALL claims. Do not write that vesting "
+    "'extinguishes any claim' when it precludes a PROPRIETARY claim to the minerals while "
+    "leaving statutory rights (compensation, ground rent, a royalty share) intact. State "
+    "precisely what the rule precludes AND name what it preserves: 'constitutional "
+    "vesting precludes any proprietary claim by the stool or families to the minerals or "
+    "to a mineral right, while preserving their statutory rights to compensation and, "
+    "where applicable, ground rent'. A sweeping absolute reads as imprecision and loses "
+    "marks the calibrated version keeps.\n"
+    "- KEEP DISTINCT ENTITLEMENTS DISTINCT. Ownership of the land, ownership of the "
+    "minerals, the mineral right, compensation, ground rent and royalties are SEPARATE "
+    "entitlements from SEPARATE sources — never collapse them. Where a party benefits, "
+    "name the exact mechanism and its source: a stool's share of mineral royalties arises "
+    "by operation of the statutory and constitutional revenue-sharing framework AFTER "
+    "production, NOT because the stool owns the minerals or holds a veto over the grant of "
+    "the mineral right. Drawing these lines cleanly is itself a distinction-level move.\n"
+    "- TRACK THE STATUTORY VERB. Prefer the instrument's operative wording to a loose "
+    "paraphrase: a mineral right 'exists only by grant of the State under Act 703', not "
+    "merely 'flows from the State'; a duty is 'imposed by' a section, a power 'conferred "
+    "by' it, a body 'established under' it. The closer to the enactment's own formulation, "
+    "the more precise — and the higher-scoring — the sentence reads.\n"
+    "- ANCHOR IN A REAL DECIDED CASE WHERE ONE IS AVAILABLE. Where a settled judicial "
+    "authority in your materials reinforces the statutory rule — e.g. that mineral rights "
+    "are severed from land ownership and derive solely from statutory grant — cite it; "
+    "even one real case earns credibility beside the statute. This NEVER licenses "
+    "invention: cite only a case you can ground in the materials or are genuinely certain "
+    "of — a candid statute-only answer beats a fabricated citation every time.")
+
 # Foundation & hierarchy of validity — a legal answer should show the law's pedigree
 # (constitution/grundnorm → statute → regulation → case law → international law)
 # before the operative detail, adapting to the legal order the question engages.
@@ -2192,13 +2243,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # Sources are shown inline on hover, so no end-of-answer source list.
         system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n"
                   + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
-                  + TEMPORAL_SUCCESSION)
+                  + DOCTRINAL_PRECISION + "\n\n" + TEMPORAL_SUCCESSION)
     elif mode == "gather":
         # Focused issue-gather: a DIRECT, law-backed answer to ONE issue — never an
         # essay. Lean grounding stack + a direct-answer directive; short by design so
         # it completes and reads as an answer, not a lecture.
         system = (CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
-                  + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n"
+                  + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
                   "FOCUSED ISSUE ANSWER — IRAC, DIRECT AND LAW-BACKED, never an essay. Answer "
@@ -2228,7 +2279,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
+                  + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
@@ -2919,7 +2970,7 @@ def api_research():
 
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
               + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n"
               + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY)
@@ -3504,7 +3555,7 @@ def api_deepen():
     consume("deepens")
 
     system = (WRITING_STYLE + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD
-              + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE
+              + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION
               + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
               + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\n" + REASONING_UPGRADE)
@@ -4735,7 +4786,7 @@ def api_advisory():
     ctx = course_context(course, instructions, 18)     # labelled matter passages
     system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
               + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
-              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
+              + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
               + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
               + "\n\n" + ECONOMY + "\n\n" + ADVISORY_TASK
               + "\n\nOSCOLA RULES:\n" + OSCOLA_GUIDE)
@@ -5348,7 +5399,7 @@ def api_exam_assemble():
     system = (
         CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
-        + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + REFORM_METHOD + "\n\n"
+        + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
