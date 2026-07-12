@@ -441,9 +441,13 @@
     <div id="updatesCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
     <div id="gapSection" style="border:1px solid #2a3344;border-radius:8px;padding:10px;margin-bottom:12px;background:#0e1219">
       <div style="font-size:13px;color:#e0b050;margin-bottom:4px">① Missing primary sources <span style="color:#8b93a7">— checked first</span></div>
-      <p style="font-size:12px;color:#aab4c6;margin:0 0 8px">Audits THIS course for primary instruments it relies on but doesn't actually hold as text — treaties, statutes, conventions cited only through commentary. Then finds the official text and adds it straight in.</p>
-      <div class="rowbtn" style="margin:0"><button class="btn gold" id="gapScan" style="width:auto">🧭 Find missing primary sources</button></div>
+      <p style="font-size:12px;color:#aab4c6;margin:0 0 8px">Two ways to find gaps: scan the <b>course outline</b> for every instrument it requires (catches materials nothing in the corpus even mentions yet), or scan the <b>corpus itself</b> for instruments it cites but doesn't hold as text. Either way, it then finds the official text and adds it straight in.</p>
+      <div class="rowbtn" style="margin:0;gap:8px;flex-wrap:wrap">
+        <button class="btn gold" id="outlineScan" style="width:auto">📋 Scan course outline</button>
+        <button class="btn" id="gapScan" style="width:auto">🧭 Scan corpus citations</button>
+      </div>
       <div id="gapStatus" style="font-size:12px;color:#aab4c6;margin-top:6px"></div>
+      <div id="coverageHave" style="margin-top:6px"></div>
       <div id="gapOut"></div>
     </div>
     <div style="font-size:13px;color:#e0b050;margin-bottom:4px">② Recent changes <span style="color:#8b93a7">— web scan for new/amended law</span></div>
@@ -2588,6 +2592,7 @@ $("#openUpdates").onclick = () => {
   $("#updatesSave").style.display = "none"; UPDATES_TEXT = "";
   $("#pasteRes").textContent = "";
   $("#gapOut").innerHTML = ""; $("#gapStatus").textContent = ""; GAPS = [];
+  $("#coverageHave").innerHTML = "";
   const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
   $("#pasteRow").style.display = allowed ? "flex" : "none";   // add-by-URL is admin/owner only
   $("#gapSection").style.display = allowed ? "block" : "none"; // gap audit is admin/owner only
@@ -2598,6 +2603,7 @@ $("#openUpdates").onclick = () => {
 $("#gapScan").onclick = async () => {
   const btn = $("#gapScan"), st = $("#gapStatus");
   btn.disabled = true; btn.textContent = "Scanning the corpus…"; $("#gapOut").innerHTML = "";
+  $("#coverageHave").innerHTML = "";
   st.textContent = "🧭 Auditing this course for primary sources it cites but doesn't hold as text…";
   try {
     const r = await fetch("/api/primary/gaps", {method:"POST", headers:{"Content-Type":"application/json"},
@@ -2612,6 +2618,37 @@ $("#gapScan").onclick = async () => {
     }
   } catch (e) { st.textContent = "Scan error: " + e; }
   btn.disabled = false; btn.textContent = "🔁 Re-scan";
+};
+
+// Scan the COURSE OUTLINE for the instruments it requires → present vs missing.
+// Missing feeds the same Find → Fetch pipeline as the corpus scan.
+$("#outlineScan").onclick = async () => {
+  const btn = $("#outlineScan"), st = $("#gapStatus");
+  btn.disabled = true; btn.textContent = "Reading the outline…";
+  $("#gapOut").innerHTML = ""; $("#coverageHave").innerHTML = "";
+  st.textContent = "📋 Reading the course outline and checking each required instrument against the corpus…";
+  try {
+    const r = await fetch("/api/outline/coverage", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE})}).then(x => x.json());
+    if (r.error && !(r.missing||[]).length && !(r.present||[]).length) { st.textContent = r.error; }
+    else {
+      const present = r.present || [];
+      GAPS = r.missing || [];
+      st.textContent = "Outline: " + (r.outline || "—") + " — the outline calls for "
+        + (present.length + GAPS.length) + " instrument(s): ✅ " + present.length
+        + " already held · ⚠️ " + GAPS.length + " missing.";
+      if (present.length) {
+        $("#coverageHave").innerHTML =
+          '<div style="font-size:12px;color:#6fcf97;margin:4px 0 2px">✅ Held (required by the outline & present):</div>'
+          + '<div style="font-size:12px;color:#aab4c6;line-height:1.7">'
+          + present.map(p => '• ' + esc(p.name || p)).join("<br>") + '</div>'
+          + (GAPS.length ? '<div style="font-size:12px;color:#e0b050;margin:8px 0 2px">⚠️ Missing (required but not held as text):</div>' : "");
+      }
+      const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
+      renderGaps(GAPS, allowed);
+    }
+  } catch (e) { st.textContent = "Outline scan error: " + e; }
+  btn.disabled = false; btn.textContent = "🔁 Re-scan outline";
 };
 
 function renderGaps(missing, allowed) {

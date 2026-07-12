@@ -4404,6 +4404,81 @@ def api_primary_gaps():
                     "cost": record_cost(resp, ANSWER_MODEL)})
 
 
+OUTLINE_COVERAGE = (
+    "You audit a course's document COVERAGE against its OUTLINE / SYLLABUS. You are given "
+    "(a) the course OUTLINE text and (b) the TITLES of the documents the corpus already "
+    "HOLDS.\n"
+    "From the OUTLINE, extract every PRIMARY legal instrument or REQUIRED source of law the "
+    "course expects a student to work from — statutes and Acts, constitutions, "
+    "treaties/conventions/protocols, regulations and legislative instruments, and leading "
+    "decided cases named as authority. Include a required reading ONLY if it is itself a "
+    "source of law (an instrument or a case), not a textbook chapter or lecture note.\n"
+    "For EACH such instrument, decide whether the corpus already HOLDS ITS TEXT. Match "
+    "GENEROUSLY by subject, not just the short name or number: a HELD title that IS that "
+    "instrument's own text counts as PRESENT even under a fuller or different name (e.g. a "
+    "held 'Minerals and Mining Act 703 Ghana' IS the Minerals and Mining Act, 2006). A "
+    "document that only DISCUSSES an instrument (a handbook, article, country survey, guide) "
+    "does NOT count as holding its text — if that is all the corpus has, the instrument is "
+    "MISSING. Never invent an instrument the outline does not actually call for.\n"
+    "Return STRICT JSON: {\"present\":[{\"name\":...}], \"missing\":[{\"name\":..., "
+    "\"provisions\":<key provisions the course leans on, if identifiable>, \"load_bearing\":"
+    "\"high|medium|low\", \"why_absent\":<one line — what the corpus has instead, or "
+    "nothing>, \"search_query\":<a precise query that would locate its authoritative "
+    "published text>}]}. 'present' = required by the outline AND held as text; 'missing' = "
+    "required by the outline but NOT held as text. Rank 'missing' high→low by how central "
+    "the instrument is to the course."
+)
+
+
+@app.route("/api/outline/coverage", methods=["POST"])
+def api_outline_coverage():
+    """Scan a course's OUTLINE/SYLLABUS for the primary instruments it requires, and split
+    them into what the corpus already HOLDS vs what is MISSING — catching required
+    materials nothing in the corpus even references yet (which /api/primary/gaps, being
+    corpus-citation-driven, cannot). Missing items come back in the same shape the
+    Find (/api/primary/find) → Fetch (/api/updates/fetch) pipeline consumes."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "Only an admin can audit a shared course.", "missing": []}), 403
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "missing": []}), 400
+    load_index(course)
+    titles = sorted({display_name(f) for f in course_pdfs(course)})
+    outline_file = _outline_doc(course, body.get("outline"))
+    if not outline_file:
+        return jsonify({"missing": [], "present": [], "need_outline": True,
+                        "error": "No outline found for this course. Upload the course "
+                        "outline (give it a name containing 'outline' or 'syllabus'), or "
+                        "pick which uploaded document is the outline."})
+    pdf_dir, _ = course_paths(course)
+    otext = first_pages_text(os.path.join(pdf_dir, outline_file), n=40, limit=30000)
+    if not (otext or "").strip():
+        return jsonify({"error": "Couldn't read that outline — try a clearer copy.",
+                        "missing": [], "present": []})
+    have = "\n".join("- " + t for t in titles) or "(the corpus is currently empty)"
+    user = (f"COURSE OUTLINE:\n{otext}\n\nDOCUMENTS THE CORPUS HOLDS (titles):\n{have}\n\n"
+            "List every primary instrument / source of law the outline requires, split "
+            "into 'present' (held as text) and 'missing' (required but not held), as JSON.")
+    try:
+        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=6000,
+                                system=cached_system(OUTLINE_COVERAGE),
+                                messages=[{"role": "user", "content": user}])
+        data = _first_json_obj(_text_of(resp))
+    except Exception as e:
+        return jsonify({"error": "Coverage scan failed — " + str(e)[:140],
+                        "missing": [], "present": []})
+    present = data.get("present") if isinstance(data, dict) else []
+    missing = data.get("missing") if isinstance(data, dict) else []
+    present = present if isinstance(present, list) else []
+    missing = missing if isinstance(missing, list) else []
+    return jsonify({"present": present, "missing": missing, "have_count": len(titles),
+                    "outline": display_name(outline_file),
+                    "cost": record_cost(resp, ANSWER_MODEL)})
+
+
 @app.route("/api/primary/find", methods=["POST"])
 def api_primary_find():
     """For one missing primary instrument, web-search for its AUTHORITATIVE full
