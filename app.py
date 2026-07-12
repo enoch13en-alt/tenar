@@ -1196,7 +1196,9 @@ PLAN_LIMITS = {
                      "drafts": 999999, "matters": 99},   # top/owner plan: everything
     # ---- consultant tier: a yearly RESEARCH plan. FULL access to every document
     #      across ALL courses + heavy Q&A/web research; writing kept light (they use
-    #      other tools to draft). $599/YEAR (~$50/mo), worst-case cost ~$285 -> ~2.1x. ----
+    #      other tools to draft). $599/YEAR (~$50/mo). Verification is uncapped but
+    #      cost-reflectively METERED (a strict valid-only audit spends 3 questions + 1 per
+    #      full-instrument recheck), so worst-case COGS ~$185-280 -> ~58-70% gross margin. ----
     "consultant":   {"label": "Consultant", "questions": 850, "comparative": 150,
                      "fable_compiles": 5, "deepens": 12, "drafts": 10, "matters": 999999,
                      "courses": 99, "exam_sessions": 0, "oscola": 999999,
@@ -3130,7 +3132,14 @@ def api_audit():
     ok, msg = can_consume("questions")
     if not ok:
         return jsonify({"error": msg, "limit": True})
-    consume("questions")
+    # Cost-reflective metering. A plain spot-check audit is ~one question; a STRICT
+    # 'valid-only' fix additionally loads whole instruments (one ~$0.18 full-Act read per
+    # ❓, ≈ one question each) and rewrites the answer, so it carries a heavier base. We
+    # charge the base up front and add one question per full-instrument recheck actually
+    # performed below — so a clean answer costs little and a heavy one pays its true cost,
+    # while verification is NEVER capped.
+    _strict_fix = bool(body.get("fix")) and bool(body.get("strict"))
+    consume("questions", 3 if _strict_fix else 1)
 
     # 1) extract the checkable authority-claims
     try:
@@ -3344,6 +3353,10 @@ def api_audit():
                         if vv == "misattributed" and ca2 and \
                                 ca2.lower() != items[i]["authority"].strip().lower():
                             out[i]["correct_authority"] = ca2
+            # one extra question per full-instrument recheck actually performed — the real
+            # cost driver, so the meter tracks the work done (verification stays uncapped).
+            if unv:
+                consume("questions", len(unv))
             # anything STILL unverified after the full read is genuinely ungrounded -> cut it
             removed = [(items[i], out[i]) for i in range(len(items))
                        if out[i]["verdict"] == "unverified"]
