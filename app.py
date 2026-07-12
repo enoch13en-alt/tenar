@@ -3325,6 +3325,7 @@ def api_audit():
     # absent, never on a mere spot-check miss.
     strict = bool(body.get("strict"))
     result = {"items": out}
+    result_debug = None
     if bool(body.get("fix")):
         removed = []
         if strict:
@@ -3336,13 +3337,16 @@ def api_audit():
             # still verified against its OWN correct instrument — caching only skips
             # re-reading the same static file (authenticity unchanged, see _recheck_authority).
             doc_cache, cache_lock = {}, threading.Lock()
+            _dbg = []
 
             def _rc(i):
                 try:
                     return i, _recheck_authority(c, courses, items[i]["authority"],
                                                  items[i].get("claim", ""),
                                                  doc_cache, cache_lock)
-                except Exception:
+                except Exception as e:
+                    import traceback
+                    _dbg.append(repr(e) + " :: " + traceback.format_exc()[-400:])
                     return i, None
             if unv:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -3365,6 +3369,9 @@ def api_audit():
             n_unique = sum(1 for v in doc_cache.values() if v and v[0])
             if n_unique:
                 consume("questions", n_unique)
+            result_debug = {"errors": _dbg,
+                            "cache_keys": [list(k) + [bool(v and v[0])] for k, v in doc_cache.items()],
+                            "n_unique": n_unique, "unv": len(unv)}
             # anything STILL unverified after the full read is genuinely ungrounded -> cut it
             removed = [(items[i], out[i]) for i in range(len(items))
                        if out[i]["verdict"] == "unverified"]
@@ -3412,6 +3419,7 @@ def api_audit():
         result["removed_count"] = len(removed)
         result["removed"] = [{"authority": it["authority"], "claim": it.get("claim", "")}
                              for it, v in removed]
+        result["_debug"] = result_debug
     return jsonify(result)
 
 
