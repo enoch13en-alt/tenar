@@ -4408,11 +4408,17 @@ OUTLINE_COVERAGE = (
     "You audit a course's document COVERAGE against its OUTLINE / SYLLABUS. You are given "
     "(a) the course OUTLINE text and (b) the TITLES of the documents the corpus already "
     "HOLDS.\n"
-    "From the OUTLINE, extract every PRIMARY legal instrument or REQUIRED source of law the "
-    "course expects a student to work from — statutes and Acts, constitutions, "
-    "treaties/conventions/protocols, regulations and legislative instruments, and leading "
-    "decided cases named as authority. Include a required reading ONLY if it is itself a "
-    "source of law (an instrument or a case), not a textbook chapter or lecture note.\n"
+    "BE EXHAUSTIVE. Work through the OUTLINE topic by topic / week by week from start to "
+    "finish and extract EVERY PRIMARY legal instrument or source of law it names or clearly "
+    "requires — do not stop at the headline few. That means every statute and Act, every "
+    "constitution or named constitutional provision, every treaty / convention / protocol / "
+    "charter, every regulation, legislative instrument (L.I.), by-law or constitutional "
+    "instrument, and every decided case named as authority. Capture instruments named "
+    "anywhere in the outline — in topic headings, reading lists, statute lists, tables of "
+    "cases, or footnotes. If the outline lists 25 instruments, return all 25; missing any "
+    "the outline actually names is a failure. Include a required reading ONLY if it is "
+    "itself a source of law (an instrument or a case), not a textbook, chapter, article or "
+    "lecture note. De-duplicate obvious repeats, but err towards completeness.\n"
     "For EACH such instrument, decide whether the corpus already HOLDS ITS TEXT. Match "
     "GENEROUSLY by subject, not just the short name or number: a HELD title that IS that "
     "instrument's own text counts as PRESENT even under a fuller or different name (e.g. a "
@@ -4454,16 +4460,17 @@ def api_outline_coverage():
                         "outline (give it a name containing 'outline' or 'syllabus'), or "
                         "pick which uploaded document is the outline."})
     pdf_dir, _ = course_paths(course)
-    otext = first_pages_text(os.path.join(pdf_dir, outline_file), n=40, limit=30000)
+    otext = first_pages_text(os.path.join(pdf_dir, outline_file), n=80, limit=60000)
     if not (otext or "").strip():
         return jsonify({"error": "Couldn't read that outline — try a clearer copy.",
                         "missing": [], "present": []})
     have = "\n".join("- " + t for t in titles) or "(the corpus is currently empty)"
     user = (f"COURSE OUTLINE:\n{otext}\n\nDOCUMENTS THE CORPUS HOLDS (titles):\n{have}\n\n"
-            "List every primary instrument / source of law the outline requires, split "
-            "into 'present' (held as text) and 'missing' (required but not held), as JSON.")
+            "Work through the outline exhaustively and list EVERY primary instrument / "
+            "source of law it names or requires, split into 'present' (held as text) and "
+            "'missing' (required but not held), as JSON. Do not stop early.")
     try:
-        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=6000,
+        resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=10000,
                                 system=cached_system(OUTLINE_COVERAGE),
                                 messages=[{"role": "user", "content": user}])
         data = _first_json_obj(_text_of(resp))
