@@ -3426,7 +3426,17 @@ def api_audit():
                     "a provision of a LIVE instrument that merely CITES an older Act (e.g. s.10 of "
                     "Act 703 itself) is still a normal checkable citation — tag only the "
                     "repealed/successor instruments named in the succession move, not the live "
-                    "provision doing the referring. Every other item omits \"kind\". "
+                    "provision doing the referring. "
+                    "REAL-WORLD-FACT TAG: tag \"kind\":\"realworld\" for an independently-verifiable "
+                    "real-world FACT that is not a proposition of law drawn from the corpus — e.g. that "
+                    "a named real treaty/convention is (or is not) in force or its entry-into-force "
+                    "date, that a named real State has ratified / is a party or member, or that a real "
+                    "institution exists or operates. These are matters of public record verified "
+                    "OUTSIDE the course corpus (the answer should carry an external source for them); "
+                    "the corpus is not where they live, so they must not be re-retrieved against it or "
+                    "flagged as ungrounded. This covers ONLY such factual/status matters — a substantive "
+                    "rule of law ascribed to a treaty article is still a normal checkable citation, not "
+                    "\"realworld\". Every other item omits \"kind\". "
                     "STRICT JSON: "
                     "array of {\"authority\",\"claim\",\"kind\"(optional)}. No cap on how many. No fences."),
             messages=[{"role": "user", "content": answer[:24000]}])
@@ -3440,8 +3450,13 @@ def api_audit():
     # them; they pass as settled law so the auditor doesn't ❓ the very naming the answer
     # was told to give.
     succ_items = [it for it in items if str(it.get("kind", "")).lower() == "succession"]
-    items = [it for it in items if str(it.get("kind", "")).lower() != "succession"]
-    if not items and not succ_items:
+    # Real-world verifiable facts (a treaty's in-force status, a State's party/membership, a
+    # real institution's existence) are matters of public record verified OUTSIDE the course
+    # corpus — the corpus was never the place to confirm them. Like succession items, they pass
+    # through without corpus re-retrieval so the strict audit never cuts a properly-sourced fact.
+    real_items = [it for it in items if str(it.get("kind", "")).lower() == "realworld"]
+    items = [it for it in items if str(it.get("kind", "")).lower() not in ("succession", "realworld")]
+    if not items and not succ_items and not real_items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
     # 2) re-retrieve corpus support for each — TWO-PRONGED for recall: a SEMANTIC pull
@@ -3572,6 +3587,19 @@ def api_audit():
                              "as its current successor. The successor sits in company-law materials, "
                              "not this subject's corpus, so it is correctly named from settled record, "
                              "not something this corpus needs to hold."),
+                    "correct_authority": ""})
+
+    # Real-world verifiable facts pass as supported-by-source — the corpus is not where a
+    # treaty's in-force status or a State's membership is confirmed, so its silence here is
+    # expected, not a defect. Never cut by the strict audit; verify against the cited source.
+    for it in real_items:
+        out.append({"authority": it["authority"], "claim": it.get("claim", ""),
+                    "verdict": "supported",
+                    "note": ("Independently-verifiable real-world fact (treaty in-force status, State "
+                             "party/membership, or a real institution's existence) — a matter of public "
+                             "record confirmed OUTSIDE this subject's corpus, so it is stated from source "
+                             "rather than something the corpus needs to hold. Verify against the cited "
+                             "source."),
                     "correct_authority": ""})
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,
