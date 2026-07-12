@@ -25,6 +25,7 @@ import secrets
 import threading
 import time
 import queue
+import datetime
 
 import numpy as np
 import fitz  # PyMuPDF
@@ -2440,12 +2441,40 @@ def _create_final(client, **kwargs):
     raise last
 
 
+def _today_note():
+    """A short, always-fresh statement of today's date and how to reason from it —
+    so the bot writes from the present: past events in the past tense, future events
+    as not-yet-occurred, and currency of law judged as at today. Ghana runs on GMT
+    (=UTC), so the server date matches the user's local date."""
+    d = datetime.datetime.now(datetime.timezone.utc).date()   # Ghana = GMT (UTC+0)
+    def _f(x):                                   # "Sunday, 12 July 2026"
+        return x.strftime("%A, ") + str(x.day) + x.strftime(" %B %Y")
+    def _s(x):                                   # "11 July 2026"
+        return str(x.day) + x.strftime(" %B %Y")
+    y = d - datetime.timedelta(days=1)
+    t = d + datetime.timedelta(days=1)
+    return (
+        "TODAY'S DATE — WRITE FROM THE PRESENT. Today is " + _f(d) + " (yesterday was "
+        + _s(y) + "; tomorrow is " + _s(t) + "). Treat this as the present moment. An "
+        "event or instrument dated BEFORE today is in the PAST (write in the past "
+        "tense; call it 'recent' only if genuinely close to now); an event dated AFTER "
+        "today has NOT yet occurred (write it as forthcoming or anticipated, never as "
+        "accomplished fact). Judge the CURRENT state of the law as at today, and flag "
+        "any status that should be reconfirmed to this date. When a problem or set of "
+        "facts supplies its OWN dates, use those for the scenario's internal timeline, "
+        "but anchor real-world currency and 'recency' to today's date above."
+    )
+
+
 def cached_system(text):
     """Wrap the (large, repeated) system prompt as a cache-controlled block so
     Anthropic prompt caching charges cached reads at ~10% instead of full input.
-    The block must be ≥1024 tokens to cache — our stacked prompt easily is."""
+    The block must be ≥1024 tokens to cache — our stacked prompt easily is. Today's
+    date is appended as a SEPARATE trailing block AFTER the cache breakpoint, so the
+    big block stays cached (stable within a day) while the date refreshes each call."""
     return [{"type": "text", "text": text,
-             "cache_control": {"type": "ephemeral"}}]
+             "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": _today_note()}]
 
 
 def _usage_cost(u, model=None):
