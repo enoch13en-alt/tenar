@@ -721,6 +721,44 @@ FACT_DISCIPLINE = (
     "its outcome forward, and make explicit where a finding on one issue drives "
     "another. Never treat the issues as independent points that ignore each other.")
 
+# Interpreting an examiner's "identify any additional facts" instruction. The model was
+# obeying it issue-by-issue (ending every IRAC with a "fact that would sharpen this advice"),
+# which is structurally wrong: that instruction asks for ONE dedicated section, not a caveat
+# after each issue. Appended to FACT_DISCIPLINE so it rides every stack that carries it.
+ADDITIONAL_FACTS_INSTRUCTION = (
+    "INTERPRETING AN 'ADDITIONAL FACTS' INSTRUCTION — when the QUESTION ITSELF says something "
+    "like 'identify any additional facts that would materially affect your advice and explain "
+    "why they are legally significant', read it NARROWLY. It asks for ONE dedicated part of the "
+    "memorandum that identifies genuinely missing facts. It does NOT ask you to end each issue "
+    "with a fact to verify, to add an assumption after every IRAC, to recommend confirming facts "
+    "already stated, or to turn the analysis into a due-diligence exercise. Distributing that "
+    "requirement across every issue is structurally wrong and repetitive.\n"
+    "- STRUCTURE THE MEMORANDUM ACCORDINGLY: analyse each issue on the facts EXPRESSLY PROVIDED, "
+    "reach a FIRM legal conclusion, and reserve ALL genuinely missing material facts for one "
+    "short section near the END entitled 'Additional Facts Material to the Advice' (after the "
+    "substantive advice and any recommendations; one to two pages at most). The high-scoring "
+    "shape is: Issue 1 -> conclude; Issue 2 -> conclude; … ; Recommendations; then Additional "
+    "Facts Material to the Advice.\n"
+    "- WHAT QUALIFIES AS AN ADDITIONAL FACT — ALL THREE must hold: (1) the examiner has NOT "
+    "stated it; (2) the legal answer would MATERIALLY change depending on it; and (3) it cannot "
+    "reasonably be inferred from the facts given. If any condition fails, do not list it.\n"
+    "- NEVER list a STATED fact as an additional fact, and never ask to verify or confirm one — "
+    "e.g. that Parliament ratified the lease, that the Minister granted it, that the concession "
+    "is 3,200 hectares, that lithium is commercially viable, that the land includes rivers, that "
+    "there is an ancestral forest, that farmers received compensation. Those are established.\n"
+    "- ISSUE CONCLUSIONS ANSWER THE LEGAL QUESTION, NOT FURTHER INVESTIGATIONS. End each issue "
+    "with a firm legal conclusion; do NOT close it with 'the fact that would sharpen this "
+    "advice…', 'this depends on…' or 'verification is required…' UNLESS the missing fact is "
+    "indispensable to resolving THAT particular issue. Further-investigation points belong only "
+    "in the dedicated 'Additional Facts Material to the Advice' section, where for each fact you "
+    "give: the missing fact; why it is legally significant; how it could affect the outcome — "
+    "limited to genuine omissions, never repeating points already analysed.\n"
+    "- PRIORITY: the examiner's factual narrative is the evidentiary record — do not reopen, "
+    "verify or qualify it; apply the law to it; identify only omissions the examiner genuinely "
+    "left unresolved.")
+
+FACT_DISCIPLINE = FACT_DISCIPLINE + "\n\n" + ADDITIONAL_FACTS_INSTRUCTION
+
 # Doctrinal register — how legal propositions must be PHRASED. Even where the substance
 # is right, a precision-minded marker deducts for loose paraphrase, overstated absolutes
 # and collapsed concepts. Codifies the wording discipline that separates a strong answer
