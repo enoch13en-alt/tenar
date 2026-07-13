@@ -2997,6 +2997,97 @@ def api_docs():
     })
 
 
+# Filename/title markers that a document is a SUMMARY / abridged / short version rather
+# than the full instrument — so the report can warn you you're relying on a digest.
+_SUMMARY_MARKERS = ("abridg", "summary", "short version", "short-version", "shortened",
+                    "digest", "synopsis", "abstract", "excerpt", "précis", "precis",
+                    "overview", "highlights", "at a glance", "in brief", "key points")
+
+
+@app.route("/api/docs/health")
+def api_docs_health():
+    """A per-document visibility report: which documents the bot can actually read (are
+    indexed with text), which it can see only PARTIALLY and why (mixed/scanned PDFs with
+    pages that have no text layer), which it CANNOT see at all (image-only scans, empty or
+    unindexed files), and which look like SUMMARY / abridged / short versions rather than
+    the full instrument. Reads each PDF's per-page text layer, so it runs off the gevent
+    threadpool to avoid blocking the worker."""
+    course = safe_course(request.args.get("course", ""))
+    if is_matter(course) and not owns_matter(current_user(), course):
+        return jsonify({"error": "That isn't yours."}), 403
+    ensure_loaded(course)
+    counts = {}
+    for ch in INDEXES[course]["chunks"]:
+        counts[ch["doc"]] = counts.get(ch["doc"], 0) + 1
+    pdfs = course_pdfs(course)
+
+    def _scan_one(fn, path):
+        chunks = counts.get(fn, 0)
+        ext = fn.lower().rsplit(".", 1)[-1] if "." in fn else ""
+        name = display_name(fn)
+        low = (fn + " " + (name or "")).lower()
+        is_summary = any(m in low for m in _SUMMARY_MARKERS)
+        pages = pages_with_text = None
+        visibility, reason = ("full" if chunks > 0 else "none"), ""
+        if ext == "pdf":
+            try:
+                d = fitz.open(path)
+                pages = d.page_count
+                scan_n = min(pages, 250)                       # bound very long PDFs
+                pages_with_text = sum(1 for i in range(scan_n)
+                                      if len(d.load_page(i).get_text("text").strip()) > 20)
+                d.close()
+                if pages == 0:
+                    visibility, reason = "none", "the PDF has no pages / is unreadable."
+                elif pages_with_text == 0:
+                    visibility = "none"
+                    reason = ("scanned image PDF with no text layer — the bot sees no words in it. "
+                              "Use OCR to make it searchable, or paste the text.")
+                elif pages_with_text < scan_n:
+                    visibility = "partial"
+                    reason = (f"{scan_n - pages_with_text} of {scan_n} pages have no text layer "
+                              "(part-scanned) — those pages are invisible to the bot.")
+                else:
+                    if chunks == 0:
+                        visibility, reason = "none", ("text is present but it isn't indexed yet — "
+                                                      "re-index this course.")
+                    else:
+                        visibility = "full"
+                if scan_n < pages and reason:
+                    reason += f" (checked the first {scan_n} of {pages} pages.)"
+            except Exception as e:
+                reason = "could not open the PDF (%s)." % (str(e)[:60])
+                visibility = "none" if chunks == 0 else "partial"
+        else:
+            if chunks == 0:
+                visibility, reason = "none", ("no extractable text, or not indexed — re-index this "
+                                              "course (Word/text files index directly).")
+        if is_summary:
+            note = "appears to be a SUMMARY / abridged / short version, not the full instrument."
+            reason = (reason + " " if reason else "") + note
+        return {"file": fn, "name": name, "type": display_type(fn), "ext": ext,
+                "chunks": chunks, "pages": pages, "pages_with_text": pages_with_text,
+                "visibility": visibility, "is_summary": is_summary, "reason": reason.strip()}
+
+    def _run():
+        return [_scan_one(fn, p) for fn, p in sorted(pdfs.items())]
+    try:
+        import gevent
+        rows = gevent.get_hub().threadpool.apply(_run)
+    except Exception:
+        rows = [_scan_one(fn, p) for fn, p in sorted(pdfs.items())]
+    order = {"none": 0, "partial": 1, "full": 2}
+    rows.sort(key=lambda r: (order.get(r["visibility"], 3), not r["is_summary"], r["name"].lower()))
+    c = {"full": 0, "partial": 0, "none": 0, "summaries": 0}
+    for r in rows:
+        c[r["visibility"]] = c.get(r["visibility"], 0) + 1
+        if r["is_summary"]:
+            c["summaries"] += 1
+    return jsonify({"rows": rows, "total": len(rows), "counts": c,
+                    "chunks": len(INDEXES[course]["chunks"]),
+                    "indexing": _status(course)["running"]})
+
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     course = safe_course(request.form.get("course", ""))

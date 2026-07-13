@@ -245,7 +245,9 @@
   <div id="nameStatus"></div>
 
   <h2>Documents in this course</h2>
+  <button class="btn gold" id="docHealth" title="Check which documents the bot can actually read, which it can only see partially (and why), and which are only summary/short versions.">🩺 What can the bot see?</button>
   <div id="mix"></div>
+  <div id="healthOut" style="margin:8px 0"></div>
   <div id="docs">none yet</div>
 
   <h2>Study tools</h2>
@@ -920,6 +922,52 @@ async function upload(files) {
 $("#reindex").onclick = async () => {
   await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({course: COURSE})}); refresh();
+};
+
+// document visibility report — what the bot can actually read
+$("#docHealth").onclick = async () => {
+  const btn = $("#docHealth"), out = $("#healthOut");
+  btn.disabled = true; const label = btn.textContent;
+  btn.textContent = "Scanning documents…";
+  out.innerHTML = '<span style="font-size:12px;color:#8b93a7">reading each document’s text layer… (can take ~30s for a big course)</span>';
+  try {
+    const r = await (await fetch("/api/docs/health?course=" + encodeURIComponent(COURSE))).json();
+    if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+    const c = r.counts || {};
+    const pill = (t, col) => '<span style="display:inline-block;padding:1px 8px;border-radius:10px;'
+      + 'font-size:11px;margin-right:6px;background:' + col + ';color:#0b0d12">' + t + '</span>';
+    let h = '<div style="font-size:12px;margin-bottom:6px">'
+      + pill('✅ ' + (c.full||0) + ' fully readable', '#7fd18b')
+      + pill('⚠️ ' + (c.partial||0) + ' partial', '#e6c565')
+      + pill('❌ ' + (c.none||0) + ' not visible', '#e58f8f')
+      + pill('📄 ' + (c.summaries||0) + ' summary/short', '#9db4d6')
+      + '<span style="color:#8b93a7">' + (r.chunks||0) + ' chunks total</span></div>';
+    const icon = v => v === "full" ? "✅" : v === "partial" ? "⚠️" : "❌";
+    const rowsHtml = (r.rows || []).map(d => {
+      const pgs = (d.pages != null)
+        ? ' <span style="color:#8b93a7">(' + (d.pages_with_text != null ? d.pages_with_text + '/' : '')
+          + d.pages + ' pages readable, ' + d.chunks + ' chunks)</span>'
+        : ' <span style="color:#8b93a7">(' + d.chunks + ' chunks)</span>';
+      const sumtag = d.is_summary ? ' 📄' : '';
+      const why = d.reason ? '<div style="font-size:11px;color:#aab4c6;margin:0 0 4px 18px">↳ '
+        + esc(d.reason) + (d.visibility === "none" && d.ext === "pdf"
+            ? ' <button class="btn mini healthOcr" data-f="' + encodeURIComponent(d.file)
+              + '" style="width:auto;padding:1px 6px">OCR it</button>' : '') + '</div>' : '';
+      return '<div style="font-size:12.5px;margin-top:4px">' + icon(d.visibility) + ' '
+        + esc(d.name || d.file) + sumtag + pgs + '</div>' + why;
+    }).join("");
+    out.innerHTML = h + rowsHtml;
+    out.querySelectorAll(".healthOcr").forEach(b => b.onclick = async () => {
+      const fn = decodeURIComponent(b.dataset.f);
+      b.disabled = true; b.textContent = "OCR running…";
+      try {
+        const rr = await (await fetch("/api/ocr", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({course: COURSE, file: fn})})).json();
+        b.textContent = rr.error ? ("⚠️ " + rr.error) : "OCR started — re-check shortly";
+      } catch (e) { b.textContent = "error"; }
+    });
+  } catch (e) { out.innerHTML = "Error — try again."; }
+  finally { btn.disabled = false; btn.textContent = label; }
 };
 
 // paste text straight into the corpus (facts / reports with no clean file)
