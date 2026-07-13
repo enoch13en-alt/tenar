@@ -795,6 +795,7 @@ const TLAB = {constitution:"Const", statute:"Statute", case:"Case", treaty:"Trea
               book:"Book", article:"Article", report:"Report", web:"Web", other:"Other"};
 const tag = t => '<span class="tag ' + (t||'report') + '">' + (TLAB[t]||t||'Report') + '</span>';
 
+let _statusHold = false;    // while true, the 2.5s poller leaves #status alone
 async function refresh() {
   const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
@@ -802,7 +803,10 @@ async function refresh() {
     ? r.docs.map(d => "<div>" + tag(d.type) + esc(d.name) + "</div>").join("") : "none yet";
   $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
     ? Object.entries(r.mix).sort((a,b)=>b[1]-a[1]).map(([t,n]) => tag(t)+n).join(" ") : "";
-  $("#status").textContent = r.status + (r.indexing ? " ⏳" : "");
+  // The 2.5s poller must NOT clobber a live upload/indexing message with the server's
+  // 'idle' — that made uploads look like they went straight to idle. Hold while busy.
+  if (!_statusHold)
+    $("#status").textContent = r.status + (r.indexing ? " ⏳" : "");
   $("#nameStatus").textContent = r.name_status || "";
   $("#cost").textContent = "Total spent: $" + (r.total_cost_usd || 0).toFixed(4);
   if (r.plan) applyPlan(r.plan);
@@ -936,6 +940,7 @@ drop.addEventListener("drop", e => upload(e.dataTransfer.files));
 async function upload(files) {
   files = Array.from(files || []);
   if (!files.length) return;
+  _statusHold = true;              // keep the 2.5s poller from wiping our messages
   // Upload in SMALL batches. One giant multipart POST of many/large PDFs blocks the single
   // worker while it saves and risks the proxy cutting the request ('loading then idle').
   // Small batches each save fast and return; the server queues them for indexing.
@@ -948,13 +953,14 @@ async function upload(files) {
     for (const f of batch) fd.append("files", f);
     try {
       const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
-      if (r.error) { $("#status").textContent = "⚠️ " + r.error; return; }
+      if (r.error) { $("#status").textContent = "⚠️ " + r.error;
+        setTimeout(() => { _statusHold = false; }, 8000); return; }
       (r.saved || []).forEach(x => saved.push(x));
       (r.skipped || []).forEach(x => skipped.push(x));
     } catch (e) {
       $("#status").textContent = "⚠️ upload interrupted after " + saved.length
         + " file(s) — the rest didn't send. Click Upload again to add the remaining files.";
-      refresh(); return;
+      setTimeout(() => { _statusHold = false; }, 8000); return;
     }
   }
   $("#status").textContent = "✅ uploaded " + saved.length + " file(s)"
@@ -979,6 +985,7 @@ function pollIndexing() {
         $("#status").textContent = "✅ indexing complete — documents are readable now"
           + ((s.errors && s.errors.length) ? " · " + s.errors.length
              + " had trouble (click 🩺 to see which)" : "") + ".";
+        setTimeout(() => { _statusHold = false; }, 6000);   // let it linger, then resume
         refresh();
       }
     } catch (e) { /* transient — keep polling */ }
@@ -1133,6 +1140,7 @@ if ($("#ctxWrap")) $("#ctxWrap").addEventListener("toggle", e => { if (e.target.
 if ($("#ctxUpload")) $("#ctxUpload").onclick = () => $("#ctxFile").click();
 if ($("#ctxFile")) $("#ctxFile").onchange = async () => {
   const files = Array.from($("#ctxFile").files || []); if (!files.length) return;
+  _statusHold = true;
   const B = 4, saved = [], skipped = [];
   for (let i = 0; i < files.length; i += B) {
     const batch = files.slice(i, i + B);
@@ -1142,12 +1150,12 @@ if ($("#ctxFile")) $("#ctxFile").onchange = async () => {
     for (const f of batch) fd.append("files", f);
     try {
       const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
-      if (r.error) { $("#ctxStatus").textContent = "⚠️ " + r.error; return; }
+      if (r.error) { $("#ctxStatus").textContent = "⚠️ " + r.error; _statusHold = false; return; }
       (r.saved || []).forEach(x => saved.push(x));
       (r.skipped || []).forEach(x => skipped.push(x));
     } catch (e) {
       $("#ctxStatus").textContent = "⚠️ upload interrupted after " + saved.length
-        + " — click Upload again for the rest."; ctxRefreshDocs(); return;
+        + " — click Upload again for the rest."; _statusHold = false; ctxRefreshDocs(); return;
     }
   }
   $("#ctxStatus").textContent = "✅ uploaded " + saved.length + " to context"
