@@ -1511,9 +1511,11 @@ async function autoFillFocus() {
   const prev = $("#examStatus").textContent;
   $("#examStatus").textContent = "✨ Picking key focus areas…";
   try {
-    const r = await (await fetch("/api/exam/focus", {method:"POST",
+    // 45s timeout so a slow/restarting server can't wedge this on 'Picking…' forever
+    // (which also used to jam focusBusy=true and block every later attempt).
+    const r = await (await fetchT("/api/exam/focus", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: q})})).json();
+      body: JSON.stringify({course: COURSE, question: q})}, 45000)).json();
     const areas = (r.focus || []).filter(Boolean);
     if (!focusUserTouched && areas.length) {
       $("#focusList").innerHTML = "";                 // clear the empty starter row
@@ -1521,7 +1523,12 @@ async function autoFillFocus() {
       $("#examStatus").textContent = "✨ Filled " + areas.length +
         " focus areas — edit, remove or add before Break it down.";
     } else { $("#examStatus").textContent = prev; }
-  } catch (e) { $("#examStatus").textContent = prev; }
+  } catch (e) {
+    // let it retry: clear lastFocusQ so the same question re-triggers, and tell the user
+    lastFocusQ = "";
+    $("#examStatus").textContent = "Couldn't auto-fill focus areas (server busy) — "
+      + "type them in, or edit the question to retry. You can still Break it down.";
+  }
   finally { focusBusy = false; }
 }
 $("#examQ").addEventListener("input", () => {
