@@ -431,6 +431,9 @@
       <label style="color:#aab4c6;font-size:12px" title="After auditing, find leading / locus classicus cases for each issue and PAUSE so you can verify each (open the link) before it is woven in and the document is compiled.">
         <input type="checkbox" id="autoCases"> ⚖️ Include cases (verify before compile)
       </label>
+      <label style="color:#aab4c6;font-size:12px" title="Draw on the course's separate Context store (official reports, government statements, institutional responses) as clearly-attributed BACKGROUND — never as law or as the problem's facts.">
+        <input type="checkbox" id="examUseContext"> 🗂 Use context (background)
+      </label>
       <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → AUDIT & fix each issue's authorities against the corpus → (optionally verify cases) → compile → Deepen to top-band standard.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
@@ -1777,7 +1780,8 @@ async function gatherIssue(i) {
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: gq, web: false, brief: true})})).json();
+      body: JSON.stringify({course: COURSE, question: gq, web: false, brief: true,
+        use_context: !!($("#examUseContext") && $("#examUseContext").checked)})})).json();
     it.answer = r.answer || r.error || "";
     it._audited = false;                        // fresh answer — not yet audited
     it.answer_annotated = r.answer_annotated || "";
@@ -2034,7 +2038,8 @@ async function compileExam() {
     const resp = await fetch("/api/exam/assemble", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
-        web: usingWeb, focus: EXAM.focus || [],
+        web: usingWeb, focus: EXAM.focus || [], course: COURSE,
+        use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         answers: done.map(it => ({
           issue: it.issue,

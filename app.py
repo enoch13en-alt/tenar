@@ -2625,8 +2625,23 @@ def load_full_docs(full_docs):
     return blocks, keys
 
 
+CONTEXT_USAGE = (
+    "BACKGROUND CONTEXT — NOT LEGAL AUTHORITY, NOT THE PROBLEM'S FACTS. Some passages are titled "
+    "'BACKGROUND CONTEXT — …'. These are real-world background (official reports, government "
+    "statements, institutional responses, academic / policy pieces) supplied ONLY to enrich a "
+    "factual, policy or 'recent events' point. RULES: (1) NEVER cite them as legal authority or a "
+    "source of law, and never let them displace, override or 'correct' the exam's stated facts — the "
+    "scenario's facts govern. (2) Draw on a background point ONLY where the question genuinely calls "
+    "for real-world context (a 'recent events', policy-adequacy, evaluation or reform limb); "
+    "otherwise ignore them entirely — do NOT pad the analysis with background. (3) When you do use "
+    "one, ATTRIBUTE it in the prose to its source and date ('the Ministry of the Interior's June "
+    "2026 advisory records that…'; 'the Volta Basin Flood Bulletin (GMet, May 2026) reported…'), keep "
+    "it brief, and never present it as a proven fact of the problem. Background informs the "
+    "discussion; it never decides the law.")
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
-                    mode="answer"):
+                    mode="answer", use_context=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -2669,6 +2684,26 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             "title": _title,
             "citations": {"enabled": True},
         })
+    # OPTIONAL background context — from the course's SEPARATE context store, clearly labelled
+    # so it is used as attributed background, never as legal authority or as the problem's facts.
+    ctx_note = ""
+    if use_context and not multi:
+        try:
+            cc = context_course(courses[0])
+            ctx_hits = search(cc, question, k=6)
+        except Exception:
+            ctx_hits = []
+        if ctx_hits:
+            cpdir, _ = course_paths(cc)
+            for ch in ctx_hits:
+                pg = page_label(os.path.join(cpdir, ch["doc"]), ch["doc"], ch["page"])
+                content.append({
+                    "type": "document",
+                    "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
+                    "title": f'BACKGROUND CONTEXT — {display_name(ch["doc"])} — p.{pg}',
+                    "citations": {"enabled": True},
+                })
+            ctx_note = "\n\n" + CONTEXT_USAGE
     content.append({"type": "text", "text": question})
 
     # Routine/gather answers run WITHOUT extended thinking so cost is
@@ -2725,6 +2760,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
+    if ctx_note:
+        system = system + ctx_note              # background-context usage rules
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
     # full essays/reports finish without truncation while staying predictable
     # (~$0.20 worst case, no thinking spikes).
@@ -3501,7 +3538,8 @@ def api_ask():
     else:
         max_out = 8000
     mode = "gather" if body.get("brief") else "answer"
-    return jsonify(answer_question(course, q, include_web, fmt, max_out, mode))
+    return jsonify(answer_question(course, q, include_web, fmt, max_out, mode,
+                                   use_context=bool(body.get("use_context"))))
 
 
 @app.route("/api/cases", methods=["POST"])
@@ -6780,6 +6818,8 @@ def api_exam_assemble():
     length = body.get("length", "exam")      # "exam" | "essay" | "memo" | "report"
     include_web = bool(body.get("web", False))   # pull + synthesise comparators
     focus = [f.strip() for f in (body.get("focus") or []) if f and f.strip()]
+    course = safe_course(body.get("course", ""))         # for the optional context store
+    use_context = bool(body.get("use_context"))
     max_quality = bool(body.get("max_quality", False))   # use Fable 5 for compile
     compile_model = FABLE_MODEL if max_quality else ANSWER_MODEL
     c = _client()
@@ -6903,12 +6943,29 @@ def api_exam_assemble():
                        "— give each a substantial, well-argued treatment (not a "
                        "passing mention) and make sure none is thin or missing:\n- "
                        + "\n- ".join(focus) + "\n")
+    # optional labelled background from the SEPARATE context store — never authority/facts
+    ctx_block = ""
+    if use_context and course:
+        try:
+            _chits = search(context_course(course), q, k=6)
+        except Exception:
+            _chits = []
+        if _chits:
+            _cpdir, _ = course_paths(context_course(course))
+            _parts = []
+            for _ch in _chits:
+                _pg = page_label(os.path.join(_cpdir, _ch["doc"]), _ch["doc"], _ch["page"])
+                _parts.append(f"[{display_name(_ch['doc'])} — p.{_pg}] {_ch['text']}")
+            ctx_block = ("\n\nBACKGROUND CONTEXT (attributed background ONLY — never cite as law "
+                         "or as the problem's facts; use only for a recent-events / policy / reform "
+                         "point, briefly and attributed):\n" + "\n\n".join(_parts))[:6500]
+            system = system + "\n\n" + CONTEXT_USAGE
     user = (
         f"EXAM QUESTION:\n{q}\n\n"
         f"FACT MAP:\n{json.dumps(facts, ensure_ascii=False)}\n\n"
         f"PER-ISSUE ANALYSES:\n" + "\n\n".join(blocks) +
         f"\n\nSOURCES AVAILABLE TO CITE (cite only these):\n{src_text}"
-        + focus_block +
+        + ctx_block + focus_block +
         f"\n\nWrite {kind}. Put OSCOLA footnote markers inline as [n], then list "
         "the numbered footnotes under a 'Footnotes' heading, followed by "
         "'Bibliography' (and Tables of Cases/Legislation if any). In the "
