@@ -80,6 +80,10 @@ ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
 EXPAND_MODEL = "claude-haiku-4-5"     # cheap/fast model for retrieval query expansion
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+# Chunks embedded per call. Larger batches use the CPU far more efficiently (ONNX
+# throughput rises with batch size); embedding runs off the gevent threadpool so the
+# web worker stays responsive no matter the size. Tunable via env for a bigger instance.
+EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "128"))
 EMBED_DIM = 384
 TOP_K = 25   # retrieved chunks per question — wider window so a broadly-framed
              # question is less likely to miss a specific instrument that IS indexed
@@ -1953,7 +1957,17 @@ def get_embedder():
         if _embedder is None:
             from fastembed import TextEmbedding
             os.makedirs(EMBED_CACHE, exist_ok=True)
-            _embedder = TextEmbedding(model_name=EMBED_MODEL, cache_dir=EMBED_CACHE)
+            kw = {}
+            # On a multi-core instance, letting ONNX use more intra-op threads speeds a
+            # single embed call. Off by default (fastembed's own default) so it can't
+            # oversubscribe a CPU-throttled starter box; set EMBED_THREADS after upgrading.
+            t = os.environ.get("EMBED_THREADS")
+            if t:
+                try:
+                    kw["threads"] = int(t)
+                except Exception:
+                    pass
+            _embedder = TextEmbedding(model_name=EMBED_MODEL, cache_dir=EMBED_CACHE, **kw)
         return _embedder
 
 
@@ -2130,12 +2144,12 @@ def reindex(course):
                     if dc:
                         st["message"] = f"embedding {fname} ({len(dc)} chunks)..."
                         embs = []
-                        # SMALL batches + a yield between them so a LARGE doc's CPU-bound
+                        # Batched + a yield between them so a LARGE doc's CPU-bound
                         # embedding can't starve the health-check and get the worker restarted
                         # mid-reindex (which silently DROPS already-embedded docs). Same guard
                         # index_one_doc uses.
-                        for i in range(0, len(dc), 32):
-                            batch = [c["text"] for c in dc[i:i + 32]]
+                        for i in range(0, len(dc), EMBED_BATCH):
+                            batch = [c["text"] for c in dc[i:i + EMBED_BATCH]]
                             try:
                                 import gevent
                                 embs.append(gevent.get_hub().threadpool.apply(embed_texts, (batch,)))
@@ -2189,12 +2203,12 @@ def index_one_doc(course, fname):
     # otherwise hold the CPU long enough to starve the health-check greenlet and get the
     # worker restarted mid-embed. 32-chunk batches + gevent.sleep(0) keep the hub answering.
     embs = []
-    for i in range(0, len(dc), 32):
-        embs.append(_embed([c["text"] for c in dc[i:i + 32]]))
+    for i in range(0, len(dc), EMBED_BATCH):
+        embs.append(_embed([c["text"] for c in dc[i:i + EMBED_BATCH]]))
         # publish within-document progress so the UI can show a moving chunk counter — the
         # clearest 'not stuck' signal while one big doc (hundreds of chunks) is embedding.
         try:
-            _INDEX_STATE["cur_done"] = min(i + 32, len(dc))
+            _INDEX_STATE["cur_done"] = min(i + EMBED_BATCH, len(dc))
             _INDEX_STATE["cur_total"] = len(dc)
         except Exception:
             pass
