@@ -2050,9 +2050,17 @@ def index_one_doc(course, fname):
             return gevent.get_hub().threadpool.apply(embed_texts, (texts,))
         except Exception:
             return embed_texts(texts)
+    # SMALL batches with an explicit yield between them: a big doc (hundreds of chunks) would
+    # otherwise hold the CPU long enough to starve the health-check greenlet and get the
+    # worker restarted mid-embed. 32-chunk batches + gevent.sleep(0) keep the hub answering.
     embs = []
-    for i in range(0, len(dc), 128):
-        embs.append(_embed([c["text"] for c in dc[i:i + 128]]))
+    for i in range(0, len(dc), 32):
+        embs.append(_embed([c["text"] for c in dc[i:i + 32]]))
+        try:
+            import gevent
+            gevent.sleep(0)
+        except Exception:
+            pass
     new_emb = np.vstack(embs) if embs else np.zeros((0, EMBED_DIM), dtype=np.float32)
     cf, ef, mf = index_files(course)
     with _lock:
