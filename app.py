@@ -3001,7 +3001,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search",
                             "max_uses": 6}]
     kwargs["system"] = cached_system(system)   # prompt-cache the big system block
-    resp, _ = _create_final(client, **kwargs)   # model fallback on overload
+    resp, _model_used = _create_final(client, **kwargs)   # model fallback on overload
 
     # The real answer is the text AFTER the last tool call. Everything the model
     # emits during the search/code phase ('let me retry', 'r2 is a string',
@@ -3065,7 +3065,9 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         ann_parts.append(t)
     annotated = "".join(ann_parts).strip()
 
-    cost, in_tok, out_tok = _usage_cost(resp.usage, ANSWER_MODEL)
+    # price at the model ACTUALLY used (Fable for rule-gathering costs ~2x Opus) so the
+    # running total reflects true spend, not a flat Opus estimate
+    cost, in_tok, out_tok = _usage_cost(resp.usage, _model_used or primary_model)
     CONFIG["total_input_tokens"] += in_tok
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
