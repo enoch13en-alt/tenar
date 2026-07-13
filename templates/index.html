@@ -413,7 +413,10 @@
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
       </label>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → AUDIT & fix each issue's authorities against the corpus → compile → Deepen to top-band standard. The audit adds a per-issue check (extra question-credits) but catches misattributed sections before they reach the final document.">🚀 Do it all → Deepen</button>
+      <label style="color:#aab4c6;font-size:12px" title="After auditing, find leading / locus classicus cases for each issue and PAUSE so you can verify each (open the link) before it is woven in and the document is compiled.">
+        <input type="checkbox" id="autoCases"> ⚖️ Include cases (verify before compile)
+      </label>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → AUDIT & fix each issue's authorities against the corpus → (optionally verify cases) → compile → Deepen to top-band standard.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1248,15 +1251,13 @@ async function runFullPipeline() {
       + (nRemoved ? (" · 🗑️ " + nRemoved + " ungrounded cut") : "")
       + (auFlag ? (" · ❓ " + auFlag + " left to verify") : "")
       + " (details under each issue). Compiling…";
-    // ④ compile the final document
-    stage("④ Compiling…");
-    await compileExam();
-    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
-    // ⑤ deepen it (the final step)
-    stage("⑤ Deepening…");
-    const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
-    if (deepBtn) { deepBtn.click(); $("#examStatus").textContent = "🔬 Deepening the final document — it appears below."; }
-    else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
+    // ③½ optional case step — find leading cases per issue and PAUSE for verification;
+    //     otherwise go straight to compile + deepen.
+    if ($("#autoCases") && $("#autoCases").checked) {
+      await caseVerifyPhase();                 // renders a verify panel and pauses here
+    } else {
+      await finishPipeline();                  // ④ compile + ⑤ deepen
+    }
   } catch (e) {
     $("#examStatus").textContent = "Auto-run stopped: " + e;
   } finally {
@@ -1264,6 +1265,84 @@ async function runFullPipeline() {
   }
 }
 $("#examAuto").onclick = runFullPipeline;
+
+// ④ compile + ⑤ deepen — the tail of the pipeline (also called after the case step)
+async function finishPipeline() {
+  const b = $("#examAuto");
+  if (b) { b.disabled = true; b.textContent = "④ Compiling…"; }
+  try {
+    await compileExam();
+    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
+    if (b) b.textContent = "⑤ Deepening…";
+    const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
+    if (deepBtn) { deepBtn.click(); $("#examStatus").textContent = "🔬 Deepening the final document — it appears below."; }
+    else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
+  } finally {
+    if (b) { b.disabled = false; b.textContent = "🚀 Do it all → Deepen"; }
+  }
+}
+
+// ③½ Case step for "Do it all": find leading cases for each gathered issue, then PAUSE with
+// a verify panel. On confirm, weave the ticked cases into each issue and continue to compile.
+async function caseVerifyPhase() {
+  const done = EXAM.issues.filter(it => it.done && it.answer);
+  $("#examStatus").textContent = "⚖️ Finding leading cases for each issue… (up to a minute or two)";
+  const results = await Promise.all(done.map(async it => {
+    const idx = EXAM.issues.indexOf(it);
+    try {
+      const r = await (await fetch("/api/issue/cases", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
+      return {idx, issue: it.issue, cases: (r && r.cases) || []};
+    } catch (e) { return {idx, issue: it.issue, cases: []}; }
+  }));
+  const withCases = results.filter(r => r.cases.length);
+  const host = $("#examDocWrap");
+  if (!withCases.length) {
+    $("#examStatus").textContent = "⚖️ No solid leading cases surfaced — compiling…";
+    await finishPipeline(); return;
+  }
+  EXAM._pipelineCases = {};
+  let h = '<div style="border:1px solid #c9a86a;border-radius:8px;padding:10px;margin-top:12px">'
+    + '<div style="font-size:13px;color:#c9a86a;font-weight:600;margin-bottom:2px">⚖️ Verify cases before compiling</div>'
+    + '<div style="font-size:11px;color:#8b93a7;margin-bottom:6px">Open each 🔗 link, confirm the case is real and on point, then tick it. Only ticked cases are woven in.</div>';
+  withCases.forEach(r => {
+    EXAM._pipelineCases[r.idx] = r.cases;
+    h += '<div style="font-size:12px;color:#c9d3e0;margin:8px 0 2px"><b>Issue ' + (r.idx+1) + ':</b> ' + esc(r.issue.slice(0,100)) + '</div>';
+    h += r.cases.map((c, k) =>
+      '<div style="border-left:3px solid #c9a86a;padding:4px 8px;background:#11151d;border-radius:4px;margin:3px 0 3px 10px;font-size:12px">'
+      + '<label style="cursor:pointer"><input type="checkbox" class="pcChk" data-i="' + r.idx + '" data-k="' + k + '"> <b>' + esc(c.name||"") + '</b>'
+      + (c.citation ? ' <span style="color:#8b93a7">' + esc(c.citation) + '</span>' : '') + '</label>'
+      + (c.principle ? '<div style="color:#aab4c6;margin-left:20px">' + esc(c.principle) + '</div>' : '')
+      + (c.url ? '<div style="margin-left:20px"><a href="' + esc(c.url) + '" target="_blank" rel="noopener" style="font-size:11px">🔗 verify (' + esc(c.source||"link") + ')</a></div>'
+               : '<div style="margin-left:20px;color:#e0a0a0;font-size:11px">⚠ no link — verify independently</div>')
+      + '</div>').join("");
+  });
+  h += '<div style="margin-top:10px"><button class="btn gold" id="casesFinish" style="width:auto">✓ Add ticked cases &amp; compile → deepen</button>'
+    + '<button class="btn alt" id="casesSkip" style="width:auto;margin-left:6px">Skip — just compile</button>'
+    + '<span id="casesFinishNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span></div></div>';
+  host.innerHTML = h;
+  host.scrollIntoView({block:"start"});
+  $("#examStatus").textContent = "⚖️ Verify the cases below, then click 'Add ticked cases & compile'.";
+  $("#casesSkip").onclick = () => { host.innerHTML = ""; finishPipeline(); };
+  $("#casesFinish").onclick = async () => {
+    const fb = $("#casesFinish"); if (fb) { fb.disabled = true; fb.textContent = "weaving in…"; }
+    const byIssue = {};
+    [...host.querySelectorAll(".pcChk")].filter(x => x.checked).forEach(x => {
+      const i = +x.dataset.i, k = +x.dataset.k;
+      (byIssue[i] = byIssue[i] || []).push(EXAM._pipelineCases[i][k]);
+    });
+    for (const i of Object.keys(byIssue)) {
+      const it = EXAM.issues[+i];
+      try {
+        const rr = await (await fetch("/api/issue/cases/add", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({issue: it.issue, answer: it.answer, cases: byIssue[i]})})).json();
+        if (rr && rr.answer) { it.answer = rr.answer; it.answer_annotated = ""; }
+      } catch (e) {}
+    }
+    host.innerHTML = "";
+    await finishPipeline();
+  };
+}
 
 function auditBadge(v){ return ({supported:"✅",misattributed:"⚠️",contradicted:"❌",unverified:"❓"}[v] || "•"); }
 function auditCol(v){ return ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556"); }
@@ -1665,6 +1744,63 @@ async function addCasesToIssue(i, out) {
   } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } }
 }
 
+// Shared case-verification panel: render candidates with checkboxes + verify links, and
+// call onAdd(chosenCases, host) when the user ticks and confirms. Used by the per-issue
+// button, the finished-document button, and the Do-it-all case step.
+function mountCasePanel(host, cases, addLabel, onAdd) {
+  if (!cases || !cases.length) {
+    host.innerHTML = '<span style="font-size:12px;color:#8b93a7">No solid leading case surfaced — better none than an unverified one.</span>';
+    return;
+  }
+  host.innerHTML =
+    '<div style="font-size:12px;color:#c9a86a;font-weight:600;margin:6px 0 4px">⚖️ Candidate cases — open each link, confirm it is real &amp; on point, then tick to include:</div>'
+    + cases.map((c, k) =>
+      '<div style="border-left:3px solid #c9a86a;padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px">'
+      + '<label style="cursor:pointer"><input type="checkbox" class="mcChk" data-k="' + k + '"> <b>' + esc(c.name||"") + '</b>'
+      + (c.citation ? ' <span style="color:#8b93a7">' + esc(c.citation) + '</span>' : '')
+      + ((c.court||c.year) ? ' <span style="color:#7a8296">(' + esc([c.court,c.year].filter(Boolean).join(", ")) + ')</span>' : '') + '</label>'
+      + (c.principle ? '<div style="color:#aab4c6;margin:2px 0 0 20px">principle: ' + esc(c.principle) + '</div>' : '')
+      + (c.strengthens ? '<div style="color:#8b93a7;margin-left:20px">strengthens: ' + esc(c.strengthens) + '</div>' : '')
+      + (c.url ? '<div style="margin-left:20px"><a href="' + esc(c.url) + '" target="_blank" rel="noopener" style="font-size:11px">🔗 verify source (' + esc(c.source||"link") + ')</a></div>'
+               : '<div style="margin-left:20px;color:#e0a0a0;font-size:11px">⚠ no source link — verify independently before including</div>')
+      + '</div>').join("")
+    + '<button class="btn gold mini mcAdd" style="width:auto;margin-top:6px">' + esc(addLabel) + '</button>'
+    + '<span class="mcNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span>';
+  host.querySelector(".mcAdd").onclick = () => {
+    const chosen = [...host.querySelectorAll(".mcChk")].filter(x => x.checked).map(x => cases[+x.dataset.k]).filter(Boolean);
+    if (!chosen.length) { host.querySelector(".mcNote").textContent = "Tick at least one verified case first."; return; }
+    onAdd(chosen, host);
+  };
+}
+
+// Finished-document: find leading cases that strengthen the whole memo, verify, weave in.
+async function findDocCases(bar, docEl, doc, wordName, defaultTitle, btn) {
+  let panel = bar.querySelector(".docCasesOut");
+  if (!panel) { panel = document.createElement("div"); panel.className = "docCasesOut"; bar.appendChild(panel); }
+  const lbl = btn.textContent; btn.disabled = true; btn.textContent = "⚖️ Searching…";
+  panel.innerHTML = '<span style="font-size:11px;color:#8b93a7">searching the web for leading cases across the document… (30–90s)</span>';
+  try {
+    const r = await (await fetch("/api/issue/cases", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: "The principal legal arguments in this memorandum", answer: doc, question: EXAM.question || ""})})).json();
+    if (r.error) { panel.innerHTML = "⚠️ " + esc(r.error); }
+    else mountCasePanel(panel, r.cases || [], "✓ Add ticked cases to the document", async (chosen, host) => {
+      const add = host.querySelector(".mcAdd"); add.disabled = true; add.textContent = "weaving in…";
+      try {
+        const rr = await (await fetch("/api/issue/cases/add", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({issue: "the memorandum", answer: doc, cases: chosen})})).json();
+        if (rr.error) { host.querySelector(".mcNote").textContent = "⚠️ " + rr.error; add.disabled = false; add.textContent = "✓ Add ticked cases to the document"; return; }
+        const updated = rr.answer || doc;
+        EXAM.doc = updated;
+        docEl.style.whiteSpace = "normal";
+        docEl.innerHTML = mdToHtml(updated);            // refresh the shown document
+        bar.remove();                                    // rebuild the toolbar against the new doc
+        renderExportBar(docEl, updated, wordName, defaultTitle);
+      } catch (e) { host.querySelector(".mcNote").textContent = "Error — try again."; add.disabled = false; add.textContent = "✓ Add ticked cases to the document"; }
+    });
+  } catch (e) { panel.innerHTML = "Error — try again."; }
+  btn.disabled = false; btn.textContent = lbl;
+}
+
 // Audit an issue's gathered answer against the corpus and auto-correct flagged
 // authorities AT SOURCE — before they can propagate into the compiled document.
 async function auditAndFixIssue(i) {
@@ -1890,10 +2026,13 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const fitBtn = "<button class='btn mini bFit' style='margin-left:6px' "
       + "title='Condense this document to the word limit set in Exam Coach, "
       + "preserving the argument and citations'>✂️ Fit to limit</button>";
+  const casesBtn = "<button class='btn mini bCases' style='margin-left:6px' "
+      + "title='Find leading / locus classicus cases that strengthen this finished "
+      + "document. You verify each (open the link) before it is woven in.'>⚖️ Include cases</button>";
   box.innerHTML = coverBlock
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + deepBtn + fitBtn + "</div>";
+    + pdfBtn + deepBtn + fitBtn + casesBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
   box.querySelector(".bCopy").onclick = e => {
@@ -1931,6 +2070,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   if (deepEl) deepEl.onclick = () => deepenDoc(box, doc, wordName, defaultTitle, deepEl);
   const fitEl = box.querySelector(".bFit");
   if (fitEl) fitEl.onclick = () => fitDoc(box, doc, wordName, defaultTitle);
+  const casesEl = box.querySelector(".bCases");
+  if (casesEl) casesEl.onclick = () => findDocCases(box, afterEl, doc, wordName, defaultTitle, casesEl);
 }
 
 // Deepen a competent answer to "examined argument" standard. Streams the upgraded
