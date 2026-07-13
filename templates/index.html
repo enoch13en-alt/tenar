@@ -994,19 +994,39 @@ async function upload(files) {
   // Upload in SMALL batches. One giant multipart POST of many/large PDFs blocks the single
   // worker while it saves and risks the proxy cutting the request ('loading then idle').
   // Small batches each save fast and return; the server queues them for indexing.
-  const B = 4, saved = [], skipped = [];
+  const MB = 1024 * 1024, PER_REQ_BYTES = 12 * MB, MAX_PER_REQ = 4;
+  const saved = [], skipped = [];
+  // Warn about files too big for the proxy in front of the app (Cloudflare free ≈ 100MB
+  // per request) — they'll be rejected before reaching the server; compress/split first.
+  const huge = files.filter(f => f.size > 95 * MB).map(f => f.name);
+  if (huge.length) toast("⚠️ over ~95MB, may be rejected before upload — compress or split: "
+    + huge.join(", "), {warn:true, autohide:14000});
+  // Group into requests: small files travel together; a large report goes ALONE so no single
+  // POST is huge (which the proxy cuts, and which blocks the worker while it saves).
+  const batches = []; let cur = [], curBytes = 0;
+  for (const f of files) {
+    if (cur.length && (cur.length >= MAX_PER_REQ || curBytes + f.size > PER_REQ_BYTES)) {
+      batches.push(cur); cur = []; curBytes = 0;
+    }
+    cur.push(f); curBytes += f.size;
+    if (curBytes >= PER_REQ_BYTES) { batches.push(cur); cur = []; curBytes = 0; }
+  }
+  if (cur.length) batches.push(cur);
   busyStart("uploading 0/" + files.length + " file(s)");   // spinner + timer start immediately
-  for (let i = 0; i < files.length; i += B) {
-    const batch = files.slice(i, i + B);
-    const done_n = Math.min(i + batch.length, files.length);
-    busySet("uploading " + done_n + "/" + files.length + " file(s)");
-    $("#status").textContent = "uploading " + done_n + "/" + files.length + " file(s)…";
+  let sent = 0;
+  for (const batch of batches) {
+    sent += batch.length;
+    const bytes = batch.reduce((a, f) => a + f.size, 0), mb = Math.round(bytes / MB);
+    busySet("uploading " + sent + "/" + files.length + " file(s)"
+      + (mb >= 8 ? " (large — " + mb + "MB, please wait)" : ""));
+    $("#status").textContent = "uploading " + sent + "/" + files.length + " file(s)…";
     const fd = new FormData(); fd.append("course", COURSE);
     for (const f of batch) fd.append("files", f);
     try {
-      // 3-min per-batch timeout: if the server ever hangs, this surfaces it instead of
-      // freezing forever at 'uploading 4/33'.
-      const r = await (await fetchT("/api/upload", {method:"POST", body: fd}, 180000)).json();
+      // Timeout scales with size (~20s/MB, min 3 min) so a big report on a slow uplink
+      // isn't cut off early, but a genuine hang still surfaces instead of freezing forever.
+      const tmo = Math.max(180000, mb * 20000);
+      const r = await (await fetchT("/api/upload", {method:"POST", body: fd}, tmo)).json();
       if (r.error) { $("#status").textContent = "⚠️ " + r.error;
         busyStop("⚠️ " + r.error, {warn:true, autohide:9000});
         setTimeout(() => { _statusHold = false; }, 8000); return; }
