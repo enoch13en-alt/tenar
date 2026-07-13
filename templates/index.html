@@ -815,6 +815,37 @@ function toast(msg, opts) {
   if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
   if (opts.autohide) _toastTimer = setTimeout(() => { el.style.display = "none"; }, opts.autohide);
 }
+// A CLIENT-SIDE spinner + elapsed-seconds ticker. It updates 4×/second on its own timer,
+// independent of the network — so even when a batch is uploading or one big doc is
+// embedding (numbers unchanged), the spinner rotates and the seconds climb. Motion = alive;
+// frozen spinner = the page/tab itself is stuck (not the server). This is the definitive
+// 'is it actually working' signal the static text couldn't give.
+let _busy = null, _busyTick = null, _spinI = 0;
+const _spin = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+function busyStart(label) {
+  _busy = { label: label, t0: Date.now() };
+  if (!_busyTick) _busyTick = setInterval(busyRender, 250);
+  busyRender();
+}
+function busySet(label) { if (_busy) { _busy.label = label; } }
+function busyRender() {
+  if (!_busy) return;
+  _spinI = (_spinI + 1) % _spin.length;
+  const secs = Math.round((Date.now() - _busy.t0) / 1000);
+  toast(_spin[_spinI] + "  " + _busy.label + "  ·  " + secs + "s");
+}
+function busyStop(finalMsg, opts) {
+  if (_busyTick) { clearInterval(_busyTick); _busyTick = null; }
+  _busy = null;
+  toast(finalMsg || "", opts || {});
+}
+// fetch with an abort timeout so a hung request surfaces as a message, never an eternal freeze
+async function fetchT(url, options, ms) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms || 180000);
+  try { return await fetch(url, Object.assign({}, options, {signal: ctl.signal})); }
+  finally { clearTimeout(t); }
+}
 async function refresh() {
   const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
@@ -964,57 +995,64 @@ async function upload(files) {
   // worker while it saves and risks the proxy cutting the request ('loading then idle').
   // Small batches each save fast and return; the server queues them for indexing.
   const B = 4, saved = [], skipped = [];
+  busyStart("uploading 0/" + files.length + " file(s)");   // spinner + timer start immediately
   for (let i = 0; i < files.length; i += B) {
     const batch = files.slice(i, i + B);
-    const msg = "uploading " + Math.min(i + batch.length, files.length)
-      + "/" + files.length + " file(s)…";
-    $("#status").textContent = msg; toast(msg);
+    const done_n = Math.min(i + batch.length, files.length);
+    busySet("uploading " + done_n + "/" + files.length + " file(s)");
+    $("#status").textContent = "uploading " + done_n + "/" + files.length + " file(s)…";
     const fd = new FormData(); fd.append("course", COURSE);
     for (const f of batch) fd.append("files", f);
     try {
-      const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
+      // 3-min per-batch timeout: if the server ever hangs, this surfaces it instead of
+      // freezing forever at 'uploading 4/33'.
+      const r = await (await fetchT("/api/upload", {method:"POST", body: fd}, 180000)).json();
       if (r.error) { $("#status").textContent = "⚠️ " + r.error;
-        toast("⚠️ " + r.error, {warn:true, autohide:9000});
+        busyStop("⚠️ " + r.error, {warn:true, autohide:9000});
         setTimeout(() => { _statusHold = false; }, 8000); return; }
       (r.saved || []).forEach(x => saved.push(x));
       (r.skipped || []).forEach(x => skipped.push(x));
     } catch (e) {
-      const m = "⚠️ upload interrupted after " + saved.length
-        + " file(s) — the rest didn't send. Click Upload again to add the remaining files.";
-      $("#status").textContent = m; toast(m, {warn:true, autohide:12000});
+      const aborted = (e && e.name === "AbortError");
+      const m = aborted
+        ? ("⚠️ the server didn't respond within 3 min on this batch — it saved " + saved.length
+           + " file(s) so far. Click Upload again for the rest, or tell me and I'll check the server.")
+        : ("⚠️ upload interrupted after " + saved.length
+           + " file(s) — the rest didn't send. Click Upload again to add the remaining files.");
+      $("#status").textContent = m; busyStop(m, {warn:true, autohide:15000});
       setTimeout(() => { _statusHold = false; }, 8000); return;
     }
   }
-  const done = "✅ uploaded " + saved.length + " file(s)"
-    + (skipped.length ? " · skipped: " + skipped.join(", ") : "") + " — indexing…";
-  $("#status").textContent = done; toast(done);
+  busySet("uploaded " + saved.length + " — starting indexing");
+  $("#status").textContent = "✅ uploaded " + saved.length + " file(s) — indexing…";
   refresh();                       // files appear now
-  pollIndexing();                  // live progress until every doc is readable
+  pollIndexing();                  // live progress until every doc is readable (keeps the spinner)
 }
 // Watch the background indexing queue so a big batch shows 'N docs to go' instead of
 // looking stalled. Polls a global queue shared across uploads.
 let _idxPoll = null;
 function pollIndexing() {
   if (_idxPoll) clearInterval(_idxPoll);
+  if (!_busy) busyStart("indexing");   // ensure the spinner runs even if polled standalone
   const tick = async () => {
     try {
-      const s = await (await fetch("/api/index/status")).json();
+      const s = await (await fetchT("/api/index/status", {}, 20000)).json();
       if (s.running || (s.pending || 0) > 0) {
         const chunk = (s.cur_total ? " — chunk " + (s.cur_done || 0) + "/" + s.cur_total : "");
-        const m = "⏳ indexing — " + (s.pending || 0) + " doc(s) to go"
-          + (s.current ? " (now: " + esc(s.current) + chunk + ")" : "")
-          + " · this number moves = it's working";
-        $("#status").textContent = m + "; click 🩺 anytime."; toast(m);
+        const m = "indexing — " + (s.pending || 0) + " doc(s) to go"
+          + (s.current ? " (" + esc(s.current) + chunk + ")" : "");
+        busySet(m);
+        $("#status").textContent = "⏳ " + m + "; click 🩺 anytime.";
       } else {
         clearInterval(_idxPoll); _idxPoll = null;
         const m = "✅ indexing complete — documents are readable now"
           + ((s.errors && s.errors.length) ? " · " + s.errors.length
              + " had trouble (click 🩺 to see which)" : "") + ".";
-        $("#status").textContent = m; toast(m, {done:true, autohide:8000});
+        $("#status").textContent = m; busyStop(m, {done:true, autohide:8000});
         setTimeout(() => { _statusHold = false; }, 6000);   // let it linger, then resume
         refresh();
       }
-    } catch (e) { /* transient — keep polling */ }
+    } catch (e) { /* transient — keep polling; spinner keeps moving */ }
   };
   tick();
   _idxPoll = setInterval(tick, 2000);   // 2s so the chunk counter visibly moves
