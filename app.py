@@ -2246,6 +2246,56 @@ def drop_doc_from_index(course, fname):
     return removed
 
 
+# ---- Background indexing queue -------------------------------------------------
+# Uploading many files at once must NOT block the request, and must NOT spawn one
+# background thread per file. Files are saved fast; their names are ENQUEUED here and
+# a SINGLE background worker indexes them one at a time (incrementally, so it can never
+# drop existing chunks). One worker keeps the CPU-bound embedding serialized on the
+# single gevent worker instead of thrashing, survives however many upload batches the
+# client sends, and exposes live progress so a big batch never looks like it stalled.
+_INDEX_Q = queue.Queue()
+_INDEX_STATE = {"pending": 0, "current": "", "done": 0, "errors": []}
+_INDEX_WORKER = {"running": False}
+_INDEX_MUTEX = threading.Lock()
+
+
+def _index_worker_loop():
+    while True:
+        try:
+            course, fname = _INDEX_Q.get_nowait()
+        except queue.Empty:
+            with _INDEX_MUTEX:
+                _INDEX_WORKER["running"] = False
+                _INDEX_STATE["current"] = ""
+            return
+        _INDEX_STATE["current"] = fname
+        try:
+            index_one_doc(course, fname)
+            _INDEX_STATE["done"] += 1
+        except Exception as e:
+            _INDEX_STATE["errors"].append(f"{fname}: {str(e)[:80]}")
+        finally:
+            with _INDEX_MUTEX:
+                _INDEX_STATE["pending"] = max(0, _INDEX_STATE["pending"] - 1)
+            try:
+                import gevent
+                gevent.sleep(0)
+            except Exception:
+                pass
+
+
+def enqueue_index(course, fname):
+    """Queue one doc for background indexing; start the single worker if it's idle."""
+    _INDEX_Q.put((course, fname))
+    with _INDEX_MUTEX:
+        _INDEX_STATE["pending"] += 1
+        if not _INDEX_WORKER["running"]:
+            _INDEX_WORKER["running"] = True
+            _INDEX_STATE["done"] = 0
+            _INDEX_STATE["errors"] = []
+            threading.Thread(target=_index_worker_loop, daemon=True).start()
+
+
 # Hybrid retrieval: blend embedding similarity with a lexical keyword-overlap score
 # so exact-term queries ('carried interest', 'stability clause', 's.43') surface the
 # chunk that literally contains them even when pure vector search ranks it below the
@@ -3345,19 +3395,29 @@ def api_upload():
             saved.append(name)
         elif f.filename:
             skipped.append(f.filename)
-    # Index the newly-saved files in the BACKGROUND. Embedding is CPU-bound; done INLINE it
-    # blocks the single worker long enough that a large or multi-file upload exceeds the
-    # request timeout and 'cuts short'. Saving the bytes is fast — return at once and index
-    # off-request (incrementally, one file at a time, so it can't drop existing chunks).
-    def _index_saved():
-        for n in list(saved):
-            try:
-                index_one_doc(course, n)
-            except Exception:
-                pass
-    if saved:
-        threading.Thread(target=_index_saved, daemon=True).start()
-    return jsonify({"saved": saved, "skipped": skipped, "indexing": bool(saved)})
+    # Index the newly-saved files in the BACKGROUND via the shared single-worker queue.
+    # Embedding is CPU-bound; done INLINE it blocks the single worker long enough that a
+    # large or multi-file upload exceeds the request timeout and 'cuts short'. Saving the
+    # bytes is fast — enqueue and return at once. ONE worker drains the queue one doc at a
+    # time (incrementally, so it can't drop existing chunks), no matter how many small
+    # batches the client sends, and reports live progress via /api/index/status.
+    for n in saved:
+        enqueue_index(course, n)
+    return jsonify({"saved": saved, "skipped": skipped, "indexing": bool(saved),
+                    "pending": _INDEX_STATE["pending"]})
+
+
+@app.route("/api/index/status")
+def api_index_status():
+    """Live progress for the background indexing queue, so a big multi-file upload shows
+    'N docs to go' instead of looking like it stalled/went idle."""
+    return jsonify({
+        "running": _INDEX_WORKER["running"],
+        "pending": _INDEX_STATE["pending"],
+        "current": _INDEX_STATE["current"],
+        "done": _INDEX_STATE["done"],
+        "errors": _INDEX_STATE["errors"][-5:],
+    })
 
 
 @app.route("/api/paste", methods=["POST"])
