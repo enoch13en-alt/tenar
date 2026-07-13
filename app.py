@@ -5875,27 +5875,40 @@ def api_issue_cases():
         return jsonify({"error": msg, "cases": []}), 402
     consume("questions")
     sys = (
-        "You find the LEADING / LOCUS CLASSICUS decided cases that would STRENGTHEN the legal "
-        "argument in the issue analysis given. Use WEB SEARCH to ground EVERY case in a REAL, "
-        "verifiable decision — this is critical: NEVER invent a case, citation, court, year or "
-        "holding, and never 'reconstruct' one from memory; a fabricated authority is the worst "
-        "possible error. Prefer the governing jurisdiction's OWN apex / leading authority on the "
-        "exact point (for Ghana, the Supreme Court / Court of Appeal); a landmark Commonwealth "
-        "authority (e.g. Salomon v A Salomon & Co Ltd; Donoghue v Stevenson) is acceptable ONLY "
-        "where it is genuinely the locus classicus for the point. Include a case ONLY if you "
-        "actually located it in the search results with a real source URL, and its holding truly "
-        "supports the point (do not stretch it). Return STRICT JSON {\"cases\":[{\"name\":..., "
-        "\"citation\":..., \"court\":..., \"year\":..., \"principle\":<the NARROW ratio the case "
-        "actually decides, in one sentence — the real holding, not an overstated or generalised "
-        "version>, \"strengthens\":<the specific point in this analysis it reinforces, and if it "
-        "supports it only partly, say so>, \"url\":<a source URL you actually saw in results>, "
-        "\"source\":<short source name>}]}. Return at most 4, most authoritative first; return an "
-        "EMPTY list rather than any doubtful, over-stretched or unverifiable case. No prose, no fences.")
+        "You find real, verifiable material that would STRENGTHEN the legal argument in the issue "
+        "analysis given — of TWO kinds:\n"
+        "(1) kind='case' — a LEADING / LOCUS CLASSICUS decided case on the exact point. Prefer the "
+        "governing jurisdiction's OWN apex / leading authority (for Ghana, the Supreme Court / "
+        "Court of Appeal); a landmark Commonwealth authority (e.g. Salomon v A Salomon & Co Ltd; "
+        "Donoghue v Stevenson) only where it is genuinely the locus classicus. State the NARROW "
+        "ratio it actually decides — never an overstated/generalised version.\n"
+        "(2) kind='incident' — a notable REAL-WORLD INCIDENT: a disaster, explosion, fire, "
+        "blow-out, pipeline/tanker spill, gas leak, mine or structure collapse, refinery accident, "
+        "environmental catastrophe or major regulatory failure — that ILLUSTRATES the risk the "
+        "rule guards against, the rationale for a duty, or the CONSEQUENCE of a breach. An incident "
+        "is a FACTUAL illustration, NOT legal authority: it shows WHY the law matters or what "
+        "non-compliance leads to; it does not decide the point. Prefer incidents in the governing "
+        "jurisdiction or ones globally emblematic of the point (e.g. Piper Alpha; Deepwater "
+        "Horizon; Bhopal; the 2015 Ghana Atomic Junction / June-3rd fuel explosions; Appiatse).\n"
+        "Use WEB SEARCH to ground EVERY item in a REAL, verifiable source — this is critical: "
+        "NEVER invent a case, citation, court, year, incident, date, place or holding, and never "
+        "'reconstruct' one from memory; a fabricated case OR incident is the worst possible error. "
+        "Include an item ONLY if you actually located it in the search results with a real source "
+        "URL, and it truly supports the point (do not stretch it). Return STRICT JSON "
+        "{\"cases\":[{\"kind\":\"case|incident\", \"name\":<case name OR incident name>, "
+        "\"citation\":<the law-report citation for a case; for an incident, its DATE and PLACE>, "
+        "\"court\":<case only; empty for an incident>, \"year\":..., \"principle\":<for a case, "
+        "the narrow ratio it decides; for an incident, WHAT IT ILLUSTRATES about the risk/duty/"
+        "consequence>, \"strengthens\":<the specific point in this analysis it reinforces, and if "
+        "it supports it only partly, say so>, \"url\":<a source URL you actually saw in results>, "
+        "\"source\":<short source name>}]}. Return at most 5, most on-point first (a good mix where "
+        "both help); return an EMPTY list rather than any doubtful, over-stretched or unverifiable "
+        "item. No prose, no fences.")
 
     def _run():
         resp, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=2200,
-            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            c, model=ANSWER_MODEL, max_tokens=2600,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 10}],
             system=sys,
             messages=[{"role": "user", "content":
                        (("Problem: " + context[:900] + "\n\n") if context else "")
@@ -5910,7 +5923,7 @@ def api_issue_cases():
     cases = data.get("cases") if isinstance(data, dict) else data
     if not isinstance(cases, list):
         cases = []
-    return jsonify({"cases": cases[:4]})
+    return jsonify({"cases": cases[:5]})
 
 
 @app.route("/api/issue/cases/add", methods=["POST"])
@@ -5931,18 +5944,25 @@ def api_issue_cases_add():
         return jsonify({"error": msg}), 402
     consume("questions")
     sys = (
-        "You STRENGTHEN a legal issue analysis by weaving in cases the student has already "
-        "VERIFIED — and nothing else. For each case you get its name, citation, principle and the "
+        "You STRENGTHEN a legal issue analysis by weaving in items the student has already "
+        "VERIFIED — and nothing else. Each item is either a decided CASE (kind='case') or a "
+        "real-world INCIDENT (kind='incident'); you get its name, citation/date, principle and the "
         "point it strengthens. Integrate it at the logically correct place IN THE ANALYSIS. "
-        "KEEP IT SHORT AND TIED TO THE FACTS — usually ONE sentence: state the narrow proposition "
-        "the case ACTUALLY decides and apply it directly to THIS scenario's facts ('as in "
-        "[case], where …, so here …'). DO NOT OVER-SAY: over-elaborating a case is how you end up "
-        "stating a holding that is only PARTLY true — never stretch, generalise or overstate what "
-        "the case held, never recite its full facts or procedural history, and never add "
-        "background the point does not need. Confine each case to the single point it supports; if "
-        "it only partly supports the point, say exactly that far and no further. Never a bare "
-        "drop-in, a 'see also' list, or a heading of its own. Cite in OSCOLA (case name and "
-        "citation). PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim "
+        "KEEP IT SHORT AND TIED TO THE FACTS — usually ONE sentence.\n"
+        "- For a CASE: state the narrow proposition it ACTUALLY decides and apply it to THIS "
+        "scenario's facts ('as in [case], where …, so here …'). It is LEGAL AUTHORITY.\n"
+        "- For an INCIDENT: use it as a FACTUAL ILLUSTRATION only — one sentence showing the risk "
+        "the rule guards against or the consequence of breach ('the Piper Alpha explosion "
+        "illustrates the stakes the permit-to-work duty addresses'). Flag it as illustrative, NOT "
+        "determinative: an incident NEVER decides the legal point and is NEVER cited as authority "
+        "for a proposition of law — do not let it carry the argument or stand in for a case.\n"
+        "DO NOT OVER-SAY: over-elaborating is how you end up stating something only PARTLY true — "
+        "never stretch, generalise or overstate a holding or what an incident shows, never recite "
+        "full facts or procedural history, and never add background the point does not need. "
+        "Confine each item to the single point it supports; if it only partly supports it, say "
+        "exactly that far and no further. Never a bare drop-in, a 'see also' list, or a heading of "
+        "its own. Cite a case in OSCOLA (name and citation); an incident by its name, place and "
+        "year. PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim "
         "except for the short woven-in sentence(s); do NOT re-argue, do NOT change any conclusion, "
         "and do NOT add any case that is not in the list. Return ONLY the updated answer text — no "
         "preamble, no notes.")
