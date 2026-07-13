@@ -3309,7 +3309,11 @@ $("#lawplanFind").onclick = async () => {
 function renderLawplan() {
   const box = $("#lawplanList");
   if (!window._lawplan.length) { box.innerHTML = ""; return; }
-  box.innerHTML = window._lawplan.map((it, i) => {
+  const caveat = '<div style="font-size:11px;color:#e6c565;margin-bottom:6px">This is a '
+    + 'research plan — which statutes to provision and where to find them. The provision '
+    + 'numbers are unverified pointers; the actual law is only ever stated from the text '
+    + 'once it\'s ingested and grounded.</div>';
+  box.innerHTML = caveat + window._lawplan.map((it, i) => {
     const have = it.in_corpus;
     const canAdd = it.url && !have;
     const badge = have
@@ -3321,7 +3325,9 @@ function renderLawplan() {
     const link = it.url ? ' · <a href="' + esc(it.url) + '" target="_blank" rel="noopener" style="color:#8fb4ff">🔗 view text</a>' : '';
     return '<div style="border:1px solid #2a3344;border-radius:6px;padding:8px 10px;margin:6px 0;background:#0d1017">'
       + '<div style="font-weight:600;color:#cdd5e6">' + esc(it.name || "?") + '</div>'
-      + (it.provisions ? '<div style="font-size:12px;color:#aab4c6">Provisions: ' + esc(it.provisions) + '</div>' : '')
+      + (it.provisions ? '<div style="font-size:12px;color:#aab4c6">Provisions to check '
+          + '<span style="color:#e6c565">(unverified pointer — confirm against the text)</span>: '
+          + esc(it.provisions) + '</div>' : '')
       + (it.why ? '<div style="font-size:12px;color:#8b93a7">' + esc(it.why) + '</div>' : '')
       + '<div style="margin-top:4px">' + badge + link + '</div></div>';
   }).join("");

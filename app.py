@@ -1038,6 +1038,18 @@ REFORM_METHOD = (
 # than a candid gap, and in a knowledge base it contaminates every downstream
 # answer that retrieves it. Codifies the citation failures this tool must avoid.
 CITATION_INTEGRITY = (
+    "GROUNDED-ONLY — STATE LAW ONLY FROM THE PROVIDED TEXT, NEVER FROM MEMORY (this "
+    "overrides everything else). Every rule, statute/section/article number, quotation, "
+    "case name, holding and pinpoint you give MUST appear in the retrieved passages / source "
+    "text placed in front of you. You may NOT supply a provision, number, quotation, case or "
+    "holding from your own legal knowledge, however confident you are that it is correct — a "
+    "remembered citation is a failure even when it happens to be right. If the provided "
+    "materials do not contain the governing law for a point, DO NOT fill the gap from memory: "
+    "say plainly 'the governing [provision/instrument] is not in the provided materials — "
+    "provision it and I will apply it' and stop there for that point. A candid 'not in the "
+    "materials' is REQUIRED and is better than a confident memory. Do not paraphrase a "
+    "statute from general knowledge and present it as its text; quote/cite only what is "
+    "actually present.\n"
     "AUTHORITY & CITATION INTEGRITY — citation accuracy is not cosmetic; a wrong, "
     "second-hand or unsupported authority is worse than a candid gap:\n"
     "- CITE INSTRUMENTS BY PROVISION, NOT PAGE. For any instrument (treaty, "
@@ -5590,10 +5602,15 @@ def api_lawplan_find():
         "commentary/case-summaries. A direct PDF is best; an official full-text HTML page is fine. "
         "Run SEVERAL searches; never invent a URL you did not see in results (leave url empty if "
         "you truly cannot find it).\n"
+        "IMPORTANT — this is a RESEARCH PLAN that tells the student which instruments to "
+        "provision, NOT a statement of law. The section/article numbers you put in "
+        "'provisions' are your best POINTERS to where to look; they are UNVERIFIED and the "
+        "student will confirm them against the fetched text. Never present them as settled "
+        "law. Identify the INSTRUMENT confidently; keep the provision pinpoints as leads.\n"
         "Return STRICT JSON: {\"instruments\":[{\"name\":full citation, \"provisions\":\"s.11, "
-        "s.12\", \"why\":one line, \"url\":authoritative full text or empty string, "
-        "\"kind\":\"statute|constitution|LI|case|other\", \"note\":optional}]} — essential "
-        "instruments only, most central first, up to 10. No prose, no fences.")
+        "s.12 (pointers to verify)\", \"why\":one line, \"url\":authoritative full text or "
+        "empty string, \"kind\":\"statute|constitution|LI|case|other\", \"note\":optional}]} "
+        "— essential instruments only, most central first, up to 10. No prose, no fences.")
 
     def _run():
         resp, _ = _create_final(
@@ -6945,7 +6962,13 @@ def api_exam_breakdown():
         "the DISPUTE's facts come only from the scenario (treat them as "
         "authoritative; never invent, override, or import outside facts about what "
         "happened); LAW comes only from the course materials provided (never cite "
-        "law that isn't there). BUT do not treat real, named real-world entities as "
+        "law that isn't there). GROUNDED-ONLY: name a statute, section, article or case in "
+        "the 'law' field ONLY if it actually appears in the COURSE MATERIALS below — NEVER "
+        "from your own legal knowledge, even if you are sure of it. If an issue's governing "
+        "instrument is not in the materials, set its \"law\" to 'not in corpus — provision "
+        "this instrument' rather than supplying a remembered citation. A candid gap is "
+        "required; a memory-based section number is a failure. BUT do not treat real, named "
+        "real-world entities as "
         "fictitious: where the scenario names a real State, a real treaty/convention, "
         "or a real institution, its EXISTENCE and STATUS (whether a treaty is in "
         "force, whether a named State is a party/member, whether a body operates) are "
