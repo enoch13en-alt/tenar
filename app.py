@@ -2039,9 +2039,20 @@ def index_one_doc(course, fname):
     dc = extract_doc_chunks(path, fname)
     if not dc:
         return 0
+    # Embedding is CPU-bound; on the single gevent worker it blocks the event loop, so a
+    # LARGE doc (hundreds of chunks) can stall the health-check long enough for the container
+    # to be restarted mid-embed — and then it never persists. Run each batch on gevent's
+    # native threadpool so the hub stays responsive (the health-check keeps answering) while
+    # the embedding proceeds. Falls back to inline if gevent isn't active.
+    def _embed(texts):
+        try:
+            import gevent
+            return gevent.get_hub().threadpool.apply(embed_texts, (texts,))
+        except Exception:
+            return embed_texts(texts)
     embs = []
     for i in range(0, len(dc), 128):
-        embs.append(embed_texts([c["text"] for c in dc[i:i + 128]]))
+        embs.append(_embed([c["text"] for c in dc[i:i + 128]]))
     new_emb = np.vstack(embs) if embs else np.zeros((0, EMBED_DIM), dtype=np.float32)
     cf, ef, mf = index_files(course)
     with _lock:
