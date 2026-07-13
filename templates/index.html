@@ -931,9 +931,10 @@ $("#reindex").onclick = async () => {
 };
 
 // document visibility report — what the bot can actually read
-$("#docHealth").onclick = async () => {
+$("#docHealth").onclick = runDocHealth;
+async function runDocHealth() {
   const btn = $("#docHealth"), out = $("#healthOut");
-  btn.disabled = true; const label = btn.textContent;
+  btn.disabled = true; const label = "🩺 What can the bot see?";
   btn.textContent = "Scanning documents…";
   out.innerHTML = '<span style="font-size:12px;color:#8b93a7">reading each document’s text layer… (can take ~30s for a big course)</span>';
   try {
@@ -955,26 +956,45 @@ $("#docHealth").onclick = async () => {
           + d.pages + ' pages readable, ' + d.chunks + ' chunks)</span>'
         : ' <span style="color:#8b93a7">(' + d.chunks + ' chunks)</span>';
       const sumtag = d.is_summary ? ' 📄' : '';
+      const fixable = (d.visibility === "none" || d.visibility === "partial") && d.ext === "pdf";
+      const missing = (d.pages != null && d.pages_with_text != null) ? (d.pages - d.pages_with_text) : 0;
+      const fixLabel = d.visibility === "partial"
+        ? ("Fix " + (missing > 0 ? missing + " scanned page" + (missing === 1 ? "" : "s") : "scanned pages"))
+        : "OCR it";
+      const fixBtn = fixable ? ' <button class="btn mini healthOcr" data-f="' + encodeURIComponent(d.file)
+        + '" style="width:auto;padding:1px 6px">' + fixLabel + '</button>' : '';
       const why = d.reason ? '<div style="font-size:11px;color:#aab4c6;margin:0 0 4px 18px">↳ '
-        + esc(d.reason) + (d.visibility === "none" && d.ext === "pdf"
-            ? ' <button class="btn mini healthOcr" data-f="' + encodeURIComponent(d.file)
-              + '" style="width:auto;padding:1px 6px">OCR it</button>' : '') + '</div>' : '';
+        + esc(d.reason) + fixBtn + '</div>' : '';
       return '<div style="font-size:12.5px;margin-top:4px">' + icon(d.visibility) + ' '
         + esc(d.name || d.file) + sumtag + pgs + '</div>' + why;
     }).join("");
     out.innerHTML = h + rowsHtml;
-    out.querySelectorAll(".healthOcr").forEach(b => b.onclick = async () => {
-      const fn = decodeURIComponent(b.dataset.f);
-      b.disabled = true; b.textContent = "OCR running…";
-      try {
-        const rr = await (await fetch("/api/ocr", {method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({course: COURSE, file: fn})})).json();
-        b.textContent = rr.error ? ("⚠️ " + rr.error) : "OCR started — re-check shortly";
-      } catch (e) { b.textContent = "error"; }
-    });
+    out.querySelectorAll(".healthOcr").forEach(b => b.onclick = () => fixScan(b));
   } catch (e) { out.innerHTML = "Error — try again."; }
   finally { btn.disabled = false; btn.textContent = label; }
-};
+}
+
+// OCR a scanned / part-scanned doc, showing live progress, then refresh the report
+async function fixScan(b) {
+  const fn = decodeURIComponent(b.dataset.f);
+  b.disabled = true; b.textContent = "starting OCR…";
+  try {
+    const rr = await (await fetch("/api/ocr", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, file: fn})})).json();
+    if (rr.error) { b.textContent = "⚠️ " + rr.error; b.disabled = false; return; }
+  } catch (e) { b.textContent = "error — try again"; b.disabled = false; return; }
+  // poll OCR status until done, then re-run the health report
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 4000));
+    let s = "";
+    try {
+      s = (await (await fetch("/api/ocr/status?course=" + encodeURIComponent(COURSE))).json()).status || "";
+    } catch (e) {}
+    if (s) b.textContent = s.replace(/^OCR:\s*/, "");
+    if (/✅|fully readable|searchable|failed|unreadable/i.test(s)) break;
+  }
+  runDocHealth();
+}
 
 // paste text straight into the corpus (facts / reports with no clean file)
 $("#pasteAdd").onclick = async () => {

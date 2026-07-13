@@ -2064,6 +2064,34 @@ def index_one_doc(course, fname):
     return len(dc)
 
 
+def drop_doc_from_index(course, fname):
+    """Remove ONE document's chunks from the live index (and manifest) without a full
+    rebuild — used when a source file is replaced (e.g. a scanned PDF swapped for its OCR
+    .md) so its old chunks don't linger as orphaned duplicates."""
+    ensure_loaded(course)
+    cf, ef, mf = index_files(course)
+    with _lock:
+        idx = INDEXES[course]
+        keep = [i for i, ch in enumerate(idx["chunks"]) if ch["doc"] != fname]
+        if len(keep) == len(idx["chunks"]):
+            return 0
+        removed = len(idx["chunks"]) - len(keep)
+        chunks = [idx["chunks"][i] for i in keep]
+        emb = idx["emb"][keep] if keep else np.zeros((0, EMBED_DIM), dtype=np.float32)
+        INDEXES[course] = {"chunks": chunks, "emb": emb}
+        _write_json(cf, chunks, indent=None)
+        np.save(ef, emb)
+        manifest = {}
+        if os.path.exists(mf):
+            try:
+                manifest = json.load(open(mf))
+            except Exception:
+                manifest = {}
+        manifest.pop(fname, None)
+        _write_json(mf, manifest, indent=None)
+    return removed
+
+
 # Hybrid retrieval: blend embedding similarity with a lexical keyword-overlap score
 # so exact-term queries ('carried interest', 'stability clause', 's.43') surface the
 # chunk that literally contains them even when pure vector search ranks it below the
@@ -5407,6 +5435,84 @@ def _ocr_pdf_text(pdf_path, course=None, per_call=3, dpi=150, max_pages=400, wor
     return "\n\n".join(out).strip()
 
 
+def _pdf_text_filling_scans(pdf_path, course=None, per_call=3, dpi=150, max_pages=400, workers=5):
+    """Full text of a PDF, OCR-ing ONLY the pages that have no text layer and keeping the
+    text the readable pages already have. For a fully-scanned doc every page is OCR'd; for a
+    PARTIAL scan just the gap pages are — so recovering 2 missing pages of a 96-page charter
+    costs 2 page-OCRs, not 96. Missing pages are OCR'd concurrently. Returns
+    (full_text, n_pages_ocred, n_pages_total)."""
+    import base64, concurrent.futures
+    d0 = fitz.open(pdf_path)
+    n = min(d0.page_count, max_pages)
+    page_text = []
+    missing = []
+    for i in range(n):
+        t = d0[i].get_text("text").strip()
+        if len(t) > 20:
+            page_text.append(t)
+        else:
+            page_text.append(None)
+            missing.append(i)
+    d0.close()
+    c = _client()
+    if not missing or not c:
+        return "\n\n".join(t for t in page_text if t).strip(), 0, n
+    # batch consecutive missing pages together (cap per_call per vision call)
+    batches, cur = [], []
+    for p in missing:
+        if cur and p == cur[-1] + 1 and len(cur) < per_call:
+            cur.append(p)
+        else:
+            if cur:
+                batches.append(cur)
+            cur = [p]
+    if cur:
+        batches.append(cur)
+    total, done, lock = len(missing), {"k": 0}, threading.Lock()
+
+    def _do(batch):
+        try:
+            d = fitz.open(pdf_path)
+            content = []
+            for pg in batch:
+                png = d[pg].get_pixmap(dpi=dpi).tobytes("png")
+                content.append({"type": "image", "source": {"type": "base64",
+                                "media_type": "image/png",
+                                "data": base64.b64encode(png).decode()}})
+            d.close()
+            content.append({"type": "text", "text": (
+                f"Transcribe the text of these {len(batch)} scanned page(s) of a legal document "
+                "VERBATIM and in order. Preserve section and subsection numbers, headings and "
+                "structure. Output ONLY the transcribed text — no commentary.")})
+            resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
+                                    messages=[{"role": "user", "content": content}])
+            txt = _text_of(resp)
+        except Exception as e:
+            txt = f"[OCR failed for pages {batch[0]+1}-{batch[-1]+1}: {str(e)[:50]}]"
+        with lock:
+            done["k"] += len(batch)
+            if course:
+                OCR_STATUS[course] = f"OCR: filling {done['k']}/{total} scanned page(s)…"
+        return batch[0], txt
+
+    fills = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, len(batches))) as pool:
+        for anchor, txt in pool.map(_do, batches):
+            fills[anchor] = txt
+    # assemble in page order: readable pages keep their text; each missing-batch inserts its
+    # OCR block once at its first page; the rest of that batch's pages are skipped.
+    segs, i = [], 0
+    while i < n:
+        if page_text[i] is not None:
+            segs.append(page_text[i])
+            i += 1
+        else:
+            segs.append(fills.get(i, ""))
+            b = next((bb for bb in batches if i in bb), [i])
+            i = b[-1] + 1
+    return "\n\n".join(s for s in segs if s).strip(), total, n
+
+
 @app.route("/api/doc/delete", methods=["POST"])
 def api_doc_delete():
     """Remove a document from a course (prune junk/wrong/corrupt files), then reindex.
@@ -5461,13 +5567,15 @@ def api_ocr():
 
 
 def _ocr_and_index(course, pdf_fn, title):
-    """Background: OCR a scanned PDF already saved in the course, write the text as a
-    searchable .md, drop the image PDF, and reindex."""
+    """Background: make a scanned or PART-scanned PDF fully readable. OCRs ONLY the pages
+    that lack a text layer and keeps the text the readable pages already have, writes the
+    merged text as a searchable .md, drops the image PDF (and its old chunks), and indexes
+    the .md incrementally (no full rebuild)."""
     pdf_dir, _ = course_paths(course)
     pdf_path = os.path.join(pdf_dir, pdf_fn)
     OCR_STATUS[course] = f"OCR starting for “{title}”…"
     try:
-        text = _ocr_pdf_text(pdf_path, course=course)
+        text, n_ocr, n_total = _pdf_text_filling_scans(pdf_path, course=course)
     except Exception as e:
         OCR_STATUS[course] = f"OCR failed: {str(e)[:80]}"
         return
@@ -5476,12 +5584,14 @@ def _ocr_and_index(course, pdf_fn, title):
         return
     safe = re.sub(r'[^\w %()&.,-]', '_', title).strip()[:80] or "ocr-law"
     md_fn = f"New law — {safe}.md"
-    hdr = (f"# {title}\n\n(Text OCR-extracted from a scanned PDF via Claude vision — "
-           "verify against the official published version.)\n\n")
+    origin = (f"({n_ocr} of {n_total} scanned page(s) OCR-filled via Claude vision; the rest "
+              "is the PDF's own text — verify against the official published version.)"
+              if n_ocr else "(Text extracted from the PDF.)")
+    hdr = f"# {title}\n\n{origin}\n\n"
     with open(os.path.join(pdf_dir, md_fn), "w", encoding="utf-8") as f:
         f.write(hdr + text)
     SOURCES[md_fn] = title
-    # the image PDF is now redundant (its text lives in the .md) — remove it
+    # the image PDF is now redundant (its text lives in the .md) — remove it AND its chunks
     try:
         os.remove(pdf_path)
     except Exception:
@@ -5490,9 +5600,14 @@ def _ocr_and_index(course, pdf_fn, title):
     DOCTYPES.pop(pdf_fn, None)
     save_sources()
     save_doctypes()
-    OCR_STATUS[course] = f"OCR done — “{title}” transcribed; re-indexing so it's citeable."
-    reindex(course)
-    OCR_STATUS[course] = f"✅ “{title}” OCR'd and indexed — it's now searchable."
+    OCR_STATUS[course] = f"OCR done — “{title}” transcribed; indexing so it's citeable."
+    try:
+        drop_doc_from_index(course, pdf_fn)          # purge the old scanned PDF's chunks
+        index_one_doc(course, md_fn)                 # add the merged text (incremental, fast)
+    except Exception as e:
+        OCR_STATUS[course] = f"OCR text saved but indexing failed: {str(e)[:70]} — click Re-index."
+        return
+    OCR_STATUS[course] = f"✅ “{title}” is now fully readable and searchable."
 
 
 @app.route("/api/ocr/status")
