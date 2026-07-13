@@ -5354,39 +5354,56 @@ def _pdf_has_text(data_or_path, pages=6):
         return True, 0        # can't open → don't treat as a scan
 
 
-def _ocr_pdf_text(pdf_path, course=None, per_call=3, dpi=150, max_pages=400):
-    """Transcribe a scanned PDF via Claude vision, a few pages per call. Returns the
-    full text. Updates OCR_STATUS[course] as it goes."""
-    import base64
+def _ocr_pdf_text(pdf_path, course=None, per_call=3, dpi=150, max_pages=400, workers=5):
+    """Transcribe a scanned PDF via Claude vision. The page-batches run CONCURRENTLY on a
+    thread pool (each worker opens its own PDF handle, so fitz stays thread-safe and only a
+    few batches' images sit in memory at once) — cutting a 40-page doc from ~4 min to ~1.
+    Batch outputs are re-joined IN ORDER. Updates OCR_STATUS[course] as batches complete."""
+    import base64, concurrent.futures
     c = _client()
     if not c:
         return ""
-    doc = fitz.open(pdf_path)
-    n = min(doc.page_count, max_pages)
-    out, i = [], 0
-    while i < n:
-        batch = list(range(i, min(i + per_call, n)))
-        if course:
-            OCR_STATUS[course] = f"OCR: transcribing pages {batch[0]+1}-{batch[-1]+1} of {n}…"
-        content = []
-        for pg in batch:
-            png = doc[pg].get_pixmap(dpi=dpi).tobytes("png")
-            content.append({"type": "image", "source": {"type": "base64",
-                            "media_type": "image/png",
-                            "data": base64.b64encode(png).decode()}})
-        content.append({"type": "text", "text": (
-            f"Transcribe the text of these {len(batch)} scanned pages of a legal "
-            "document VERBATIM and in order. Preserve section and subsection numbers, "
-            "headings, and structure. Start each page with a line '--- page N ---'. "
-            "Output ONLY the transcribed text — no commentary, no summary.")})
+    d0 = fitz.open(pdf_path)
+    n = min(d0.page_count, max_pages)
+    d0.close()
+    if n == 0:
+        return ""
+    batches = [list(range(i, min(i + per_call, n))) for i in range(0, n, per_call)]
+    total = len(batches)
+    done = {"k": 0}
+    lock = threading.Lock()
+
+    def _do(batch):
         try:
+            d = fitz.open(pdf_path)                       # per-worker handle (read-only)
+            content = []
+            for pg in batch:
+                png = d[pg].get_pixmap(dpi=dpi).tobytes("png")
+                content.append({"type": "image", "source": {"type": "base64",
+                                "media_type": "image/png",
+                                "data": base64.b64encode(png).decode()}})
+            d.close()
+            content.append({"type": "text", "text": (
+                f"Transcribe the text of these {len(batch)} scanned pages of a legal "
+                "document VERBATIM and in order. Preserve section and subsection numbers, "
+                "headings, and structure. Start each page with a line '--- page N ---'. "
+                "Output ONLY the transcribed text — no commentary, no summary.")})
             resp, _ = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
                                     messages=[{"role": "user", "content": content}])
-            out.append(_text_of(resp))
+            txt = _text_of(resp)
         except Exception as e:
-            out.append(f"[OCR failed for pages {batch[0]+1}-{batch[-1]+1}: {str(e)[:60]}]")
-        i += per_call
-    doc.close()
+            txt = f"[OCR failed for pages {batch[0]+1}-{batch[-1]+1}: {str(e)[:60]}]"
+        if course:
+            with lock:
+                done["k"] += 1
+                OCR_STATUS[course] = (f"OCR: transcribed {done['k']}/{total} page-batches "
+                                      f"({n} pages)…")
+        return txt
+
+    # map preserves input order, so the transcript re-assembles correctly even though
+    # the batches finish out of order.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, total)) as pool:
+        out = list(pool.map(_do, batches))
     return "\n\n".join(out).strip()
 
 
