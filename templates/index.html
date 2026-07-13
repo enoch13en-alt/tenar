@@ -846,6 +846,31 @@ async function fetchT(url, options, ms) {
   try { return await fetch(url, Object.assign({}, options, {signal: ctl.signal})); }
   finally { clearTimeout(t); }
 }
+// Upload via XHR (not fetch) so we get REAL transfer progress — bytes sent / total — for
+// big image-heavy reports. onProgress(loaded, total, phase) fires as bytes go out; when it
+// hits 100% the browser is then waiting on the SERVER. This distinguishes a slow transfer
+// from a server stall, and gives the user a moving MB counter for large files.
+function xhrUpload(url, fd, onProgress, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.timeout = timeoutMs || 0;
+    xhr.upload.onprogress = e => {
+      if (onProgress) onProgress(e.loaded, e.lengthComputable ? e.total : 0,
+                                 e.loaded >= (e.total || 1) ? "server" : "send");
+    };
+    xhr.upload.onload = () => { if (onProgress) onProgress(1, 1, "server"); };  // bytes done → server now
+    xhr.onload = () => {
+      let j = null; try { j = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(j || {});
+      else reject(Object.assign(new Error("http " + xhr.status),
+                                {status: xhr.status, body: j}));
+    };
+    xhr.onerror = () => reject(Object.assign(new Error("network"), {name: "NetworkError"}));
+    xhr.ontimeout = () => reject(Object.assign(new Error("timeout"), {name: "TimeoutError"}));
+    xhr.send(fd);
+  });
+}
 async function refresh() {
   const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
@@ -1022,24 +1047,41 @@ async function upload(files) {
     $("#status").textContent = "uploading " + sent + "/" + files.length + " file(s)…";
     const fd = new FormData(); fd.append("course", COURSE);
     for (const f of batch) fd.append("files", f);
+    // Generous timeout that scales with size (~30s/MB, min 5 min) so a big report on a slow
+    // uplink isn't cut off early. Real transfer progress comes from xhr below.
+    const tmo = Math.max(300000, mb * 30000);
+    let lastPhase = "send", lastMB = 0;
     try {
-      // Timeout scales with size (~20s/MB, min 3 min) so a big report on a slow uplink
-      // isn't cut off early, but a genuine hang still surfaces instead of freezing forever.
-      const tmo = Math.max(180000, mb * 20000);
-      const r = await (await fetchT("/api/upload", {method:"POST", body: fd}, tmo)).json();
-      if (r.error) { $("#status").textContent = "⚠️ " + r.error;
+      const r = await xhrUpload("/api/upload", fd, (loaded, total, phase) => {
+        lastPhase = phase;
+        if (total > 1) {
+          lastMB = Math.round(loaded / MB);
+          busySet(phase === "server"
+            ? ("uploaded " + sent + "/" + files.length + " — server saving/queueing…")
+            : ("uploading " + sent + "/" + files.length + " — sent "
+               + lastMB + "/" + Math.round(total / MB) + "MB"));
+        }
+      }, tmo);
+      if (r && r.error) { $("#status").textContent = "⚠️ " + r.error;
         busyStop("⚠️ " + r.error, {warn:true, autohide:9000});
         setTimeout(() => { _statusHold = false; }, 8000); return; }
-      (r.saved || []).forEach(x => saved.push(x));
-      (r.skipped || []).forEach(x => skipped.push(x));
+      ((r && r.saved) || []).forEach(x => saved.push(x));
+      ((r && r.skipped) || []).forEach(x => skipped.push(x));
     } catch (e) {
-      const aborted = (e && e.name === "AbortError");
-      const m = aborted
-        ? ("⚠️ the server didn't respond within 3 min on this batch — it saved " + saved.length
-           + " file(s) so far. Click Upload again for the rest, or tell me and I'll check the server.")
-        : ("⚠️ upload interrupted after " + saved.length
-           + " file(s) — the rest didn't send. Click Upload again to add the remaining files.");
-      $("#status").textContent = m; busyStop(m, {warn:true, autohide:15000});
+      let m;
+      if (e && e.status === 413)
+        m = "⚠️ this batch is too big for the server's front proxy (over ~100MB). Compress "
+          + "or split the large file, then upload again. Saved so far: " + saved.length + ".";
+      else if (e && e.name === "TimeoutError")
+        m = "⚠️ the upload timed out while " + (lastPhase === "server"
+          ? "the server was saving it"
+          : ("sending (" + lastMB + "/" + mb + "MB got through)"))
+          + " — likely a very large file on a slow connection. Try compressing it or uploading "
+          + "it on its own. Saved so far: " + saved.length + ".";
+      else
+        m = "⚠️ upload interrupted after " + saved.length
+          + " file(s) — the rest didn't send. Click Upload again to add the remaining files.";
+      $("#status").textContent = m; busyStop(m, {warn:true, autohide:16000});
       setTimeout(() => { _statusHold = false; }, 8000); return;
     }
   }
