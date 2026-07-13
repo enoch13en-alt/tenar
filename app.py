@@ -3838,8 +3838,10 @@ def api_ask():
     # pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
         # rule extraction runs Fable at MAX effort — thinking tokens count toward the
-        # budget, so give it generous room or the Rule gets truncated mid-provision
-        max_out = 16000
+        # budget AND can run to ~15k+ on their own, so the visible IRAC needs a large
+        # ceiling on top or the answer truncates before the Conclusion. 32k leaves room
+        # for deep thinking + a full Rule/Application/Conclusion.
+        max_out = 32000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
