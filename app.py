@@ -6058,9 +6058,14 @@ def api_doc_delete():
     DOCTYPES.pop(fn, None)
     save_sources()
     save_doctypes()
-    if not bool(body.get("no_reindex")):
-        threading.Thread(target=reindex, args=(course,), daemon=True).start()
-    return jsonify({"ok": True, "deleted": fn, "reindexing": not bool(body.get("no_reindex"))})
+    # Drop just this doc's chunks incrementally. A full reindex re-embeds the ENTIRE course
+    # (CPU-bound, starves the single worker) merely to remove one file — and on a raw thread
+    # it's exactly the GIL-hog that made uploads hang. Incremental drop is instant.
+    try:
+        drop_doc_from_index(course, fn)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "deleted": fn, "dropped": True})
 
 
 @app.route("/api/ocr", methods=["POST"])
