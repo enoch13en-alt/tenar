@@ -3337,20 +3337,27 @@ def api_upload():
         return jsonify({"error": "Only the owner can add to a shared course. You can "
                         "upload to your own matters."}), 403
     pdf_dir, _ = course_paths(course)
-    saved, skipped, added = [], [], {}
+    saved, skipped = [], []
     for f in request.files.getlist("files"):
         if f.filename.lower().endswith(ALLOWED_EXT):
             name = os.path.basename(f.filename)
             f.save(os.path.join(pdf_dir, name))
             saved.append(name)
-            # index THIS file incrementally rather than a full rebuild — a full reindex
-            # re-embeds every doc and can get the worker health-check-killed before it
-            # persists (see index_one_doc). A Word/text upload then lands in ~1s.
+        elif f.filename:
+            skipped.append(f.filename)
+    # Index the newly-saved files in the BACKGROUND. Embedding is CPU-bound; done INLINE it
+    # blocks the single worker long enough that a large or multi-file upload exceeds the
+    # request timeout and 'cuts short'. Saving the bytes is fast — return at once and index
+    # off-request (incrementally, one file at a time, so it can't drop existing chunks).
+    def _index_saved():
+        for n in list(saved):
             try:
-                added[name] = index_one_doc(course, name)
-            except Exception as e:
-                added[name] = f"error: {str(e)[:80]}"
-    return jsonify({"saved": saved, "skipped": skipped, "indexed": added})
+                index_one_doc(course, n)
+            except Exception:
+                pass
+    if saved:
+        threading.Thread(target=_index_saved, daemon=True).start()
+    return jsonify({"saved": saved, "skipped": skipped, "indexing": bool(saved)})
 
 
 @app.route("/api/paste", methods=["POST"])

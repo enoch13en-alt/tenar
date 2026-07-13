@@ -936,17 +936,16 @@ drop.addEventListener("drop", e => upload(e.dataTransfer.files));
 async function upload(files) {
   const fd = new FormData(); fd.append("course", COURSE);
   for (const f of files) fd.append("files", f);
-  $("#status").textContent = "uploading & indexing…";
+  $("#status").textContent = "uploading… (large files transfer slowly)";
   try {
     const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
     if (r.error) { $("#status").textContent = "⚠️ " + r.error; return; }
-    const n = Object.values(r.indexed || {}).reduce((a, v) => a + (typeof v === "number" ? v : 0), 0);
-    const bad = Object.entries(r.indexed || {}).filter(([k, v]) => typeof v !== "number").map(([k]) => k);
-    $("#status").textContent = "✅ added " + (r.saved || []).length + " file(s), " + n + " chunks — searchable now"
-      + (bad.length ? " (couldn’t index: " + bad.join(", ") + ")" : "")
-      + ((r.skipped || []).length ? " · skipped: " + r.skipped.join(", ") : "");
+    $("#status").textContent = "✅ uploaded " + (r.saved || []).length + " file(s) — indexing in the background"
+      + ((r.skipped || []).length ? " · skipped: " + r.skipped.join(", ") : "")
+      + ". A big doc takes ~1–2 min; click 🩺 to check when it's readable.";
+    refresh();                       // files appear now
+    setTimeout(refresh, 25000);      // chunks land shortly after
   } catch (e) { $("#status").textContent = "Upload error — try again."; }
-  refresh();
 }
 $("#reindex").onclick = async () => {
   await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
@@ -1097,12 +1096,14 @@ if ($("#ctxFile")) $("#ctxFile").onchange = async () => {
   const files = $("#ctxFile").files; if (!files.length) return;
   const fd = new FormData(); fd.append("course", ctxCourse());
   for (const f of files) fd.append("files", f);
-  $("#ctxStatus").textContent = "uploading & indexing to context store…";
+  $("#ctxStatus").textContent = "uploading to context store…";
   try {
     const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
-    $("#ctxStatus").textContent = r.error ? ("⚠️ " + r.error) : ("✅ added " + (r.saved || []).length + " to context");
+    $("#ctxStatus").textContent = r.error ? ("⚠️ " + r.error)
+      : ("✅ uploaded " + (r.saved || []).length + " to context — indexing in the background (~1–2 min for a big file)");
   } catch (e) { $("#ctxStatus").textContent = "upload error"; }
   ctxRefreshDocs();
+  setTimeout(ctxRefreshDocs, 25000);
 };
 if ($("#ctxFind")) $("#ctxFind").onclick = async () => {
   const btn = $("#ctxFind"), q = $("#ctxQuery").value.trim();
