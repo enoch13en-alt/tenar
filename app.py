@@ -6630,6 +6630,7 @@ def api_exam_breakdown():
     course = safe_course(body.get("course", ""))
     q = (body.get("question") or "").strip()
     focus = [f.strip() for f in (body.get("focus") or []) if f and f.strip()]
+    want_assumptions = bool(body.get("assumptions"))     # off by default (clean IRAC)
     if not q:
         return jsonify({"error": "empty question"}), 400
     if not _may_read_course(course):
@@ -6727,6 +6728,9 @@ def api_exam_breakdown():
             "issue (create it if the question does not already surface it), and "
             "tie its 'why' to the scenario's facts:\n- "
             + "\n- ".join(focus) + "\n") if focus else "")
+        + ("" if want_assumptions else
+           "OVERRIDE — the student does NOT want an assumptions / additional-facts section: "
+           "return an EMPTY \"assumptions\" array regardless of the instruction above.\n")
         + "JSON only.")
     # Stream (the breakdown can take 30-60s and the enlarged prompt produces a
     # lot of JSON) with a generous cap so the issue list is never truncated —
@@ -6745,6 +6749,8 @@ def api_exam_breakdown():
         return jsonify({"error": "Couldn't read the breakdown this time — please "
                         "click 'Break it down' again."})
     data["cost"] = cost
+    if not want_assumptions and isinstance(data, dict):
+        data["assumptions"] = []                 # hard-guarantee no assumptions section
     return jsonify(data)
 
 
@@ -6867,6 +6873,7 @@ def api_exam_assemble():
     focus = [f.strip() for f in (body.get("focus") or []) if f and f.strip()]
     course = safe_course(body.get("course", ""))         # for the optional context store
     use_context = bool(body.get("use_context"))
+    want_assumptions = bool(body.get("assumptions"))     # off by default → no assumptions section
     max_quality = bool(body.get("max_quality", False))   # use Fable 5 for compile
     compile_model = FABLE_MODEL if max_quality else ANSWER_MODEL
     c = _client()
@@ -7042,6 +7049,12 @@ def api_exam_assemble():
     # cleaned document at the end — still through the same streamed response.
     DELIM = "\x1e\x1eMETA\x1e\x1e"
     PING = "\x1e\x1ePING\x1e\x1e"                # heartbeat; frontend strips it
+    if not want_assumptions:
+        system = system + ("\n\nASSUMPTIONS OFF — the student has turned the additional-facts "
+                           "section OFF. Do NOT include any 'Additional Facts Material to the "
+                           "Advice', 'Assumptions', 'Facts requiring verification' or similar "
+                           "section; end each issue and the document with the firm legal "
+                           "conclusion on the stated facts, nothing appended.")
     messages = [{"role": "user", "content": user}]
 
     cached_sys = cached_system(system)          # prompt-cache the big system block

@@ -250,21 +250,6 @@
   <div id="healthOut" style="margin:8px 0"></div>
   <div id="docs">none yet</div>
 
-  <details id="ctxWrap" style="margin-top:10px;border:1px solid #2a3344;border-radius:8px;padding:8px">
-    <summary style="cursor:pointer;font-size:13px;color:#c9a86a;font-weight:600">🗂 Context &amp; background sources</summary>
-    <p style="font-size:11.5px;color:#8b93a7;margin:6px 0">Official reports, government statements, institutional responses, academic/policy pieces — <b>stored separately</b> from your course materials (law stays law; this is background). Find them online or upload your own.</p>
-    <div class="rowbtn">
-      <input id="ctxQuery" placeholder="What context? e.g. June 2026 Volta flood — govt statements & VBA response" style="flex:1;min-width:180px">
-      <button class="btn gold mini" id="ctxFind" style="width:auto">🌐 Find online</button>
-      <button class="btn alt mini" id="ctxUpload" style="width:auto">📎 Upload</button>
-      <input type="file" id="ctxFile" accept=".pdf,.docx,.txt,.md" multiple class="hidden">
-    </div>
-    <div id="ctxStatus" style="font-size:11px;color:#8b93a7;margin-top:4px"></div>
-    <div id="ctxFound" style="margin-top:6px"></div>
-    <div style="font-size:11px;color:#aab4c6;margin-top:8px">In the context store:</div>
-    <div id="ctxDocs" style="font-size:12px;color:#8b93a7">—</div>
-  </details>
-
   <h2>Study tools</h2>
   <button class="btn gold" id="openExam">📝 Exam Coach</button>
   <button class="btn gold" id="openWeekly">📅 Weekly Update</button>
@@ -434,10 +419,27 @@
       <label style="color:#aab4c6;font-size:12px" title="Draw on the course's separate Context store (official reports, government statements, institutional responses) as clearly-attributed BACKGROUND — never as law or as the problem's facts.">
         <input type="checkbox" id="examUseContext"> 🗂 Use context (background)
       </label>
+      <label style="color:#aab4c6;font-size:12px" title="Turn ON only when the question expressly asks you to identify additional facts / assumptions. OFF (default) = pure IRAC with firm conclusions and NO assumptions/additional-facts section. When ON, a single disciplined 'Additional Facts Material to the Advice' section is produced (genuine, outcome-changing omissions only).">
+        <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
+      </label>
       <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline in one go: break down → gather every issue → AUDIT & fix each issue's authorities against the corpus → (optionally verify cases) → compile → Deepen to top-band standard.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
+    <details id="ctxWrap" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:8px">
+      <summary style="cursor:pointer;font-size:13px;color:#c9a86a;font-weight:600">🗂 Context &amp; background sources <span style="font-weight:400;color:#8b93a7">— tick “Use context” above to draw on these</span></summary>
+      <p style="font-size:11.5px;color:#8b93a7;margin:6px 0">Official reports, government statements, institutional responses, academic/policy pieces — <b>stored separately</b> from your course materials (law stays law; this is background). Find them online or upload your own. Kept per course.</p>
+      <div class="rowbtn">
+        <input id="ctxQuery" placeholder="What context? e.g. June 2026 Volta flood — govt statements & VBA response" style="flex:1;min-width:200px">
+        <button class="btn gold mini" id="ctxFind" style="width:auto">🌐 Find online</button>
+        <button class="btn alt mini" id="ctxUpload" style="width:auto">📎 Upload</button>
+        <input type="file" id="ctxFile" accept=".pdf,.docx,.txt,.md" multiple class="hidden">
+      </div>
+      <div id="ctxStatus" style="font-size:11px;color:#8b93a7;margin-top:4px"></div>
+      <div id="ctxFound" style="margin-top:6px"></div>
+      <div style="font-size:11px;color:#aab4c6;margin-top:8px">In the context store:</div>
+      <div id="ctxDocs" style="font-size:12px;color:#8b93a7">—</div>
+    </details>
     <div id="examStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="examOut"></div>
   </div>
@@ -1309,7 +1311,8 @@ async function runBreakdown() {
   try {
     const r = await (await fetch("/api/exam/breakdown", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: q, focus})})).json();
+      body: JSON.stringify({course: COURSE, question: q, focus,
+        assumptions: !!($("#examAssume") && $("#examAssume").checked)})})).json();
     if (r.error) { $("#examStatus").textContent = r.error; return false; }
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
             issues: (r.issues||[]).map(i => ({...i, answer:null, sources:[], done:false})),
@@ -2040,6 +2043,7 @@ async function compileExam() {
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
         web: usingWeb, focus: EXAM.focus || [], course: COURSE,
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
+        assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         answers: done.map(it => ({
           issue: it.issue,
