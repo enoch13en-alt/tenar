@@ -2846,14 +2846,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
     multi = len(courses) > 1
-    # Concentrate reasoning where the law is decided. The per-issue GATHER is the RULE-
-    # EXTRACTION phase — getting the governing provision right is the hard part — so it
-    # ALWAYS uses the highest-reasoning model (Fable 5). Writing an essay/answer once the
-    # good law is in hand is easier, so 'answer' mode stays on Opus unless Max quality is on.
-    if mode == "gather":
-        primary_model = FABLE_MODEL          # rule extraction: highest reasoning, always
-    else:
-        primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
+    # TWO-PHASE gather: Phase 1 (below) extracts the RULE on Fable 5 at deep effort — all its
+    # reasoning goes into getting the law right, with nothing competing for the token budget.
+    # The WRITER here (Phase 2) then applies that locked-in law, so it's the cheaper Opus by
+    # default (Max quality upgrades the writer to Fable too). For a plain essay/answer, same rule.
+    primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -2992,14 +2989,48 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
     # full essays/reports finish without truncation while staying predictable
     # (~$0.20 worst case, no thinking spikes).
+    # ---- PHASE 1: RULE EXTRACTION (gather only) ----------------------------------------
+    # Fable 5 reads the passages and outputs ONLY the reproduced Rule — the governing
+    # provisions in their operative words, all limbs, grounded, no application. Because the
+    # output is just the rule, deep reasoning goes entirely into getting the law right, and
+    # the extracted rule is then handed to the writer (Phase 2) as the settled law to apply.
+    pre_cost = 0.0
+    if mode == "gather":
+        rule_sys = cached_system(
+            CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n"
+            + DOCTRINAL_PRECISION + "\n\n" + PRIMARY_FIRST + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
+            "RULE-EXTRACTION STAGE — output ONLY the RULE for the stated issue, nothing else. "
+            "From the passages provided, set out the governing provisions in their OPERATIVE "
+            "WORDS (short verbatim quotations grounded in the passages), every pinpoint carrying "
+            "its instrument, EVERY limb / route / category / exception the provision contains, the "
+            "default rule then any exception, and any repeal/succession noted. Do NOT write an "
+            "Issue, an Application or a Conclusion, and do NOT apply the law to the facts. If a "
+            "governing provision's text is not in the passages, say 'not in the materials — "
+            "provision it' for that point (never reproduce it from memory). Output tight markdown "
+            "bullets — this is the Rule the writer will apply.")
+        rule_msg = list(content) + [{"type": "text",
+                    "text": "Extract ONLY the Rule for this issue: " + question}]
+        try:
+            r1, m1 = _create_final(client, model=FABLE_MODEL, max_tokens=max_out,
+                                   output_config={"effort": "high"},
+                                   system=rule_sys,
+                                   messages=[{"role": "user", "content": rule_msg}])
+            rule_text = (_text_of(r1) or "").strip()
+            c1, i1, o1 = _usage_cost(r1.usage, m1 or FABLE_MODEL)
+            pre_cost += c1
+            CONFIG["total_input_tokens"] += i1
+            CONFIG["total_output_tokens"] += o1
+            if rule_text:
+                content = list(content) + [{"type": "text", "text":
+                    "GOVERNING LAW ALREADY EXTRACTED FROM THE MATERIALS ABOVE (treat this as the "
+                    "settled Rule — reproduce it VERBATIM in your Rule section; do NOT add, remove "
+                    "or alter any law; your job is to APPLY this to the facts):\n\n" + rule_text}]
+        except Exception:
+            pass          # extraction failed → writer still works from the passages directly
+    # ---- PHASE 2: WRITE THE ANSWER -----------------------------------------------------
     kwargs = dict(model=primary_model,
                   max_tokens=max_out,
                   messages=[{"role": "user", "content": content}])
-    if mode == "gather":
-        # RULE EXTRACTION AT FULL STRENGTH — deep reasoning on Fable 5. 'max' effort ran ~15k
-        # of thinking that starved the answer (truncated before the Conclusion) and tripped a
-        # token ceiling; 'high' gives deep reasoning while leaving room for a complete IRAC.
-        kwargs["output_config"] = {"effort": "high"}
     if include_web:
         if mode != "cases":                # case-finder has its own web rules
             system = system + "\n\n" + COMPARATIVE_SUFFIX
@@ -3073,6 +3104,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # price at the model ACTUALLY used (Fable for rule-gathering costs ~2x Opus) so the
     # running total reflects true spend, not a flat Opus estimate
     cost, in_tok, out_tok = _usage_cost(resp.usage, _model_used or primary_model)
+    cost += pre_cost                 # add the Phase-1 rule-extraction cost (gather only)
     CONFIG["total_input_tokens"] += in_tok
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
