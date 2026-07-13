@@ -2801,18 +2801,22 @@ $("#outlineScan").onclick = async () => {
     else {
       const present = r.present || [];
       GAPS = r.missing || [];
-      st.textContent = "Outline: " + (r.outline || "—") + " — the outline calls for "
-        + (present.length + GAPS.length) + " instrument(s): ✅ " + present.length
-        + " already held · ⚠️ " + GAPS.length + " missing.";
+      const isSupp = x => x.basis === "inferred";       // inferred = NOT named on the outline
+      const namedCount = present.filter(x=>!isSupp(x)).length + GAPS.filter(x=>!isSupp(x)).length;
+      const suppCount  = present.filter(isSupp).length + GAPS.filter(isSupp).length;
+      st.innerHTML = "Outline: " + esc(r.outline || "—")
+        + "<br><b>On the outline</b> — " + namedCount + " instrument(s) the syllabus actually names."
+        + (suppCount ? "  <b>Not on the outline</b> — " + suppCount + " related instrument(s) that will help your studies (the scan inferred these from topics; they are NOT required by the syllabus)." : "");
       if (present.length) {
-        const tag = p => (p.basis === "inferred"
-          ? ' <span style="color:#7a8296">· inferred from “' + esc(p.topic||"") + '”</span>'
-          : (p.topic ? ' <span style="color:#7a8296">· ' + esc(p.topic) + '</span>' : ''));
-        $("#coverageHave").innerHTML =
-          '<div style="font-size:12px;color:#6fcf97;margin:4px 0 2px">✅ Held (required by the outline & present) — ' + present.length + ':</div>'
-          + '<div style="font-size:12px;color:#aab4c6;line-height:1.7">'
-          + present.map(p => '• ' + esc(p.name || p) + tag(p)).join("<br>") + '</div>'
-          + (GAPS.length ? '<div style="font-size:12px;color:#e0b050;margin:8px 0 2px">⚠️ Missing (required but not held as text) — ' + GAPS.length + ':</div>' : "");
+        const line = p => '• ' + esc(p.name || p)
+          + (p.topic ? ' <span style="color:#7a8296">· ' + esc(p.topic) + '</span>' : '');
+        const onOut = present.filter(p=>!isSupp(p)), supp = present.filter(isSupp);
+        let hv = "";
+        if (onOut.length) hv += '<div style="font-size:12px;color:#6fcf97;margin:4px 0 2px">✅ On the outline &amp; held — ' + onOut.length + ':</div>'
+          + '<div style="font-size:12px;color:#aab4c6;line-height:1.7">' + onOut.map(line).join("<br>") + '</div>';
+        if (supp.length) hv += '<div style="font-size:12px;color:#8fb0e0;margin:8px 0 2px">📎 Not on the outline — supplementary (held, will help your studies) — ' + supp.length + ':</div>'
+          + '<div style="font-size:12px;color:#8f9bb0;line-height:1.7">' + supp.map(line).join("<br>") + '</div>';
+        $("#coverageHave").innerHTML = hv;
       }
       const allowed = PLAN && (PLAN.is_admin || (COURSE||"").startsWith("mtr-"));
       renderGaps(GAPS, allowed);
@@ -2828,19 +2832,32 @@ function renderGaps(missing, allowed) {
     return;
   }
   const col = {high:"#e06f6f", medium:"#e0c56f", low:"#8b93a7"};
-  host.innerHTML = missing.map((m, i) => {
+  const rowHtml = (m, i, supp) => {
     const lb = (m.load_bearing || "").toLowerCase();
+    const badge = supp
+      ? '<span style="background:#26324a;color:#9db8e6;border-radius:8px;padding:0 6px;font-size:10px;margin-right:5px">not on outline · study aid</span>'
+      : '<span style="background:#4a2626;color:#f0b9b9;border-radius:8px;padding:0 6px;font-size:10px;margin-right:5px">ON OUTLINE · required</span>';
     return '<div class="gapRow" data-i="' + i + '" style="margin:8px 0;padding:8px;border:1px solid #2a3344;border-radius:6px">'
-      + '<div style="font-size:13px"><span style="color:' + (col[lb]||"#8b93a7") + ';font-weight:600">[' + esc(lb||"?") + ']</span> ' + esc(m.name||"")
+      + '<div style="font-size:13px">' + badge
+      + (supp ? "" : '<span style="color:' + (col[lb]||"#8b93a7") + ';font-weight:600">[' + esc(lb||"?") + '] </span>')
+      + esc(m.name||"")
       + (m.topic ? ' <span style="color:#7a8296;font-size:11px">· ' + (m.basis==="inferred"?"inferred from ":"") + '“' + esc(m.topic) + '”</span>' : "") + '</div>'
       + (m.provisions ? '<div style="font-size:12px;color:#8b93a7">leans on: ' + esc(m.provisions) + '</div>' : "")
       + (m.why_absent ? '<div style="font-size:12px;color:#8b93a7">' + esc(m.why_absent) + '</div>' : "")
-      + ((m.held_in && m.held_in.length) ? '<div style="font-size:11px;color:#6fcf97;margin-top:2px">📁 already held in ' + esc(m.held_in[0].course) + ' — copy it in, no web fetch needed</div>' : "")
+      + ((m.held_in && m.held_in.length) ? '<div style="font-size:11px;color:#6fcf97;margin-top:2px">📁 possibly already held in ' + esc(m.held_in[0].course) + ' — verify it is the actual instrument before copying</div>' : "")
       + (allowed ? '<div class="gapAct" style="margin-top:6px">'
           + ((m.held_in && m.held_in.length) ? '<button class="btn mini gapCopy" data-i="' + i + '" style="width:auto;margin-right:6px">📁 Copy from ' + esc(m.held_in[0].course) + '</button>' : "")
           + '<button class="btn mini gapFind" data-i="' + i + '" style="width:auto">🔎 Find official text</button></div>' : "")
       + '</div>';
-  }).join("");
+  };
+  const named = [], supp = [];
+  missing.forEach((m, i) => (m.basis === "inferred" ? supp : named).push([m, i]));
+  let html = "";
+  if (named.length) html += '<div style="font-size:12px;color:#e06f6f;margin:8px 0 2px">⚠️ On the outline — required but NOT held (' + named.length + '):</div>'
+    + named.map(([m, i]) => rowHtml(m, i, false)).join("");
+  if (supp.length) html += '<div style="font-size:12px;color:#8fb0e0;margin:12px 0 2px">📎 Not on the outline — supplementary (will help your studies; optional to add) — ' + supp.length + ':</div>'
+    + supp.map(([m, i]) => rowHtml(m, i, true)).join("");
+  host.innerHTML = html;
   host.querySelectorAll(".gapFind").forEach(b => b.onclick = () => findPrimary(+b.dataset.i));
   host.querySelectorAll(".gapCopy").forEach(b => b.onclick = () => copyFromCourse(+b.dataset.i, b));
 }
