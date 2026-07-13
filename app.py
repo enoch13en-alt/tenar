@@ -636,7 +636,12 @@ CASE_APPLICATION = (
     "- NEVER invent, rename or mis-state a case, its facts, its holding or its "
     "citation; a fabricated or overstated authority is worse than a candid gap. Use "
     "only cases genuinely in the materials or that you are certain of, and where a "
-    "point needs case support you don't have, say so plainly.")
+    "point needs case support you don't have, say so plainly.\n"
+    "- KEEP EACH CASE SHORT AND STATE ITS HOLDING NO WIDER THAN IT IS. Confine a case to "
+    "the narrow point it actually supports and apply it directly to the scenario — usually "
+    "a sentence or two. OVER-SAYING a case (padding its facts, generalising its ratio, "
+    "claiming it decides more than it did) produces statements that are only PARTLY true and "
+    "loses marks; if a case supports the point only partly, say exactly that far and stop.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
@@ -5437,11 +5442,12 @@ def api_issue_cases():
         "where it is genuinely the locus classicus for the point. Include a case ONLY if you "
         "actually located it in the search results with a real source URL, and its holding truly "
         "supports the point (do not stretch it). Return STRICT JSON {\"cases\":[{\"name\":..., "
-        "\"citation\":..., \"court\":..., \"year\":..., \"principle\":<the ratio/principle in one "
-        "sentence>, \"strengthens\":<which specific point in this analysis it reinforces>, "
-        "\"url\":<a source URL you actually saw in results>, \"source\":<short source name>}]}. "
-        "Return at most 4, most authoritative first; return an EMPTY list rather than any doubtful "
-        "or unverifiable case. No prose, no fences.")
+        "\"citation\":..., \"court\":..., \"year\":..., \"principle\":<the NARROW ratio the case "
+        "actually decides, in one sentence — the real holding, not an overstated or generalised "
+        "version>, \"strengthens\":<the specific point in this analysis it reinforces, and if it "
+        "supports it only partly, say so>, \"url\":<a source URL you actually saw in results>, "
+        "\"source\":<short source name>}]}. Return at most 4, most authoritative first; return an "
+        "EMPTY list rather than any doubtful, over-stretched or unverifiable case. No prose, no fences.")
 
     def _run():
         resp, _ = _create_final(
@@ -5484,14 +5490,19 @@ def api_issue_cases_add():
     sys = (
         "You STRENGTHEN a legal issue analysis by weaving in cases the student has already "
         "VERIFIED — and nothing else. For each case you get its name, citation, principle and the "
-        "point it strengthens. Integrate it at the logically correct place IN THE ANALYSIS: state "
-        "the case and its principle, then APPLY it to the scenario's facts to reinforce the "
-        "existing argument — never a bare drop-in, a 'see also' list, or a heading of its own. Use "
-        "each case ONLY for the point it supports and do not overstate its holding. Cite in OSCOLA "
-        "(case name and citation). PRESERVE the existing analysis, authorities, structure and "
-        "CONCLUSION verbatim except for the woven-in sentences; do NOT re-argue, do NOT change any "
-        "conclusion, and do NOT add any case that is not in the list. Return ONLY the updated "
-        "answer text — no preamble, no notes.")
+        "point it strengthens. Integrate it at the logically correct place IN THE ANALYSIS. "
+        "KEEP IT SHORT AND TIED TO THE FACTS — usually ONE sentence: state the narrow proposition "
+        "the case ACTUALLY decides and apply it directly to THIS scenario's facts ('as in "
+        "[case], where …, so here …'). DO NOT OVER-SAY: over-elaborating a case is how you end up "
+        "stating a holding that is only PARTLY true — never stretch, generalise or overstate what "
+        "the case held, never recite its full facts or procedural history, and never add "
+        "background the point does not need. Confine each case to the single point it supports; if "
+        "it only partly supports the point, say exactly that far and no further. Never a bare "
+        "drop-in, a 'see also' list, or a heading of its own. Cite in OSCOLA (case name and "
+        "citation). PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim "
+        "except for the short woven-in sentence(s); do NOT re-argue, do NOT change any conclusion, "
+        "and do NOT add any case that is not in the list. Return ONLY the updated answer text — no "
+        "preamble, no notes.")
     try:
         cor, _ = _create_final(
             c, model=ANSWER_MODEL, max_tokens=8000, system=sys,
