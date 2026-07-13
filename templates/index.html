@@ -132,6 +132,12 @@
               border-top: 1px solid #e3e6ec; }
   #q { flex: 1; padding: 13px; border: 1px solid #cfd5e0; border-radius: 8px; font-size: 15px; }
   .hidden { display: none; }
+  /* Always-visible floating banner for upload/indexing progress — the sidebar #status
+     line slides off-screen in the mobile/narrow drawer, so progress must live here too. */
+  #toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 100; background: #10151f; color: #e6e9ef; border: 1px solid #33507a;
+    border-radius: 8px; padding: 10px 16px; font-size: 13px; max-width: 92vw;
+    text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.45); display: none; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45);
            display: none; align-items: center; justify-content: center; z-index: 5; }
   .modal .card { background: #1c2330; padding: 22px; border-radius: 10px;
@@ -213,6 +219,7 @@
 <body>
 <button id="navToggle" aria-label="Menu">☰</button>
 <div id="navBackdrop"></div>
+<div id="toast"></div>
 <div id="side">
   <h1>⚖️ TENAR</h1>
 
@@ -796,6 +803,18 @@ const TLAB = {constitution:"Const", statute:"Statute", case:"Case", treaty:"Trea
 const tag = t => '<span class="tag ' + (t||'report') + '">' + (TLAB[t]||t||'Report') + '</span>';
 
 let _statusHold = false;    // while true, the 2.5s poller leaves #status alone
+// Prominent floating banner. Mirrors upload/indexing progress to the top of the screen so
+// it's visible even when the sidebar (#status) is scrolled away or off-screen in the drawer.
+let _toastTimer = null;
+function toast(msg, opts) {
+  const el = $("#toast"); if (!el) return;
+  opts = opts || {};
+  if (!msg) { el.style.display = "none"; return; }
+  el.textContent = msg; el.style.display = "block";
+  el.style.borderColor = opts.done ? "#3f7d52" : opts.warn ? "#8a5a2a" : "#33507a";
+  if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+  if (opts.autohide) _toastTimer = setTimeout(() => { el.style.display = "none"; }, opts.autohide);
+}
 async function refresh() {
   const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
@@ -947,24 +966,28 @@ async function upload(files) {
   const B = 4, saved = [], skipped = [];
   for (let i = 0; i < files.length; i += B) {
     const batch = files.slice(i, i + B);
-    $("#status").textContent = "uploading " + Math.min(i + batch.length, files.length)
+    const msg = "uploading " + Math.min(i + batch.length, files.length)
       + "/" + files.length + " file(s)…";
+    $("#status").textContent = msg; toast(msg);
     const fd = new FormData(); fd.append("course", COURSE);
     for (const f of batch) fd.append("files", f);
     try {
       const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
       if (r.error) { $("#status").textContent = "⚠️ " + r.error;
+        toast("⚠️ " + r.error, {warn:true, autohide:9000});
         setTimeout(() => { _statusHold = false; }, 8000); return; }
       (r.saved || []).forEach(x => saved.push(x));
       (r.skipped || []).forEach(x => skipped.push(x));
     } catch (e) {
-      $("#status").textContent = "⚠️ upload interrupted after " + saved.length
+      const m = "⚠️ upload interrupted after " + saved.length
         + " file(s) — the rest didn't send. Click Upload again to add the remaining files.";
+      $("#status").textContent = m; toast(m, {warn:true, autohide:12000});
       setTimeout(() => { _statusHold = false; }, 8000); return;
     }
   }
-  $("#status").textContent = "✅ uploaded " + saved.length + " file(s)"
+  const done = "✅ uploaded " + saved.length + " file(s)"
     + (skipped.length ? " · skipped: " + skipped.join(", ") : "") + " — indexing…";
+  $("#status").textContent = done; toast(done);
   refresh();                       // files appear now
   pollIndexing();                  // live progress until every doc is readable
 }
@@ -978,14 +1001,16 @@ function pollIndexing() {
       const s = await (await fetch("/api/index/status")).json();
       if (s.running || (s.pending || 0) > 0) {
         const chunk = (s.cur_total ? " — chunk " + (s.cur_done || 0) + "/" + s.cur_total : "");
-        $("#status").textContent = "⏳ indexing — " + (s.pending || 0) + " doc(s) to go"
+        const m = "⏳ indexing — " + (s.pending || 0) + " doc(s) to go"
           + (s.current ? " (now: " + esc(s.current) + chunk + ")" : "")
-          + " · this number moves = it's working; click 🩺 anytime.";
+          + " · this number moves = it's working";
+        $("#status").textContent = m + "; click 🩺 anytime."; toast(m);
       } else {
         clearInterval(_idxPoll); _idxPoll = null;
-        $("#status").textContent = "✅ indexing complete — documents are readable now"
+        const m = "✅ indexing complete — documents are readable now"
           + ((s.errors && s.errors.length) ? " · " + s.errors.length
              + " had trouble (click 🩺 to see which)" : "") + ".";
+        $("#status").textContent = m; toast(m, {done:true, autohide:8000});
         setTimeout(() => { _statusHold = false; }, 6000);   // let it linger, then resume
         refresh();
       }
