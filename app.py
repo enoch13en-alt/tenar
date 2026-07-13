@@ -2259,7 +2259,12 @@ _INDEX_WORKER = {"running": False}
 _INDEX_MUTEX = threading.Lock()
 
 
-def _index_worker_loop():
+def _drain_index_queue():
+    # Drain the whole queue, one doc at a time. Runs as a GEVENT GREENLET (not a raw OS
+    # thread): a plain thread doing CPU-bound embedding hogs the GIL and starves the single
+    # gevent web worker, so the NEXT /api/upload can't even be answered (the upload appears
+    # to hang). As a greenlet, index_one_doc's threadpool.apply offload + gevent.sleep(0)
+    # keep the hub responsive between batches — the pattern that already works for pastes.
     while True:
         try:
             course, fname = _INDEX_Q.get_nowait()
@@ -2279,21 +2284,28 @@ def _index_worker_loop():
                 _INDEX_STATE["pending"] = max(0, _INDEX_STATE["pending"] - 1)
             try:
                 import gevent
-                gevent.sleep(0)
+                gevent.sleep(0)         # yield to the hub between docs
             except Exception:
                 pass
 
 
 def enqueue_index(course, fname):
-    """Queue one doc for background indexing; start the single worker if it's idle."""
+    """Queue one doc for background indexing; start the single greenlet worker if idle."""
     _INDEX_Q.put((course, fname))
     with _INDEX_MUTEX:
         _INDEX_STATE["pending"] += 1
-        if not _INDEX_WORKER["running"]:
-            _INDEX_WORKER["running"] = True
-            _INDEX_STATE["done"] = 0
-            _INDEX_STATE["errors"] = []
-            threading.Thread(target=_index_worker_loop, daemon=True).start()
+        if _INDEX_WORKER["running"]:
+            return
+        _INDEX_WORKER["running"] = True
+        _INDEX_STATE["done"] = 0
+        _INDEX_STATE["errors"] = []
+    # Prefer a gevent greenlet so embedding can't starve request-handling; fall back to a
+    # daemon thread only if gevent isn't active (e.g. local dev without the gevent worker).
+    try:
+        import gevent
+        gevent.spawn(_drain_index_queue)
+    except Exception:
+        threading.Thread(target=_drain_index_queue, daemon=True).start()
 
 
 # Hybrid retrieval: blend embedding similarity with a lexical keyword-overlap score
