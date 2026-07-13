@@ -2846,10 +2846,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
     multi = len(courses) > 1
-    # The RULE is where marks are won: give the per-issue gather the most capable model
-    # (Fable 5) when the student opts into Max quality, and wider retrieval recall so the
-    # governing provision's actual text is surfaced to be reproduced, not paraphrased.
-    primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
+    # Concentrate reasoning where the law is decided. The per-issue GATHER is the RULE-
+    # EXTRACTION phase — getting the governing provision right is the hard part — so it
+    # ALWAYS uses the highest-reasoning model (Fable 5). Writing an essay/answer once the
+    # good law is in hand is easier, so 'answer' mode stays on Opus unless Max quality is on.
+    if mode == "gather":
+        primary_model = FABLE_MODEL          # rule extraction: highest reasoning, always
+    else:
+        primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -3834,15 +3838,17 @@ def api_ask():
     else:
         max_out = 8000
     mode = "gather" if body.get("brief") else "answer"
-    # Max quality routes the rule-gathering to Fable 5 (the Rule is where marks are won).
-    # Metered against the Fable allowance; if it's used up, downgrade to Opus rather than block.
+    # Rule extraction (the gather) ALWAYS runs on the highest-reasoning model — decided in
+    # answer_question by mode, so it is not gated here (it's core, not an opt-in). Max quality
+    # only affects WRITTEN answers/essays, where it's metered against the Fable allowance with
+    # graceful downgrade so there's no surprise billing.
     max_quality = bool(body.get("max_quality"))
-    if max_quality:
+    if max_quality and mode != "gather":
         okf, _m = can_consume("fable_compiles")
         if okf:
             consume("fable_compiles")
         else:
-            max_quality = False        # graceful downgrade — no surprise billing
+            max_quality = False
     return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
                                    use_context=bool(body.get("use_context")),
                                    max_quality=max_quality))
