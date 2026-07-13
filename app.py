@@ -2995,6 +2995,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     kwargs = dict(model=primary_model,
                   max_tokens=max_out,
                   messages=[{"role": "user", "content": content}])
+    if mode == "gather":
+        # RULE EXTRACTION ON FULL BLAST — deepest reasoning the model offers. On Fable 5,
+        # output_config.effort controls thinking depth (low..max); 'max' is the ceiling.
+        # (Opus 4.7 / Sonnet 4.6 fallbacks also honour output_config.effort.)
+        kwargs["output_config"] = {"effort": "max"}
     if include_web:
         if mode != "cases":                # case-finder has its own web rules
             system = system + "\n\n" + COMPARATIVE_SUFFIX
@@ -3832,7 +3837,9 @@ def api_ask():
     # essay — so it stays short and completes. report needs the most room for a full
     # pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
-        max_out = 4000
+        # rule extraction runs Fable at MAX effort — thinking tokens count toward the
+        # budget, so give it generous room or the Rule gets truncated mid-provision
+        max_out = 16000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
