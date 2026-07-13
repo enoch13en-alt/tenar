@@ -2191,6 +2191,13 @@ def index_one_doc(course, fname):
     embs = []
     for i in range(0, len(dc), 32):
         embs.append(_embed([c["text"] for c in dc[i:i + 32]]))
+        # publish within-document progress so the UI can show a moving chunk counter — the
+        # clearest 'not stuck' signal while one big doc (hundreds of chunks) is embedding.
+        try:
+            _INDEX_STATE["cur_done"] = min(i + 32, len(dc))
+            _INDEX_STATE["cur_total"] = len(dc)
+        except Exception:
+            pass
         try:
             import gevent
             gevent.sleep(0)
@@ -2254,7 +2261,8 @@ def drop_doc_from_index(course, fname):
 # single gevent worker instead of thrashing, survives however many upload batches the
 # client sends, and exposes live progress so a big batch never looks like it stalled.
 _INDEX_Q = queue.Queue()
-_INDEX_STATE = {"pending": 0, "current": "", "done": 0, "errors": []}
+_INDEX_STATE = {"pending": 0, "current": "", "done": 0, "errors": [],
+                "cur_done": 0, "cur_total": 0}
 _INDEX_WORKER = {"running": False}
 _INDEX_MUTEX = threading.Lock()
 
@@ -2274,6 +2282,8 @@ def _drain_index_queue():
                 _INDEX_STATE["current"] = ""
             return
         _INDEX_STATE["current"] = fname
+        _INDEX_STATE["cur_done"] = 0
+        _INDEX_STATE["cur_total"] = 0
         try:
             index_one_doc(course, fname)
             _INDEX_STATE["done"] += 1
@@ -3428,6 +3438,8 @@ def api_index_status():
         "pending": _INDEX_STATE["pending"],
         "current": _INDEX_STATE["current"],
         "done": _INDEX_STATE["done"],
+        "cur_done": _INDEX_STATE["cur_done"],
+        "cur_total": _INDEX_STATE["cur_total"],
         "errors": _INDEX_STATE["errors"][-5:],
     })
 

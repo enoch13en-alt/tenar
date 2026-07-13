@@ -977,9 +977,10 @@ function pollIndexing() {
     try {
       const s = await (await fetch("/api/index/status")).json();
       if (s.running || (s.pending || 0) > 0) {
-        $("#status").textContent = "⏳ indexing in the background — " + (s.pending || 0)
-          + " doc(s) to go" + (s.current ? " (now: " + esc(s.current) + ")" : "")
-          + "… you can keep working; click 🩺 anytime.";
+        const chunk = (s.cur_total ? " — chunk " + (s.cur_done || 0) + "/" + s.cur_total : "");
+        $("#status").textContent = "⏳ indexing — " + (s.pending || 0) + " doc(s) to go"
+          + (s.current ? " (now: " + esc(s.current) + chunk + ")" : "")
+          + " · this number moves = it's working; click 🩺 anytime.";
       } else {
         clearInterval(_idxPoll); _idxPoll = null;
         $("#status").textContent = "✅ indexing complete — documents are readable now"
@@ -991,7 +992,7 @@ function pollIndexing() {
     } catch (e) { /* transient — keep polling */ }
   };
   tick();
-  _idxPoll = setInterval(tick, 4000);
+  _idxPoll = setInterval(tick, 2000);   // 2s so the chunk counter visibly moves
 }
 $("#reindex").onclick = async () => {
   await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
