@@ -259,6 +259,7 @@
 
   <h2>Study tools</h2>
   <button class="btn gold" id="openExam">📝 Exam Coach</button>
+  <button class="btn gold" id="openLawplan">🎯 Provision the law (facts → statutes)</button>
   <button class="btn gold" id="openWeekly">📅 Weekly Update</button>
   <button class="btn gold" id="openUpdates">🔄 Legal updates (web)</button>
   <button class="btn gold" id="openMap">🧭 Decode a question</button>
@@ -371,6 +372,29 @@
     <div class="rowbtn">
       <button class="btn" id="saveNames">Save all</button>
       <button class="btn alt" id="closeNames" style="width:auto">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Provision the law (facts → statutes + links → ingest) -->
+<div class="modal" id="lawplanModal">
+  <div class="card" style="width:760px">
+    <h3>🎯 Provision the law</h3>
+    <p>Paste the problem facts. It works out the precise governing statutes, L.I.s and
+       constitutional provisions the answer needs, finds an authoritative full-text link for
+       each, and lets you fetch, name and index them into this course in one click — so you
+       start Exam Coach with the right law already in the corpus.</p>
+    <div id="lawplanCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:6px"></div>
+    <textarea id="lawplanFacts" style="height:150px;width:100%"
+      placeholder="Paste the exam question / problem facts here…"></textarea>
+    <div class="rowbtn" style="margin-top:8px;gap:8px;align-items:center">
+      <button class="btn gold" id="lawplanFind" style="width:auto">🔎 Find the governing laws</button>
+      <span id="lawplanStatus" style="font-size:12px;color:#aab4c6"></span>
+    </div>
+    <div id="lawplanList" style="margin-top:10px"></div>
+    <div class="rowbtn" style="margin-top:8px;gap:8px">
+      <button class="btn gold" id="lawplanIngest" style="width:auto;display:none">⬇ Fetch &amp; index ticked laws</button>
+      <button class="btn alt" id="lawplanClose" style="width:auto">Close</button>
     </div>
   </div>
 </div>
@@ -3249,6 +3273,88 @@ $("#researchGo").onclick = () => runResearch();
 loadCourses();
 
 // ---- weekly update ----
+// ---- Provision the law (facts → statutes + links → ingest) ----
+$("#openLawplan").onclick = () => {
+  $("#lawplanCourse").textContent = "📚 Provisioning course: " + COURSE;
+  // prefill from the exam question if one's already been pasted there
+  const exq = ($("#examQ") && $("#examQ").value.trim()) || "";
+  if (exq && !$("#lawplanFacts").value.trim()) $("#lawplanFacts").value = exq;
+  $("#lawplanList").innerHTML = ""; $("#lawplanStatus").textContent = "";
+  $("#lawplanIngest").style.display = "none";
+  $("#lawplanModal").style.display = "flex";
+};
+$("#lawplanClose").onclick = () => { $("#lawplanModal").style.display = "none"; };
+window._lawplan = [];
+$("#lawplanFind").onclick = async () => {
+  const facts = $("#lawplanFacts").value.trim();
+  if (facts.length < 40) { $("#lawplanStatus").textContent = "Paste the problem facts first."; return; }
+  const btn = $("#lawplanFind"); btn.disabled = true; btn.textContent = "🔎 Researching…";
+  $("#lawplanStatus").textContent = "Reading the facts and finding the governing laws + links… (20–60s)";
+  $("#lawplanList").innerHTML = ""; $("#lawplanIngest").style.display = "none";
+  try {
+    const r = await (await fetchT("/api/lawplan/find", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, facts})}, 150000)).json();
+    if (r.error) { $("#lawplanStatus").textContent = "⚠️ " + r.error; return; }
+    window._lawplan = r.instruments || [];
+    renderLawplan();
+    $("#lawplanStatus").textContent = window._lawplan.length
+      ? ("Found " + window._lawplan.length + " instrument(s). Tick the ones to add, then Fetch & index."
+         + (r.cost ? "  ·  $" + r.cost.this_query_usd : ""))
+      : "No governing instruments identified — try adding more of the facts.";
+  } catch (e) {
+    $("#lawplanStatus").textContent = "Couldn't research that (server busy) — try again in a moment.";
+  } finally { btn.disabled = false; btn.textContent = "🔎 Find the governing laws"; }
+};
+function renderLawplan() {
+  const box = $("#lawplanList");
+  if (!window._lawplan.length) { box.innerHTML = ""; return; }
+  box.innerHTML = window._lawplan.map((it, i) => {
+    const have = it.in_corpus;
+    const canAdd = it.url && !have;
+    const badge = have
+      ? '<span style="color:#7fd18b;font-size:11px">✓ already in your corpus (' + esc(have) + ')</span>'
+      : (it.url
+          ? '<label style="font-size:11px;color:#8fb4ff;cursor:pointer"><input type="checkbox" class="lawplanCb" data-i="'
+            + i + '" checked> add to corpus</label>'
+          : '<span style="color:#e6c565;font-size:11px">no authoritative link found — add manually</span>');
+    const link = it.url ? ' · <a href="' + esc(it.url) + '" target="_blank" rel="noopener" style="color:#8fb4ff">🔗 view text</a>' : '';
+    return '<div style="border:1px solid #2a3344;border-radius:6px;padding:8px 10px;margin:6px 0;background:#0d1017">'
+      + '<div style="font-weight:600;color:#cdd5e6">' + esc(it.name || "?") + '</div>'
+      + (it.provisions ? '<div style="font-size:12px;color:#aab4c6">Provisions: ' + esc(it.provisions) + '</div>' : '')
+      + (it.why ? '<div style="font-size:12px;color:#8b93a7">' + esc(it.why) + '</div>' : '')
+      + '<div style="margin-top:4px">' + badge + link + '</div></div>';
+  }).join("");
+  const anyAddable = window._lawplan.some(it => it.url && !it.in_corpus);
+  $("#lawplanIngest").style.display = anyAddable ? "inline-block" : "none";
+}
+$("#lawplanIngest").onclick = async () => {
+  const picks = Array.from(document.querySelectorAll(".lawplanCb"))
+    .filter(cb => cb.checked)
+    .map(cb => window._lawplan[+cb.dataset.i])
+    .filter(it => it && it.url)
+    .map(it => ({title: it.name, url: it.url}));
+  if (!picks.length) { $("#lawplanStatus").textContent = "Tick at least one law with a link."; return; }
+  const btn = $("#lawplanIngest"); btn.disabled = true; btn.textContent = "⬇ Fetching & indexing…";
+  $("#lawplanStatus").textContent = "Fetching " + picks.length + " instrument(s), naming and indexing…";
+  try {
+    const r = await (await fetchT("/api/updates/fetch", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, laws: picks})}, 200000)).json();
+    if (r.error) { $("#lawplanStatus").textContent = "⚠️ " + r.error; return; }
+    const okN = (r.results || []).filter(x => x.ok).length;
+    const fails = (r.results || []).filter(x => !x.ok);
+    $("#lawplanStatus").textContent = "✅ added " + okN + " law(s) — indexing in the background"
+      + (fails.length ? " · couldn't fetch " + fails.length + " (open the 🔗 and use Upload): "
+          + fails.map(f => esc(f.title)).join(", ") : "") + ".";
+    // mark the added ones as in-corpus and re-render; also refresh the sidebar + index poll
+    picks.forEach(p => { const it = window._lawplan.find(x => x.name === p.title); if (it) it.in_corpus = p.title; });
+    renderLawplan(); refresh(); if (typeof pollIndexing === "function") pollIndexing();
+  } catch (e) {
+    $("#lawplanStatus").textContent = "Fetch error — try again, or open the 🔗 links and use Upload.";
+  } finally { btn.disabled = false; btn.textContent = "⬇ Fetch & index ticked laws"; }
+};
+
 $("#openWeekly").onclick = () => {
   $("#weeklyCourse").textContent = "📚 Course: " + COURSE;
   $("#weeklyList").innerHTML = ""; $("#weeklyOut").innerHTML = ""; $("#weeklyStatus").textContent = "";

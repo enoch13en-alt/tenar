@@ -5538,6 +5538,89 @@ def api_primary_find():
     return jsonify({"candidates": cands[:4]})
 
 
+def _instrument_held(name, files):
+    """Is the named instrument already in THIS course? High-precision token match (shared
+    Act/L.I. number, or >=2 distinctive name-words). Returns the held doc's title or None."""
+    want = _instr_tokens(name)
+    want_words = {t for t in want if not t.isdigit()}
+    want_ids = {t for t in want if t.isdigit() and not _yearish(t)}
+    if not want_words and not want_ids:
+        return None
+    for f in files:
+        dt = _instr_tokens(f + " " + display_name(f))
+        if (want_ids & {t for t in dt if t.isdigit() and not _yearish(t)}) or \
+           len(want_words & {t for t in dt if not t.isdigit()}) >= 2:
+            return display_name(f)
+    return None
+
+
+@app.route("/api/lawplan/find", methods=["POST"])
+def api_lawplan_find():
+    """Send the PROBLEM FACTS; get back the precise governing instruments the answer needs —
+    each with the provisions in point, the issue it governs, whether the corpus already holds
+    it, and an AUTHORITATIVE full-text URL to ingest. The 'facts -> the exact laws + links'
+    step, so the corpus can be provisioned with direction before drafting."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    facts = (body.get("facts") or body.get("question") or "").strip()
+    if not ((current_user() or {}).get("is_admin")
+            or (is_matter(course) and owns_matter(current_user(), course))):
+        return jsonify({"error": "Only the owner can provision a course.", "instruments": []}), 403
+    if len(facts) < 40:
+        return jsonify({"error": "Paste the problem facts first (a paragraph or more).",
+                        "instruments": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "instruments": []}), 400
+    ok, msg = can_consume("comparative")     # web research → meter as a comparative pull
+    if not ok:
+        return jsonify({"error": msg, "instruments": [], "limit": True})
+    sys = (
+        "You are a Ghanaian legal research assistant. From the PROBLEM FACTS, identify the "
+        "PRECISE primary legal instruments an answer must apply — the governing statutes, "
+        "constitutional provisions and subsidiary legislation (L.I.s) that actually decide the "
+        "issues the facts raise. Be specific and correct about GHANAIAN law; always prefer the "
+        "CURRENT instrument and flag a repeal/successor where relevant (e.g. Companies Code 1963 "
+        "(Act 179) -> Companies Act 2019 (Act 992)). Do NOT pad the list with tangential Acts; "
+        "include an instrument only if the facts genuinely engage it.\n"
+        "For EACH instrument give: its FULL citation (name); the exact PROVISIONS in point "
+        "(sections/articles); ONE line on which issue in the facts it governs; and — via WEB "
+        "SEARCH — the AUTHORITATIVE full-text URL (official gazette, Parliament, the regulator's "
+        "own site, or a reputable full-text host). Return the instrument's OWN text, not "
+        "commentary/case-summaries. A direct PDF is best; an official full-text HTML page is fine. "
+        "Run SEVERAL searches; never invent a URL you did not see in results (leave url empty if "
+        "you truly cannot find it).\n"
+        "Return STRICT JSON: {\"instruments\":[{\"name\":full citation, \"provisions\":\"s.11, "
+        "s.12\", \"why\":one line, \"url\":authoritative full text or empty string, "
+        "\"kind\":\"statute|constitution|LI|case|other\", \"note\":optional}]} — essential "
+        "instruments only, most central first, up to 10. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=3500,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 12}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       f"PROBLEM FACTS:\n{facts}\n\nIdentify the precise governing instruments "
+                       "and find each one's authoritative full text online."}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp)), resp
+    try:
+        import gevent
+        data, resp = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:160], "instruments": []})
+    consume("comparative")
+    insts = (data.get("instruments") if isinstance(data, dict) else data) or []
+    if not isinstance(insts, list):
+        insts = []
+    have = course_pdfs(course)
+    for it in insts:
+        if isinstance(it, dict) and it.get("name"):
+            it["in_corpus"] = _instrument_held(it["name"], have) or ""
+    return jsonify({"instruments": insts[:10],
+                    "cost": record_cost(resp, ANSWER_MODEL)})
+
+
 @app.route("/api/verify_fact", methods=["POST"])
 def api_verify_fact():
     """Verify ONE real-world '[Verify]' assumption on the web so the student can click to
