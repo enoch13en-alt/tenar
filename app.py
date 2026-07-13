@@ -652,7 +652,16 @@ CASE_APPLICATION = (
     "the narrow point it actually supports and apply it directly to the scenario — usually "
     "a sentence or two. OVER-SAYING a case (padding its facts, generalising its ratio, "
     "claiming it decides more than it did) produces statements that are only PARTLY true and "
-    "loses marks; if a case supports the point only partly, say exactly that far and stop.")
+    "loses marks; if a case supports the point only partly, say exactly that far and stop.\n"
+    "- REAL-WORLD OCCURRENCES / INCIDENTS — SAME DISCIPLINE, AND THEY ARE NOT AUTHORITY. Where a "
+    "notable incident (an explosion, spill, fire, collapse, disaster or regulatory failure) is "
+    "used, treat it exactly as tightly as a case: DIRECT, ONE sentence, tied to THESE facts, and "
+    "stated NO WIDER than what the incident actually shows. An occurrence ILLUSTRATES a risk, the "
+    "rationale for a duty, or the consequence of a breach — it does NOT prove the legal rule, "
+    "decide the point, or supply authority for a proposition of law. Do NOT dramatise it, recite "
+    "its full story, generalise its lesson, or claim it establishes liability; over-saying what an "
+    "incident shows is the same partly-true error as over-saying a case. If it only loosely fits "
+    "the point, leave it out.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
@@ -5887,7 +5896,9 @@ def api_issue_cases():
         "environmental catastrophe or major regulatory failure — that ILLUSTRATES the risk the "
         "rule guards against, the rationale for a duty, or the CONSEQUENCE of a breach. An incident "
         "is a FACTUAL illustration, NOT legal authority: it shows WHY the law matters or what "
-        "non-compliance leads to; it does not decide the point. Prefer incidents in the governing "
+        "non-compliance leads to; it does not decide the point. State what it illustrates DIRECTLY "
+        "and NO WIDER than the incident actually shows — do not dramatise it or claim it proves a "
+        "duty or establishes liability. Prefer incidents in the governing "
         "jurisdiction or ones globally emblematic of the point (e.g. Piper Alpha; Deepwater "
         "Horizon; Bhopal; the 2015 Ghana Atomic Junction / June-3rd fuel explosions; Appiatse).\n"
         "Use WEB SEARCH to ground EVERY item in a REAL, verifiable source — this is critical: "
