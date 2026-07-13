@@ -3095,15 +3095,20 @@ def api_upload():
         return jsonify({"error": "Only the owner can add to a shared course. You can "
                         "upload to your own matters."}), 403
     pdf_dir, _ = course_paths(course)
-    saved, skipped = [], []
+    saved, skipped, added = [], [], {}
     for f in request.files.getlist("files"):
         if f.filename.lower().endswith(ALLOWED_EXT):
             name = os.path.basename(f.filename)
             f.save(os.path.join(pdf_dir, name))
             saved.append(name)
-        elif f.filename:
-            skipped.append(f.filename)
-    return jsonify({"saved": saved, "skipped": skipped})
+            # index THIS file incrementally rather than a full rebuild — a full reindex
+            # re-embeds every doc and can get the worker health-check-killed before it
+            # persists (see index_one_doc). A Word/text upload then lands in ~1s.
+            try:
+                added[name] = index_one_doc(course, name)
+            except Exception as e:
+                added[name] = f"error: {str(e)[:80]}"
+    return jsonify({"saved": saved, "skipped": skipped, "indexed": added})
 
 
 @app.route("/api/paste", methods=["POST"])

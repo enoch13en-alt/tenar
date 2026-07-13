@@ -913,10 +913,16 @@ drop.addEventListener("drop", e => upload(e.dataTransfer.files));
 async function upload(files) {
   const fd = new FormData(); fd.append("course", COURSE);
   for (const f of files) fd.append("files", f);
-  $("#status").textContent = "uploading…";
-  await fetch("/api/upload", {method:"POST", body: fd});
-  await fetch("/api/reindex", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({course: COURSE})});
+  $("#status").textContent = "uploading & indexing…";
+  try {
+    const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
+    if (r.error) { $("#status").textContent = "⚠️ " + r.error; return; }
+    const n = Object.values(r.indexed || {}).reduce((a, v) => a + (typeof v === "number" ? v : 0), 0);
+    const bad = Object.entries(r.indexed || {}).filter(([k, v]) => typeof v !== "number").map(([k]) => k);
+    $("#status").textContent = "✅ added " + (r.saved || []).length + " file(s), " + n + " chunks — searchable now"
+      + (bad.length ? " (couldn’t index: " + bad.join(", ") + ")" : "")
+      + ((r.skipped || []).length ? " · skipped: " + r.skipped.join(", ") : "");
+  } catch (e) { $("#status").textContent = "Upload error — try again."; }
   refresh();
 }
 $("#reindex").onclick = async () => {
