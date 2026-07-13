@@ -3168,6 +3168,39 @@ def course_context(course, query, k=15):
     return "\n\n".join(lines)
 
 
+def _exam_courses(body, course):
+    """The set of courses an exam step should search: the `courses` list from the request
+    (each access-checked, deduped, order-preserved), falling back to the single `course`.
+    Lets Exam Coach scan several courses at once (e.g. a cross-cutting problem that spans
+    Oil & Gas + Tax + Water law)."""
+    raw = body.get("courses") if isinstance(body, dict) else None
+    seen, out = set(), []
+    for c in (raw or []):
+        cc = safe_course(c or "")
+        if cc and cc not in seen and _may_read_course(cc):
+            seen.add(cc)
+            out.append(cc)
+    if not out and course:
+        out = [course]
+    return out
+
+
+def course_context_multi(courses, query, k=15):
+    """Like course_context but across a SELECTED SET of courses, merged by hybrid score.
+    Each passage is tagged with its course so the model sees which domain it came from."""
+    courses = [c for c in (courses or []) if c]
+    if len(courses) <= 1:
+        return course_context(courses[0], query, k) if courses else ""
+    hits = search_multi(courses, query, k)
+    lines = []
+    for h in hits:
+        crs = h.get("_course", courses[0])
+        pdf_dir, _ = course_paths(crs)
+        pg = page_label(os.path.join(pdf_dir, h["doc"]), h["doc"], h["page"])
+        lines.append(f"[{crs}] [{display_name(h['doc'])} — p.{pg}] {h['text']}")
+    return "\n\n".join(lines)
+
+
 # ---------------------------------------------------------------- web app
 app = Flask(__name__)
 
@@ -3691,6 +3724,10 @@ def api_ask():
     course = safe_course(body.get("course", ""))
     if not _may_read_course(course):
         return jsonify({"error": "You don't have access to that course."}), 403
+    # Optional multi-course scan (Exam Coach): search a set of courses and merge. Falls back
+    # to the single course. answer_question already accepts a list and merges by similarity.
+    courses = _exam_courses(body, course)
+    target = courses if len(courses) > 1 else course
     include_web = bool(body.get("web", True))
     fmt = body.get("format", "essay")
     if not q:
@@ -3718,7 +3755,7 @@ def api_ask():
     else:
         max_out = 8000
     mode = "gather" if body.get("brief") else "answer"
-    return jsonify(answer_question(course, q, include_web, fmt, max_out, mode,
+    return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
                                    use_context=bool(body.get("use_context"))))
 
 
@@ -6638,8 +6675,8 @@ def api_exam_voice():
     ok, msg = can_consume("questions")
     if not ok:
         return jsonify({"error": msg, "limit": True})
-    ctx = course_context(course, issue + "\n" + view, 30)  # wider window: a fair
-    # grounding check needs to actually see the authority the view may rest on
+    ctx = course_context_multi(_exam_courses(body, course), issue + "\n" + view, 30)  # wider
+    # window: a fair grounding check needs to actually see the authority the view may rest on
     system = (VOICE_EVAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
               + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
               + "\n\nReturn STRICT JSON only, no prose, no markdown fences.")
@@ -6754,7 +6791,7 @@ def api_exam_cues():
     c = _client()
     if not c:
         return jsonify({"cues": []})
-    ctx = course_context(course, issue + " " + why, 20)
+    ctx = course_context_multi(_exam_courses(body, course), issue + " " + why, 20)
     user = (
         f"RETRIEVED MATERIAL (what the sources actually contain):\n{ctx}\n\n"
         f"ISSUE: {issue}\n" + (f"WHY IT MATTERS: {why}\n" if why else "")
@@ -6797,11 +6834,11 @@ def api_exam_breakdown():
         return jsonify({"error": msg, "limit": True})
     consume("questions")
 
-    ctx = course_context(course, q, 25)
+    courses = _exam_courses(body, course)
+    ctx = course_context_multi(courses, q, 25 if len(courses) <= 1 else 32)
     if not ctx.strip():
-        return jsonify({"error": "The selected course '" + course + "' has no "
-                        "documents. Pick a course with materials in the dropdown "
-                        "(or upload PDFs and Re-index) before using Exam Coach."})
+        return jsonify({"error": "The selected course(s) have no documents. Pick a course "
+                        "with materials (or upload PDFs and Re-index) before using Exam Coach."})
     system = (
         "You are an exam coach for a law student. Two separate sources of truth: "
         "the DISPUTE's facts come only from the scenario (treat them as "

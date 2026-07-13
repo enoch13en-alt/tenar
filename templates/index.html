@@ -383,7 +383,13 @@
        into issues grounded in this course, gathers the law for each, then
        assembles one OSCOLA-referenced answer. Facts come only from your
        question; law only from your course.</p>
-    <div id="examCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <details id="examCoursesWrap" style="margin-bottom:8px">
+      <summary id="examCourse" style="cursor:pointer;font-size:12px;color:#8fb4ff"></summary>
+      <div id="examCoursesList" style="margin:6px 0 2px;padding:6px 8px;background:#0d1017;
+        border:1px solid #2a3344;border-radius:6px;max-height:150px;overflow:auto;
+        font-size:12px;color:#cdd5e6"></div>
+      <div style="font-size:11px;color:#6b7488">Tick every course the answer may draw law from — e.g. a cross-cutting problem spanning several papers.</div>
+    </details>
     <textarea id="examQ" style="height:120px" placeholder="Paste the exam question / case study here — or upload it below…"></textarea>
     <input type="file" id="examFile" accept=".pdf,.docx,.txt,.md" class="hidden">
     <div id="focusBox" style="margin:6px 0 4px">
@@ -776,8 +782,10 @@ function bubble(cls, html) {
   chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d;
 }
 
+let ALL_COURSES = [];
 async function loadCourses() {
   const r = await (await fetch("/api/courses")).json();
+  ALL_COURSES = r.courses || [];
   const sel = $("#course");
   sel.innerHTML = r.courses.map(c => `<option>${esc(c)}</option>`).join("");
   if (!r.courses.includes(COURSE)) COURSE = r.courses[0];
@@ -1426,8 +1434,36 @@ async function oscolaExport(sources) {
 // ---- Exam Coach ----
 let EXAM = {facts:[], assumptions:[], issues:[]};
 let focusUserTouched = false, lastFocusQ = "", focusBusy = false, focusTimer = null;
+// courses Exam Coach will scan — defaults to the current course, user can tick more
+let EXAM_COURSES = null;   // null → not yet initialised (falls back to [COURSE])
+function examCourses() {
+  const picked = (EXAM_COURSES && EXAM_COURSES.length) ? EXAM_COURSES : [COURSE];
+  return picked.filter(c => ALL_COURSES.includes(c));
+}
+function renderExamCourses() {
+  const list = $("#examCoursesList"); if (!list) return;
+  if (!EXAM_COURSES) EXAM_COURSES = [COURSE];
+  list.innerHTML = ALL_COURSES.map(c =>
+    '<label style="display:block;margin:2px 0;cursor:pointer">'
+    + '<input type="checkbox" class="examCourseCb" value="' + esc(c) + '"'
+    + (EXAM_COURSES.includes(c) ? " checked" : "") + '> ' + esc(c) + '</label>').join("");
+  list.querySelectorAll(".examCourseCb").forEach(cb => cb.onchange = () => {
+    EXAM_COURSES = Array.from(list.querySelectorAll(".examCourseCb"))
+      .filter(x => x.checked).map(x => x.value);
+    if (!EXAM_COURSES.length) { EXAM_COURSES = [COURSE]; renderExamCourses(); }
+    updateExamCourseLabel();
+  });
+  updateExamCourseLabel();
+}
+function updateExamCourseLabel() {
+  const n = examCourses().length;
+  $("#examCourse").textContent = n <= 1
+    ? ("📚 Searching course: " + (examCourses()[0] || COURSE) + "  (click to scan more)")
+    : ("📚 Scanning " + n + " courses: " + examCourses().join(", "));
+}
 $("#openExam").onclick = () => {
-  $("#examCourse").textContent = "📚 Searching course: " + COURSE;
+  EXAM_COURSES = [COURSE];              // reset to the current course each open
+  renderExamCourses();
   // fresh focus state every open: clear stale boxes to one empty field and re-arm
   // auto-fill (a leftover box from a prior session used to leave it "touched" and
   // silently block the fill — the "not delivering key focus areas" bug)
@@ -1517,7 +1553,7 @@ async function runBreakdown() {
   try {
     const r = await (await fetch("/api/exam/breakdown", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: q, focus,
+      body: JSON.stringify({course: COURSE, courses: examCourses(), question: q, focus,
         assumptions: !!($("#examAssume") && $("#examAssume").checked)})})).json();
     if (r.error) { $("#examStatus").textContent = r.error; return false; }
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
@@ -1865,7 +1901,7 @@ async function loadCues(i) {
   try {
     const r = await (await fetch("/api/exam/cues", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, issue: it.issue,
+      body: JSON.stringify({course: COURSE, courses: examCourses(), issue: it.issue,
         why: it.why || "", law: it.law || ""})})).json();
     it.cues = r.cues || [];
   } catch (e) { it.cues = []; }
@@ -1906,7 +1942,7 @@ async function addVoice(i) {
   try {
     const r = await (await fetch("/api/exam/voice", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, issue: it.issue, why: it.why || "",
+      body: JSON.stringify({course: COURSE, courses: examCourses(), issue: it.issue, why: it.why || "",
         law: it.law || "", answer: it.answer || "", view})})).json();
     if (r.error) { it.voices.push({view, verdict: "", reason: r.error}); }
     else {
@@ -1935,7 +1971,7 @@ async function askFollowup(i) {
   try {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, web: false,
+      body: JSON.stringify({course: COURSE, courses: examCourses(), web: false,
         question: 'In the context of this issue — "' + it.issue + '" — ' + q})})).json();
     it.followups.push({q, answer: r.answer || r.error || "",
       answer_annotated: r.answer_annotated || "", sources: r.sources || []});
@@ -1989,7 +2025,7 @@ async function gatherIssue(i) {
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: gq, web: false, brief: true,
+      body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         use_context: !!($("#examUseContext") && $("#examUseContext").checked)})})).json();
     it.answer = r.answer || r.error || "";
     it._audited = false;                        // fresh answer — not yet audited
@@ -2247,7 +2283,7 @@ async function compileExam() {
     const resp = await fetch("/api/exam/assemble", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
-        web: usingWeb, focus: EXAM.focus || [], course: COURSE,
+        web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
