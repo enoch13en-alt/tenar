@@ -1854,7 +1854,8 @@ def list_courses(visible_only=False):
     items = sorted(d for d in os.listdir(COURSES_DIR)
                    if os.path.isdir(os.path.join(COURSES_DIR, d)))
     if visible_only:
-        items = [c for c in items if c not in REFERENCE_COURSES]
+        items = [c for c in items if c not in REFERENCE_COURSES
+                 and not c.endswith(CONTEXT_SUFFIX)]      # hide per-course context stores
     return items or ["General"]
 
 
@@ -1867,6 +1868,24 @@ def course_pdfs(course):
             if f.lower().endswith(ALLOWED_EXT)
             and not f.startswith("~$")     # Word lock/temp files
             and not f.startswith(".")}     # hidden/OS files
+
+
+# A per-course CONTEXT store — a separate, hidden course namespace holding background
+# sources (official reports, government statements, institutional responses, academic /
+# policy pieces) kept apart from the authoritative course materials so law stays law and
+# context stays context. It reuses all the normal course machinery (upload, index, fetch,
+# health) but never shows in the course dropdown and is only ever queried as labelled
+# background, not as primary authority.
+CONTEXT_SUFFIX = " — Context"
+
+
+def context_course(course):
+    base = safe_course(course)
+    return base if base.endswith(CONTEXT_SUFFIX) else base + CONTEXT_SUFFIX
+
+
+def is_context_course(cid):
+    return str(cid or "").endswith(CONTEXT_SUFFIX)
 
 # ---------------------------------------------------------------- embeddings
 _embedder = None
@@ -5398,6 +5417,63 @@ def api_issue_cases_add():
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
     return jsonify({"answer": updated or answer, "added": len(cases)})
+
+
+@app.route("/api/context/find", methods=["POST"])
+def api_context_find():
+    """Web-search for CONTEXTUAL / background sources — official reports, government
+    statements, regional institutional responses, credible academic or policy pieces —
+    for a course and an optional query. Returns fetchable candidates to ingest into the
+    course's SEPARATE context store (never the authoritative materials). One question."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    query = (body.get("query") or "").strip()
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can add context to a shared course.", "candidates": []}), 403
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "candidates": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "candidates": []}), 402
+    consume("questions")
+    titles = "; ".join(sorted({display_name(f) for f in course_pdfs(course)})[:40])
+    sys = (
+        "You find CONTEXTUAL / BACKGROUND sources on the web for a law course — NOT statutes or "
+        "cases (those are the course's primary materials), but the real-world context around the "
+        "topic: official REPORTS (government, UN, regional bodies, research institutes), GOVERNMENT "
+        "STATEMENTS / press releases, REGIONAL INSTITUTIONAL RESPONSES (a river-basin authority, "
+        "ECOWAS, an agency, etc.), and credible ACADEMIC or POLICY pieces. Use web search. Return "
+        "ONLY real, fetchable sources you actually saw in results, each with a working URL (a direct "
+        "PDF or an official HTML page carrying the full text is ideal; avoid paywalled academic PDFs "
+        "and thin news-aggregator pages where a primary source exists). Return STRICT JSON "
+        "{\"candidates\":[{\"title\":..., \"url\":..., \"kind\":\"official_report|gov_statement|"
+        "institutional_response|academic|policy\", \"source\":<publisher/body>, \"note\":<one line: "
+        "what it is and why it is useful context>}]}. Up to 8, most authoritative/relevant first. "
+        "Never invent a URL. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2600,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       ("Course: " + course + "\nExisting course materials (for domain only): "
+                        + (titles or "(none)") + "\n\n")
+                       + ("Find background / context sources for: " + query if query else
+                          "Find the key background / context sources (official reports, government "
+                          "statements, institutional responses, academic/policy) for this course's "
+                          "subject area.")}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140], "candidates": []})
+    cands = data.get("candidates") if isinstance(data, dict) else data
+    if not isinstance(cands, list):
+        cands = []
+    return jsonify({"candidates": cands[:8], "context_course": context_course(course)})
 
 
 @app.route("/api/updates", methods=["POST"])
