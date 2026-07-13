@@ -5379,8 +5379,16 @@ def api_verify_fact():
         "treaty/convention is in force and its entry-into-force date, whether a named State has "
         "ratified / is a party or member, or whether a named institution or programme exists and "
         "currently operates. This is a matter of public record, NOT a proposition of legal doctrine. "
-        "Run SEVERAL searches against authoritative sources (the treaty depositary or official body, "
-        "UN / regional-organisation / government sites, reputable institutional reports). "
+        "BE EFFICIENT WITH SEARCHES — you have a limited search budget, so go STRAIGHT to the most "
+        "authoritative home rather than broad queries: the treaty depositary (treaties.un.org, "
+        "FAOLEX faolex.fao.org), the responsible organisation's OWN site (e.g. abv.int for the Volta "
+        "Basin Authority, ecowas.int, the national parliament/gazette), or the official document "
+        "itself. Query with the instrument's exact name + 'entry into force' / 'ratification' / "
+        "'status', and OPEN the most authoritative result to READ it rather than spending the budget "
+        "on further search calls. Do NOT exhaust the budget on general or news queries. If, after "
+        "reaching the authoritative source(s), the status is genuinely not stated, return "
+        "'unconfirmed' with what the record DOES show; report the search budget as the reason ONLY if "
+        "you truly could not reach any authoritative source. "
         "Return STRICT JSON: {\"verdict\":\"verified|unconfirmed|refuted\", \"statement\":\"the fact "
         "stated precisely as it should read in a memo — include dates and named parties\", "
         "\"source\":\"short source name\", \"url\":\"the source URL you actually saw in results\", "
@@ -5391,8 +5399,8 @@ def api_verify_fact():
 
     def _run():
         resp, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=1200,
-            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}],
+            c, model=ANSWER_MODEL, max_tokens=1400,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 12}],
             system=sys,
             messages=[{"role": "user", "content":
                        (("Problem context (for relevance only): " + context[:1200] + "\n\n") if context else "")
