@@ -3074,6 +3074,18 @@ def api_docs_health():
         name = display_name(fn)
         low = (fn + " " + (name or "")).lower()
         is_summary = any(m in low for m in _SUMMARY_MARKERS)
+        try:
+            size_kb = round(os.path.getsize(path) / 1024)
+        except Exception:
+            size_kb = None
+        # for an unindexed text file, count what it WOULD produce — an abnormally huge chunk
+        # count is why a doc stalls indexing (a bloated/corrupt file), which the report should show
+        would_chunks = None
+        if chunks == 0 and ext in ("md", "txt", "docx"):
+            try:
+                would_chunks = len(extract_doc_chunks(path, fn))
+            except Exception:
+                would_chunks = None
         pages = pages_with_text = None
         visibility, reason = ("full" if chunks > 0 else "none"), ""
         if ext == "pdf":
@@ -3107,13 +3119,20 @@ def api_docs_health():
                 visibility = "none" if chunks == 0 else "partial"
         else:
             if chunks == 0:
-                visibility, reason = "none", ("no extractable text, or not indexed — re-index this "
-                                              "course (Word/text files index directly).")
+                if would_chunks == 0:
+                    visibility, reason = "none", "the file has no readable text (empty or malformed)."
+                elif would_chunks and would_chunks > 800:
+                    visibility, reason = "none", (f"abnormally large — would produce ~{would_chunks} "
+                        "chunks; likely a bloated or duplicated file. Replace it with a clean copy.")
+                else:
+                    visibility, reason = "none", ("has text but isn't indexed — click Index it "
+                                                  "(Word/text files index directly).")
         if is_summary:
             note = "appears to be a SUMMARY / abridged / short version, not the full instrument."
             reason = (reason + " " if reason else "") + note
         return {"file": fn, "name": name, "type": display_type(fn), "ext": ext,
                 "chunks": chunks, "pages": pages, "pages_with_text": pages_with_text,
+                "size_kb": size_kb, "would_chunks": would_chunks,
                 "visibility": visibility, "is_summary": is_summary, "reason": reason.strip()}
 
     def _run():
