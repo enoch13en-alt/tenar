@@ -5303,6 +5303,103 @@ def api_verify_fact():
                     "note": data.get("note", "")})
 
 
+@app.route("/api/issue/cases", methods=["POST"])
+def api_issue_cases():
+    """Find the LEADING / LOCUS CLASSICUS decided cases that would STRENGTHEN a gathered-and-
+    audited issue analysis. Web-grounded so the cases are REAL (case-law hallucination is the
+    biggest legal-AI risk); returned as CANDIDATES for the student to verify before any is woven
+    in. Metered as one question."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(answer) < 40 and len(issue) < 5:
+        return jsonify({"error": "Gather the law for this issue first.", "cases": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "cases": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "cases": []}), 402
+    consume("questions")
+    sys = (
+        "You find the LEADING / LOCUS CLASSICUS decided cases that would STRENGTHEN the legal "
+        "argument in the issue analysis given. Use WEB SEARCH to ground EVERY case in a REAL, "
+        "verifiable decision — this is critical: NEVER invent a case, citation, court, year or "
+        "holding, and never 'reconstruct' one from memory; a fabricated authority is the worst "
+        "possible error. Prefer the governing jurisdiction's OWN apex / leading authority on the "
+        "exact point (for Ghana, the Supreme Court / Court of Appeal); a landmark Commonwealth "
+        "authority (e.g. Salomon v A Salomon & Co Ltd; Donoghue v Stevenson) is acceptable ONLY "
+        "where it is genuinely the locus classicus for the point. Include a case ONLY if you "
+        "actually located it in the search results with a real source URL, and its holding truly "
+        "supports the point (do not stretch it). Return STRICT JSON {\"cases\":[{\"name\":..., "
+        "\"citation\":..., \"court\":..., \"year\":..., \"principle\":<the ratio/principle in one "
+        "sentence>, \"strengthens\":<which specific point in this analysis it reinforces>, "
+        "\"url\":<a source URL you actually saw in results>, \"source\":<short source name>}]}. "
+        "Return at most 4, most authoritative first; return an EMPTY list rather than any doubtful "
+        "or unverifiable case. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2200,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Problem: " + context[:900] + "\n\n") if context else "")
+                       + "Issue: " + issue + "\n\nIssue analysis — find cases that strengthen "
+                       "THIS argument:\n" + answer[:6000]}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140], "cases": []})
+    cases = data.get("cases") if isinstance(data, dict) else data
+    if not isinstance(cases, list):
+        cases = []
+    return jsonify({"cases": cases[:4]})
+
+
+@app.route("/api/issue/cases/add", methods=["POST"])
+def api_issue_cases_add():
+    """Weave the student-VERIFIED cases into an issue's answer at the point each strengthens,
+    analytically — state the case + principle, then apply it to the facts. Changes nothing else."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    cases = body.get("cases") or []
+    if not answer or not isinstance(cases, list) or not cases:
+        return jsonify({"error": "Need the answer and at least one verified case."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You STRENGTHEN a legal issue analysis by weaving in cases the student has already "
+        "VERIFIED — and nothing else. For each case you get its name, citation, principle and the "
+        "point it strengthens. Integrate it at the logically correct place IN THE ANALYSIS: state "
+        "the case and its principle, then APPLY it to the scenario's facts to reinforce the "
+        "existing argument — never a bare drop-in, a 'see also' list, or a heading of its own. Use "
+        "each case ONLY for the point it supports and do not overstate its holding. Cite in OSCOLA "
+        "(case name and citation). PRESERVE the existing analysis, authorities, structure and "
+        "CONCLUSION verbatim except for the woven-in sentences; do NOT re-argue, do NOT change any "
+        "conclusion, and do NOT add any case that is not in the list. Return ONLY the updated "
+        "answer text — no preamble, no notes.")
+    try:
+        cor, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=8000, system=sys,
+            messages=[{"role": "user", "content":
+                       "ISSUE: " + issue + "\n\nCURRENT ANALYSIS:\n" + answer
+                       + "\n\nVERIFIED CASES TO WEAVE IN:\n" + json.dumps(cases)}])
+        updated = _text_of(cor).strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"answer": updated or answer, "added": len(cases)})
+
+
 @app.route("/api/updates", methods=["POST"])
 def api_updates():
     """Web-scan a course's legal domain for recent changes and stream a verified,

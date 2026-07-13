@@ -1371,7 +1371,9 @@ function renderExam() {
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
           + '</button>'
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
+          + '<button class="btn mini casesIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">⚖️ Include cases</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
@@ -1392,6 +1394,8 @@ function renderExam() {
     b.onclick = () => gatherIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".casesIssueBtn").forEach(b =>
+    b.onclick = () => findCasesForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
     b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(it.answer || "", b); });
   $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
@@ -1599,6 +1603,68 @@ async function gatherIssue(i) {
   } catch (e) { it.answer = "Error gathering: " + e; }
   it.done = true; it.loading = false; renderExam();
 }
+// Find leading / locus classicus cases that strengthen an issue. Web-grounded candidates
+// are shown for the STUDENT to verify (open the source) before any is woven into the answer.
+async function findCasesForIssue(i) {
+  const it = EXAM.issues[i];
+  if (!it || !it.answer) return;
+  const btn = document.querySelector('.casesIssueBtn[data-i="' + i + '"]');
+  const out = document.querySelector('.casesIssueOut[data-i="' + i + '"]');
+  if (!out) return;
+  if (!it._audited && !confirm("Best AFTER 'Audit & fix authorities', so the cases strengthen verified law. Find cases now anyway?")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "⚖️ Searching cases…"; }
+  out.innerHTML = '<span style="font-size:11px;color:#8b93a7">searching the web for leading cases… (15–40s)</span>';
+  try {
+    const r = await (await fetch("/api/issue/cases", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
+    if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); if (btn){ btn.disabled=false; btn.textContent="⚖️ Include cases"; } return; }
+    const cases = r.cases || [];
+    it._caseCandidates = cases;
+    if (!cases.length) {
+      out.innerHTML = '<span style="font-size:12px;color:#8b93a7">No solid leading case surfaced — better none than an unverified one.</span>';
+    } else {
+      out.innerHTML = renderCaseCandidates(i, cases);
+      const add = out.querySelector(".addCasesBtn");
+      if (add) add.onclick = () => addCasesToIssue(i, out);
+    }
+  } catch (e) { out.innerHTML = "Error — try again."; }
+  if (btn) { btn.disabled = false; btn.textContent = "⚖️ Re-find cases"; }
+}
+
+function renderCaseCandidates(i, cases) {
+  let h = '<div style="font-size:12px;color:#c9a86a;font-weight:600;margin:2px 0 4px">⚖️ Candidate cases — OPEN each link and confirm it is real &amp; on point, then tick to include:</div>';
+  h += cases.map((c, k) =>
+    '<div style="border-left:3px solid #c9a86a;padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px">'
+    + '<label style="cursor:pointer"><input type="checkbox" class="caseChk" data-k="' + k + '"> '
+    + '<b>' + esc(c.name||"") + '</b>' + (c.citation ? ' <span style="color:#8b93a7">' + esc(c.citation) + '</span>' : '')
+    + ((c.court||c.year) ? ' <span style="color:#7a8296">(' + esc([c.court,c.year].filter(Boolean).join(", ")) + ')</span>' : '') + '</label>'
+    + (c.principle ? '<div style="color:#aab4c6;margin:2px 0 0 20px">principle: ' + esc(c.principle) + '</div>' : '')
+    + (c.strengthens ? '<div style="color:#8b93a7;margin-left:20px">strengthens: ' + esc(c.strengthens) + '</div>' : '')
+    + (c.url ? '<div style="margin-left:20px"><a href="' + esc(c.url) + '" target="_blank" rel="noopener" style="font-size:11px">🔗 verify source (' + esc(c.source||"link") + ')</a></div>'
+             : '<div style="margin-left:20px;color:#e0a0a0;font-size:11px">⚠ no source link — verify independently before including</div>')
+    + '</div>').join("");
+  h += '<button class="btn gold mini addCasesBtn" data-i="' + i + '" style="width:auto;margin-top:6px">✓ Add ticked cases to the answer</button>'
+    + '<span class="addCasesNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span>';
+  return h;
+}
+
+async function addCasesToIssue(i, out) {
+  const it = EXAM.issues[i];
+  const cands = it._caseCandidates || [];
+  const chosen = [...out.querySelectorAll(".caseChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
+  const note = out.querySelector(".addCasesNote");
+  if (!chosen.length) { if (note) note.textContent = "Tick at least one verified case first."; return; }
+  const add = out.querySelector(".addCasesBtn");
+  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
+  try {
+    const r = await (await fetch("/api/issue/cases/add", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, cases: chosen})})).json();
+    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } return; }
+    it.answer = r.answer; it.answer_annotated = "";
+    renderExam();                                  // re-render with the cases woven into the answer
+  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } }
+}
+
 // Audit an issue's gathered answer against the corpus and auto-correct flagged
 // authorities AT SOURCE — before they can propagate into the compiled document.
 async function auditAndFixIssue(i) {
