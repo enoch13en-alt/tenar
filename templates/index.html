@@ -1145,6 +1145,14 @@ async function runDocHealth() {
       + pill('❌ ' + (c.none||0) + ' not visible', '#e58f8f')
       + pill('📄 ' + (c.summaries||0) + ' summary/short', '#9db4d6')
       + '<span style="color:#8b93a7">' + (r.chunks||0) + ' chunks total</span></div>';
+    // count docs that have readable text but 0 chunks (indexing dropped them) → offer a
+    // one-click 'index all missing'. A scanned PDF (0 text pages) needs OCR, not this.
+    const emptyText = (r.rows || []).filter(d =>
+      (d.chunks || 0) === 0 && !(d.ext === "pdf" && d.pages_with_text === 0));
+    if (emptyText.length)
+      h += '<div style="margin:4px 0"><button class="btn gold mini" id="indexMissing" '
+        + 'style="width:auto;padding:2px 8px">↻ Index ' + emptyText.length
+        + ' readable doc(s) that have no chunks</button></div>';
     const icon = v => v === "full" ? "✅" : v === "partial" ? "⚠️" : "❌";
     const rowsHtml = (r.rows || []).map(d => {
       const pgs = (d.pages != null)
@@ -1173,32 +1181,42 @@ async function runDocHealth() {
     }).join("");
     out.innerHTML = h + rowsHtml;
     out.querySelectorAll(".healthOcr").forEach(b => b.onclick = () => fixScan(b));
+    // per-doc 'Index it' — enqueue on the background queue (no synchronous 502) and watch
+    // the shared queue progress; re-run 🩺 when it drains.
     out.querySelectorAll(".healthIndex").forEach(b => b.onclick = async () => {
       const fn = decodeURIComponent(b.dataset.f);
-      const beforeChunks = (r && typeof r.chunks === "number") ? r.chunks : 0;
-      b.disabled = true; b.textContent = "indexing… (a large doc takes ~30–90s)";
-      let landed = false;
+      b.disabled = true; b.textContent = "queued — indexing in background…";
       try {
-        const rr = await (await fetch("/api/doc/index", {method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({course: COURSE, file: fn})})).json();
-        if (rr && rr.ok) landed = true;
-        else if (rr && rr.error) { b.textContent = "⚠️ " + rr.error; b.disabled = false; return; }
-      } catch (e) { /* big-doc proxy timeout — the server usually finishes; confirm by polling */ }
-      if (!landed) {
-        b.textContent = "still indexing… confirming";
-        for (let i = 0; i < 12 && !landed; i++) {
-          await new Promise(res => setTimeout(res, 12000));
-          try {
-            const d = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
-            if (d && typeof d.chunks === "number" && d.chunks > beforeChunks && !d.indexing) landed = true;
-          } catch (e) {}
-        }
-      }
-      if (landed) { b.textContent = "✅ indexed"; runDocHealth(); }
-      else { b.textContent = "⏳ still working — re-run 🩺 shortly"; b.disabled = false; }
+        const rr = await (await fetchT("/api/doc/index", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({course: COURSE, file: fn})}, 30000)).json();
+        if (rr && rr.error) { b.textContent = "⚠️ " + rr.error; b.disabled = false; return; }
+      } catch (e) { /* queued server-side regardless */ }
+      watchIndexThen(runDocHealth);
     });
-  } catch (e) { out.innerHTML = "Error — try again."; }
+    const im = $("#indexMissing");
+    if (im) im.onclick = async () => {
+      im.disabled = true; im.textContent = "queuing…";
+      try {
+        const rr = await (await fetchT("/api/index/missing", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({course: COURSE})}, 30000)).json();
+        im.textContent = "↻ indexing " + (rr.count || 0) + " in background…";
+      } catch (e) { im.textContent = "↻ indexing in background…"; }
+      watchIndexThen(runDocHealth);
+    };
+  } catch (e) { out.innerHTML = "⚠️ couldn't read the report (server busy) — click 🩺 again in a moment."; }
   finally { btn.disabled = false; btn.textContent = label; }
+}
+// Watch the background index queue via the banner, then run a callback when it's done.
+function watchIndexThen(done) {
+  pollIndexing();
+  const wait = setInterval(async () => {
+    try {
+      const s = await (await fetchT("/api/index/status", {}, 15000)).json();
+      if (!s.running && (s.pending || 0) === 0) { clearInterval(wait); if (done) done(); }
+    } catch (e) {}
+  }, 3000);
 }
 
 // OCR a scanned / part-scanned doc, showing live progress, then refresh the report

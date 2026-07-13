@@ -3516,11 +3516,28 @@ def api_doc_index():
     fn = (body.get("file") or "").strip()
     if fn not in course_pdfs(course):
         return jsonify({"error": "That file isn't in this course."}), 404
-    try:
-        n = index_one_doc(course, fn)
-    except Exception as e:
-        return jsonify({"error": f"indexing failed: {str(e)[:140]}"}), 500
-    return jsonify({"ok": True, "file": fn, "chunks_added": n})
+    # Enqueue on the BACKGROUND queue and return at once. Indexing a big doc synchronously
+    # runs longer than the proxy's ~30-60s limit and 502s the browser (even though the server
+    # finishes) — so 'Index it' looked like it failed. Queue it; the client polls status.
+    enqueue_index(course, fn)
+    return jsonify({"ok": True, "file": fn, "queued": True, "pending": _INDEX_STATE["pending"]})
+
+
+@app.route("/api/index/missing", methods=["POST"])
+def api_index_missing():
+    """Queue every readable doc in the course that currently has 0 chunks — the reliable
+    recovery when some docs were dropped mid-indexing. Returns the list queued."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can index a shared course."}), 403
+    ensure_loaded(course)
+    have = {ch["doc"] for ch in INDEXES[course]["chunks"]}
+    missing = [fn for fn in course_pdfs(course) if fn not in have]
+    for fn in missing:
+        enqueue_index(course, fn)
+    return jsonify({"ok": True, "queued": missing, "count": len(missing),
+                    "pending": _INDEX_STATE["pending"]})
 
 
 # ---------------------------------------------------------------- browser extension
