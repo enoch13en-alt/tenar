@@ -956,13 +956,20 @@ async function runDocHealth() {
           + d.pages + ' pages readable, ' + d.chunks + ' chunks)</span>'
         : ' <span style="color:#8b93a7">(' + d.chunks + ' chunks)</span>';
       const sumtag = d.is_summary ? ' 📄' : '';
-      const fixable = (d.visibility === "none" || d.visibility === "partial") && d.ext === "pdf";
+      // a scanned/part-scanned PDF needs OCR; a text file (or text-PDF) that's simply
+      // unindexed just needs indexing.
+      const isScan = d.ext === "pdf" && d.pages_with_text === 0;
+      const needsOcr = d.visibility === "partial" || isScan;
+      const needsIndex = d.visibility === "none" && !isScan;
       const missing = (d.pages != null && d.pages_with_text != null) ? (d.pages - d.pages_with_text) : 0;
       const fixLabel = d.visibility === "partial"
         ? ("Fix " + (missing > 0 ? missing + " scanned page" + (missing === 1 ? "" : "s") : "scanned pages"))
         : "OCR it";
-      const fixBtn = fixable ? ' <button class="btn mini healthOcr" data-f="' + encodeURIComponent(d.file)
-        + '" style="width:auto;padding:1px 6px">' + fixLabel + '</button>' : '';
+      let fixBtn = "";
+      if (needsOcr) fixBtn = ' <button class="btn mini healthOcr" data-f="' + encodeURIComponent(d.file)
+        + '" style="width:auto;padding:1px 6px">' + fixLabel + '</button>';
+      else if (needsIndex) fixBtn = ' <button class="btn mini healthIndex" data-f="' + encodeURIComponent(d.file)
+        + '" style="width:auto;padding:1px 6px">Index it</button>';
       const why = d.reason ? '<div style="font-size:11px;color:#aab4c6;margin:0 0 4px 18px">↳ '
         + esc(d.reason) + fixBtn + '</div>' : '';
       return '<div style="font-size:12.5px;margin-top:4px">' + icon(d.visibility) + ' '
@@ -970,6 +977,16 @@ async function runDocHealth() {
     }).join("");
     out.innerHTML = h + rowsHtml;
     out.querySelectorAll(".healthOcr").forEach(b => b.onclick = () => fixScan(b));
+    out.querySelectorAll(".healthIndex").forEach(b => b.onclick = async () => {
+      const fn = decodeURIComponent(b.dataset.f);
+      b.disabled = true; b.textContent = "indexing…";
+      try {
+        const rr = await (await fetch("/api/doc/index", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({course: COURSE, file: fn})})).json();
+        if (rr.error) { b.textContent = "⚠️ " + rr.error; b.disabled = false; }
+        else { b.textContent = "✅ " + (rr.chunks_added || 0) + " chunks"; runDocHealth(); }
+      } catch (e) { b.textContent = "error"; b.disabled = false; }
+    });
   } catch (e) { out.innerHTML = "Error — try again."; }
   finally { btn.disabled = false; btn.textContent = label; }
 }
