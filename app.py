@@ -2005,8 +2005,18 @@ def reindex(course):
                     if dc:
                         st["message"] = f"embedding {fname} ({len(dc)} chunks)..."
                         embs = []
-                        for i in range(0, len(dc), 128):
-                            embs.append(embed_texts([c["text"] for c in dc[i:i + 128]]))
+                        # SMALL batches + a yield between them so a LARGE doc's CPU-bound
+                        # embedding can't starve the health-check and get the worker restarted
+                        # mid-reindex (which silently DROPS already-embedded docs). Same guard
+                        # index_one_doc uses.
+                        for i in range(0, len(dc), 32):
+                            batch = [c["text"] for c in dc[i:i + 32]]
+                            try:
+                                import gevent
+                                embs.append(gevent.get_hub().threadpool.apply(embed_texts, (batch,)))
+                                gevent.sleep(0)
+                            except Exception:
+                                embs.append(embed_texts(batch))
                         parts.append(np.vstack(embs) if embs else
                                      np.zeros((0, EMBED_DIM), dtype=np.float32))
                         new_chunks.extend(dc)
@@ -5769,7 +5779,18 @@ def api_updates_fetch():
         results.append({"title": title, "ok": True, "file": fn})
     if added:
         save_sources()
-        threading.Thread(target=reindex, args=(course,), daemon=True).start()
+        # index ONLY the newly-added files, incrementally — a full reindex re-embeds every
+        # doc and, if the worker is restarted mid-run, DROPS existing docs' chunks (it once
+        # knocked out Companies Act 992). Add each new file without touching the rest.
+        new_files = [r["file"] for r in results if r.get("ok") and r.get("file")]
+
+        def _index_new():
+            for f in new_files:
+                try:
+                    index_one_doc(course, f)
+                except Exception:
+                    pass
+        threading.Thread(target=_index_new, daemon=True).start()
     return jsonify({"results": results, "added": added})
 
 
@@ -5801,7 +5822,8 @@ def api_updates_copy():
         return jsonify({"error": f"copy failed ({e})"}), 500
     SOURCES[src_file] = SOURCES.get(src_file) or display_name(src_file)
     save_sources()
-    threading.Thread(target=reindex, args=(course,), daemon=True).start()
+    # index just the copied file — never a full reindex (which can drop existing docs' chunks)
+    threading.Thread(target=lambda: index_one_doc(course, src_file), daemon=True).start()
     return jsonify({"ok": True, "file": src_file, "title": SOURCES.get(src_file),
                     "from": src_course, "reindexing": True})
 
