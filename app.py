@@ -80,10 +80,11 @@ ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
 EXPAND_MODEL = "claude-haiku-4-5"     # cheap/fast model for retrieval query expansion
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
-# Chunks embedded per call. Larger batches use the CPU far more efficiently (ONNX
-# throughput rises with batch size); embedding runs off the gevent threadpool so the
-# web worker stays responsive no matter the size. Tunable via env for a bigger instance.
-EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "128"))
+# Chunks embedded per call. Bigger batches are faster but spike memory — 128 can OOM-kill
+# the worker mid-embed on a small (512MB) instance, which silently drops the doc (pages
+# stay readable but nothing indexes). 32 is the proven-safe default; raise via env only on
+# a bigger instance where the extra memory is available.
+EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "32"))
 EMBED_DIM = 384
 TOP_K = 25   # retrieved chunks per question — wider window so a broadly-framed
              # question is less likely to miss a specific instrument that IS indexed
@@ -2299,10 +2300,15 @@ def _drain_index_queue():
         _INDEX_STATE["cur_done"] = 0
         _INDEX_STATE["cur_total"] = 0
         try:
-            index_one_doc(course, fname)
+            n = index_one_doc(course, fname)
             _INDEX_STATE["done"] += 1
+            if not n:
+                # extracted no chunks — a scanned/image-only doc needs OCR, not indexing.
+                _INDEX_STATE["errors"].append(f"{fname}: no text found (needs OCR)")
+            print(f"[index] {fname}: {n} chunks", flush=True)
         except Exception as e:
-            _INDEX_STATE["errors"].append(f"{fname}: {str(e)[:80]}")
+            _INDEX_STATE["errors"].append(f"{fname}: {str(e)[:120]}")
+            print(f"[index] {fname} FAILED: {e}", flush=True)
         finally:
             with _INDEX_MUTEX:
                 _INDEX_STATE["pending"] = max(0, _INDEX_STATE["pending"] - 1)

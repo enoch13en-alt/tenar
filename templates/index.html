@@ -1107,10 +1107,12 @@ function pollIndexing() {
         $("#status").textContent = "⏳ " + m + "; click 🩺 anytime.";
       } else {
         clearInterval(_idxPoll); _idxPoll = null;
-        const m = "✅ indexing complete — documents are readable now"
-          + ((s.errors && s.errors.length) ? " · " + s.errors.length
-             + " had trouble (click 🩺 to see which)" : "") + ".";
-        $("#status").textContent = m; busyStop(m, {done:true, autohide:8000});
+        const errs = (s.errors && s.errors.length) ? s.errors : [];
+        const m = errs.length
+          ? ("⚠️ indexing finished but " + errs.length + " had trouble: " + errs.join(" · "))
+          : "✅ indexing complete — documents are readable now.";
+        $("#status").textContent = m;
+        busyStop(m, errs.length ? {warn:true, autohide:20000} : {done:true, autohide:8000});
         setTimeout(() => { _statusHold = false; }, 6000);   // let it linger, then resume
         refresh();
       }
