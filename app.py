@@ -2841,11 +2841,15 @@ CONTEXT_USAGE = (
 
 
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
-                    mode="answer", use_context=False):
+                    mode="answer", use_context=False, max_quality=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
     multi = len(courses) > 1
+    # The RULE is where marks are won: give the per-issue gather the most capable model
+    # (Fable 5) when the student opts into Max quality, and wider retrieval recall so the
+    # governing provision's actual text is surfaced to be reproduced, not paraphrased.
+    primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -2859,7 +2863,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # query buries the numbered operative articles under preamble/definitions, so expand
     # into targeted rule-queries and union. Chat/cases stay single-query (fast).
     if mode in ("answer", "gather"):
-        retrieved = retrieve_expanded(client, courses, question, multi)
+        # wider recall for the rule-gathering pass so the full governing provision is
+        # captured (its operative words must be present to reproduce them verbatim)
+        retrieved = retrieve_expanded(client, courses, question, multi,
+                                      k=60 if mode == "gather" else TOP_K)
     else:
         retrieved = search_multi(courses, question) if multi else search(courses[0], question)
     # case-finder can run on the web alone; a normal answer needs the corpus
@@ -2981,7 +2988,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
     # full essays/reports finish without truncation while staying predictable
     # (~$0.20 worst case, no thinking spikes).
-    kwargs = dict(model=ANSWER_MODEL,
+    kwargs = dict(model=primary_model,
                   max_tokens=max_out,
                   messages=[{"role": "user", "content": content}])
     if include_web:
@@ -3827,8 +3834,18 @@ def api_ask():
     else:
         max_out = 8000
     mode = "gather" if body.get("brief") else "answer"
+    # Max quality routes the rule-gathering to Fable 5 (the Rule is where marks are won).
+    # Metered against the Fable allowance; if it's used up, downgrade to Opus rather than block.
+    max_quality = bool(body.get("max_quality"))
+    if max_quality:
+        okf, _m = can_consume("fable_compiles")
+        if okf:
+            consume("fable_compiles")
+        else:
+            max_quality = False        # graceful downgrade — no surprise billing
     return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
-                                   use_context=bool(body.get("use_context"))))
+                                   use_context=bool(body.get("use_context")),
+                                   max_quality=max_quality))
 
 
 @app.route("/api/cases", methods=["POST"])

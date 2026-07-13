@@ -2057,7 +2057,8 @@ async function gatherIssue(i) {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
-        use_context: !!($("#examUseContext") && $("#examUseContext").checked)})})).json();
+        use_context: !!($("#examUseContext") && $("#examUseContext").checked),
+        max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked)})})).json();
     it.answer = r.answer || r.error || "";
     it._audited = false;                        // fresh answer — not yet audited
     it.answer_annotated = r.answer_annotated || "";
