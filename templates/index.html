@@ -459,7 +459,7 @@
       <label style="color:#aab4c6;font-size:12px" title="Turn ON only when the question expressly asks you to identify additional facts / assumptions. OFF (default) = pure IRAC with firm conclusions and NO assumptions/additional-facts section. When ON, a single disciplined 'Additional Facts Material to the Advice' section is produced (genuine, outcome-changing omissions only).">
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline uninterrupted: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue's language → (if ⚖️ on) find & pre-apply cases in the background → compile → Deepen. No mid-flow pause: at the end, the final document's ⚖️ 'Cases from run' button lets you verify and weave the found cases in.">🚀 Do it all → Deepen</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → Deepen → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1666,8 +1666,19 @@ async function finishPipeline() {
     if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
     if (b) b.textContent = "⑤ Deepening…";
     const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
-    if (deepBtn) { deepBtn.click(); $("#examStatus").textContent = "🔬 Deepening the final document — it appears below."; }
-    else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
+    if (deepBtn) {
+      EXAM._autoFinalCheck = true;             // deepenDoc auto-runs the Final check when it finishes
+      deepBtn.click();
+      $("#examStatus").textContent = "🔬 Deepening, then auto-verifying the final document (audit + quote check + calibrate)…";
+    } else {
+      // no Deepen on this plan — run the Final check on the compiled document directly
+      const de = $("#examDoc"), bar = de && de.nextElementSibling;
+      const fBtn = bar && bar.querySelector(".bFinalChk");
+      if (bar && fBtn) {
+        $("#examStatus").textContent = "🔒 Auto-verifying the final document…";
+        try { await finalCheckDoc(bar, de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90), fBtn); } catch (e) {}
+      } else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
+    }
   } finally {
     if (b) { b.disabled = false; b.textContent = "🚀 Do it all → Deepen"; }
   }
@@ -2676,10 +2687,22 @@ async function deepenDoc(anchorEl, doc, wordName, defaultTitle, btn) {
   }
   renderExportBar(tail, upgraded, wordName + " (deepened)", defaultTitle);
   if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; }
-  // WORD LIMIT kicks in AFTER Deepen: if a limit was entered, fit automatically so
-  // "enter details → Do it all" carries all the way through in one flow.
+  EXAM.doc = upgraded;                                   // the deepened version is now canonical
+  // Auto Final check (pipeline): re-audit authorities + verbatim-quote check + calibrate the
+  // WHOLE deepened document — closes the gap where Deepen re-introduces anything after the
+  // per-issue passes. Runs only when the pipeline armed it.
+  if (EXAM._autoFinalCheck) {
+    EXAM._autoFinalCheck = false;
+    const dBar = tail.nextElementSibling;               // the deepened doc's export bar
+    const fBtn = dBar && dBar.querySelector(".bFinalChk");
+    if (dBar && fBtn) {
+      $("#examStatus").textContent = "🔒 Auto-verifying the final document (audit + quote check + calibrate)…";
+      try { await finalCheckDoc(dBar, dDoc, upgraded, wordName + " (deepened)", defaultTitle, fBtn); } catch (e) {}
+    }
+  }
+  // WORD LIMIT kicks in AFTER Deepen (and after any Final check): fit the current final text.
   const lim = parseInt(($("#wordLimit") || {}).value, 10);
-  if (lim && lim >= 50) fitDoc(box, upgraded, wordName, defaultTitle);
+  if (lim && lim >= 50) fitDoc(box, EXAM.doc, wordName, defaultTitle);
 }
 
 // Fit a document to a lecturer's word limit (kicks in after Deepen). Streams the
