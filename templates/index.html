@@ -459,7 +459,7 @@
       <label style="color:#aab4c6;font-size:12px" title="Turn ON only when the question expressly asks you to identify additional facts / assumptions. OFF (default) = pure IRAC with firm conclusions and NO assumptions/additional-facts section. When ON, a single disciplined 'Additional Facts Material to the Advice' section is produced (genuine, outcome-changing omissions only).">
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline uninterrupted: break down → gather every issue → AUDIT & fix each issue's authorities → (if ⚖️ on) find & pre-apply cases in the background → compile → Deepen. No mid-flow pause: at the end, the final document's ⚖️ 'Cases from run' button lets you verify and weave the found cases in.">🚀 Do it all → Deepen</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline uninterrupted: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue's language → (if ⚖️ on) find & pre-apply cases in the background → compile → Deepen. No mid-flow pause: at the end, the final document's ⚖️ 'Cases from run' button lets you verify and weave the found cases in.">🚀 Do it all → Deepen</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1634,7 +1634,13 @@ async function runFullPipeline() {
       + (nFixed ? (" · 🔧 " + nFixed + " corrected") : "")
       + (nRemoved ? (" · 🗑️ " + nRemoved + " ungrounded cut") : "")
       + (auFlag ? (" · ❓ " + auFlag + " left to verify") : "")
-      + " (details under each issue). Compiling…";
+      + " (details under each issue). Calibrating…";
+    // ③¾ Calibrate every issue's language — AFTER audit, so it calibrates VERIFIED law.
+    stage("③¾ Calibrating…");
+    $("#examStatus").textContent = "🎚 Calibrating each issue's language (absolutes, qualifiers, scope)…";
+    const calRes = await calibrateAll();
+    renderExam();
+    if (calRes.calibrated) $("#examStatus").textContent = "🎚 Calibrated " + calRes.calibrated + " issue(s). Continuing…";
     // ③½ Find + PRE-WORK cases per issue NOW (in focused context), but DON'T pause the run.
     //     Selection + weaving happens at the END, on the final document's ⚖️ button.
     if ($("#autoCases") && $("#autoCases").checked) {
@@ -2336,6 +2342,31 @@ async function auditFixAll() {
   }
   await Promise.all([worker(), worker()]);   // 2 at a time (bounds peak memory: each strict audit loads whole instruments)
   return {fixed, removed};
+}
+// Calibrate every gathered issue's language (limited concurrency). Used by 'Do it all',
+// AFTER audit so it calibrates verified law. Replaces each answer AT SOURCE, keeping the
+// pre-calibration original for before/after.
+async function calibrateAll() {
+  const targets = EXAM.issues.filter(it => it.answer && !String(it.answer).startsWith("Error"));
+  let done = 0, idx = 0;
+  async function worker() {
+    while (idx < targets.length) {
+      const it = targets[idx++];
+      const original = it.answer;
+      try {
+        const r = await (await fetch("/api/issue/calibrate", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
+        if (r && r.answer && r.answer.trim() && r.answer.trim() !== String(original).trim()) {
+          it._calibrateOriginal = original;
+          it.answer = r.answer; it.answer_annotated = ""; it._calibrated = true;
+          it._calibrateChanges = r.changes || [];
+          done++;
+        }
+      } catch (e) {}
+    }
+  }
+  await Promise.all([worker(), worker()]);   // 2 at a time
+  return {calibrated: done};
 }
 async function gatherAll() {
   $("#examStatus").textContent = "Gathering all issues (one at a time)…";
