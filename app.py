@@ -1276,6 +1276,31 @@ STATUTORY_INTERPRETATION = (
 # gather, deepen, research, chat, advisory, voice) — they are HOW a retrieved provision is read.
 DOCTRINAL_PRECISION = DOCTRINAL_PRECISION + "\n\n" + STATUTORY_INTERPRETATION
 
+ALTERNATIVE_CONSTRUCTION = (
+    "ALTERNATIVE CONSTRUCTION — steel-man the competing reading, THEN choose. This applies ONLY "
+    "where a provision is GENUINELY ARGUABLE: the words bear more than one reasonable reading, or "
+    "a respectable contrary interpretation exists. It does NOT apply to clear provisions — "
+    "inventing a rival reading for text that admits only one is PADDING that manufactures doubt, "
+    "inflates the opinion and misstates the law; do not do it. Reserve this move for the "
+    "propositions genuinely IN CONTENTION.\n"
+    "Where a point IS genuinely arguable, before you adopt your interpretation you MUST, in one "
+    "tight inline passage (not a separate section, not for every provision):\n"
+    "- STATE the strongest COMPETING construction in one or two sentences, put FAIRLY and at its "
+    "best — the reading a good opponent or a dissenting judge would press, never a straw man;\n"
+    "- ACKNOWLEDGE candidly what force it has;\n"
+    "- then GIVE THE REASON you prefer or reject it, grounded in the text, structure or purpose, "
+    "and COMMIT to your reading. This is steel-man-THEN-decide: it never leaves the question "
+    "hanging (the duty to RESOLVE a genuine ambiguity still binds).\n"
+    "This is how an appellate court writes — it shows the competing construction was considered "
+    "and ANSWERED, which is what makes a conclusion authoritative rather than merely asserted. "
+    "Shape: 'A contrary reading is that X, because [its best supporting reason]; that has some "
+    "force. But [the provision] regulates Y rather than Z, and reading it as X would collapse the "
+    "distinction the Act draws — so the better view is [the chosen reading].'"
+)
+# Rides the same doctrinal-precision paths. Placed AFTER the canons: you construe with the canons,
+# then, only where the result is genuinely contestable, weigh the competing construction and commit.
+DOCTRINAL_PRECISION = DOCTRINAL_PRECISION + "\n\n" + ALTERNATIVE_CONSTRUCTION
+
 # Citation integrity — how to cite law. A wrong or second-hand authority is worse
 # than a candid gap, and in a knowledge base it contaminates every downstream
 # answer that retrieves it. Codifies the citation failures this tool must avoid.

@@ -38,16 +38,27 @@ def check(cond, msg):
 
 PV = const("PROPOSITION_VALIDATION") or ""
 SI = const("STATUTORY_INTERPRETATION") or ""
+AC = const("ALTERNATIVE_CONSTRUCTION") or ""
 
 # 1) Both modules exist and are substantial (not blanked out).
 check(len(PV) > 800, "PROPOSITION_VALIDATION missing or too short")
 check(len(SI) > 1200, "STATUTORY_INTERPRETATION missing or too short")
+check(len(AC) > 600, "ALTERNATIVE_CONSTRUCTION missing or too short")
 
 # 2) Wired into the paths that already carry the grounded-only / doctrinal disciplines.
 check(append_present("CITATION_INTEGRITY", "PROPOSITION_VALIDATION"),
       "PROPOSITION_VALIDATION not appended to CITATION_INTEGRITY")
 check(append_present("DOCTRINAL_PRECISION", "STATUTORY_INTERPRETATION"),
       "STATUTORY_INTERPRETATION not appended to DOCTRINAL_PRECISION")
+check(append_present("DOCTRINAL_PRECISION", "ALTERNATIVE_CONSTRUCTION"),
+      "ALTERNATIVE_CONSTRUCTION not appended to DOCTRINAL_PRECISION")
+
+# 2b) ALTERNATIVE_CONSTRUCTION must keep BOTH rails: the arguable-only GATE (anti-padding) and
+#     steel-man-then-COMMIT (anti-open-ended). Losing either is the module's known failure mode.
+check("GENUINELY ARGUABLE" in AC and ("PADDING" in AC or "not for every provision" in AC),
+      "ALTERNATIVE_CONSTRUCTION lost its arguable-only gate (padding risk)")
+check("COMMIT" in AC and ("straw man" in AC or "steel-man" in AC),
+      "ALTERNATIVE_CONSTRUCTION lost steel-man-then-commit rail")
 # 3) And explicitly present on the calibrate path (which does NOT carry CITATION_INTEGRITY).
 check(re.search(r"CALIBRATION\s*\+\s*\"\\n\\n\"\s*\+\s*PROPOSITION_VALIDATION", SRC),
       "PROPOSITION_VALIDATION not wired into the calibrate prompt")
