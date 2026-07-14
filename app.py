@@ -3225,6 +3225,17 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         _title = f'{display_name(ch["doc"])} — p.{page}'
         if multi:
             _title = f'[{ch_course}] {_title}'
+        # SECONDARY-SOURCE SALIENCE (literature engagement): for a book/article the author
+        # sits only in the citation-metadata title, so the model reasons over the body text
+        # and launders the scholar's analysis into unattributed 'law'. Precede the document
+        # with a short text cue naming the work, so the author is salient in what the model
+        # reads and can be attributed in prose. Primary sources (statute/case/constitution/
+        # treaty) are untouched — reproduced primary text stays primary, no over-attribution.
+        if display_type(ch["doc"]) in ("article", "book"):
+            content.append({"type": "text",
+                "text": (f'[The next document is a SECONDARY source — the commentary '
+                         f'"{display_name(ch["doc"])}". Attribute its analysis, arguments and '
+                         f'characterisations to this author/work by name; it is not primary law.]')})
         content.append({
             "type": "document",
             "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},

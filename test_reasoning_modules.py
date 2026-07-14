@@ -98,6 +98,10 @@ check("ATTRIBUTE THE SCHOLAR'S OWN ANALYSIS" in PF,
       "PRIMARY_FIRST lost the secondary-source attribution rule (literature engagement)")
 check("OVER-ATTRIBUTE PRIMARY TEXT" in PF,
       "PRIMARY_FIRST lost the over-attribution guard (reproduced primary text stays primary)")
+# 7c) Context-salience: secondary sources (article/book) get an inline author cue so the model
+#     can attribute in prose (the author otherwise sits only in citation metadata).
+check('SECONDARY source' in SRC and 'display_type(ch["doc"]) in ("article", "book")' in SRC,
+      "secondary-source salience cue missing from the retrieval context builder")
 
 # 8) Versioned-together marker (Safeguard 1) + monitor plumbing (Safeguard 3).
 check(const("REASONING_MODULES_VERSION") is not None,
