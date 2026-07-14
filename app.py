@@ -701,7 +701,26 @@ CALIBRATION = (
     "I stating an inference as an express rule? have I ignored a plausible alternative reading? is "
     "the wording stronger or weaker than the evidence permits? Where the position is genuinely "
     "uncertain, STATE the uncertainty directly rather than hide it behind confident wording — but "
-    "do NOT hedge what is settled or given.")
+    "do NOT hedge what is settled or given.\n"
+    "9) DO NOT IMPORT ANOTHER ISSUE'S CONCLUSION. If a proposition depends on a question analysed "
+    "in a SEPARATE issue (licence ELIGIBILITY, quantum, attribution, remedy), state only what THIS "
+    "issue decides and DEFER the rest — e.g. 'requiring a licence; whether the party is eligible "
+    "to hold one is addressed in Issue 2' — never assert the other issue's finding here. This "
+    "prevents a gateway issue silently deciding a downstream one.\n"
+    "10) ANTI-AVOIDANCE / SUBSTANCE-OVER-FORM CAVEAT. Where a role is licence-free 'standing "
+    "alone', add that this holds only if it is genuinely what it appears to be and is not a device "
+    "that, in substance, disguises the party as the one undertaking the regulated activity. A "
+    "finding that a payment / assignment / security role is uncaught must not read as a route to "
+    "structure around the Act.\n"
+    "11) DO NOT DECLARE SOMETHING 'LAWFUL' / 'VALID' / 'ENFORCEABLE' WHEN THE ANALYSIS ONLY SHOWS "
+    "IT IS NOT CAUGHT BY THE SPECIFIC PROVISION. Scope the conclusion to what was actually decided "
+    "— 'does not, without more, require a licence' / 'is not caught by s.X' — not a broad clean "
+    "bill of legality the analysis did not establish (other regimes or the general law are "
+    "untouched).\n"
+    "12) FOR A LICENSING / REGULATORY ISSUE, ANCHOR IN SUBSTANCE OVER FORM as the organising "
+    "principle: where the statute regulates an ACTIVITY (what a person DOES) rather than a status "
+    "or label, say so — the analysis turns on the substance of the party's operational role, not "
+    "its description in the transaction documents.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
