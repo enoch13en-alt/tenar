@@ -416,6 +416,7 @@
         font-size:12px;color:#cdd5e6"></div>
       <div style="font-size:11px;color:#6b7488">Tick every course the answer may draw law from — e.g. a cross-cutting problem spanning several papers.</div>
     </details>
+    <div id="examResume" style="display:none"></div>
     <textarea id="examQ" style="height:120px" placeholder="Paste the exam question / case study here — or upload it below…"></textarea>
     <input type="file" id="examFile" accept=".pdf,.docx,.txt,.md" class="hidden">
     <div id="focusBox" style="margin:6px 0 4px">
@@ -1524,6 +1525,68 @@ async function oscolaExport(sources) {
 // ---- Exam Coach ----
 let EXAM = {facts:[], assumptions:[], issues:[]};
 let focusUserTouched = false, lastFocusQ = "", focusBusy = false, focusTimer = null;
+
+// ---- Auto-save / resume — a long run lives in this tab, so persist it to survive a
+// crash, tab-close or power cut. Saved per course; restored via the Resume banner on open.
+let _saveTimer = null;
+function saveExam() {
+  try {
+    if (!EXAM) return;
+    if ((!EXAM.issues || !EXAM.issues.length) && !EXAM.doc && !(EXAM.question)) return;
+    const snap = {
+      v: 1, t: Date.now(), course: COURSE,
+      question: EXAM.question || ($("#examQ") ? $("#examQ").value : ""),
+      facts: EXAM.facts || [], assumptions: EXAM.assumptions || [], focus: EXAM.focus || [],
+      cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
+      issues: (EXAM.issues || []).map(it => ({
+        n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link,
+        answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
+        followups: it.followups || [],
+        _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
+        _autoRemoved: it._autoRemoved, _removed: it._removed, _auditOriginal: it._auditOriginal,
+        _calibrated: it._calibrated, _calibrateOriginal: it._calibrateOriginal,
+        _calibrateChanges: it._calibrateChanges, _caseCandidates: it._caseCandidates
+      }))
+    };
+    localStorage.setItem("examRun_" + COURSE, JSON.stringify(snap));
+  } catch (e) { /* quota / serialisation — never break the run over a save */ }
+}
+function scheduleSave() { clearTimeout(_saveTimer); _saveTimer = setTimeout(saveExam, 800); }
+function maybeOfferResume() {
+  const host = $("#examResume"); if (!host) return;
+  let snap = null;
+  try { snap = JSON.parse(localStorage.getItem("examRun_" + COURSE) || "null"); } catch (e) {}
+  const hasWork = snap && ((snap.issues && snap.issues.length) || snap.doc);
+  // don't offer to resume the run that's already loaded in memory
+  if (!hasWork || (EXAM.issues && EXAM.issues.length && EXAM.question === snap.question)) {
+    host.style.display = "none"; host.innerHTML = ""; return;
+  }
+  const ago = Math.round((Date.now() - (snap.t || 0)) / 60000);
+  host.style.display = "block";
+  host.innerHTML = '<div style="border:1px solid #8fb4ff;border-radius:6px;padding:8px;background:#0d1017;margin-bottom:8px">'
+    + '<div style="font-size:12px;color:#8fb4ff;font-weight:600">↩ Resume last run?</div>'
+    + '<div style="font-size:11px;color:#aab4c6;margin:2px 0">' + (snap.issues ? snap.issues.length : 0) + ' issue(s)'
+    + (snap.doc ? ' · has a compiled document' : '') + ' · "' + esc((snap.question || "").slice(0, 70)) + '…" · saved '
+    + (ago < 1 ? "just now" : ago + " min ago") + '</div>'
+    + '<button class="btn gold mini" id="examResumeBtn" style="width:auto">↩ Resume</button>'
+    + '<button class="btn alt mini" id="examDiscardBtn" style="width:auto;margin-left:6px">Discard</button></div>';
+  $("#examResumeBtn").onclick = () => resumeExam(snap);
+  $("#examDiscardBtn").onclick = () => { localStorage.removeItem("examRun_" + COURSE); maybeOfferResume(); };
+}
+function resumeExam(snap) {
+  EXAM = {facts: snap.facts || [], assumptions: snap.assumptions || [], issues: snap.issues || []};
+  EXAM.question = snap.question || ""; EXAM.focus = snap.focus || []; EXAM.cost = snap.cost || 0;
+  EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
+  if ($("#examQ")) $("#examQ").value = snap.question || "";
+  renderExam();
+  if (EXAM.doc) {
+    $("#examDocWrap").innerHTML = "<h4 style='margin:14px 0 4px'>Final document (restored)</h4><div id='examDoc' style='white-space:normal'></div>";
+    const de = $("#examDoc"); de.innerHTML = mdToHtml(EXAM.doc);
+    renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question || "").split('\n')[0].slice(0, 90));
+  }
+  const host = $("#examResume"); if (host) { host.style.display = "none"; host.innerHTML = ""; }
+  $("#examStatus").textContent = "↩ Restored " + (EXAM.issues.length) + " issue(s)" + (EXAM.doc ? " + the compiled document" : "") + ". Continue where you left off.";
+}
 // courses Exam Coach will scan — defaults to the current course, user can tick more
 let EXAM_COURSES = null;   // null → not yet initialised (falls back to [COURSE])
 function examCourses() {
@@ -1561,6 +1624,7 @@ $("#openExam").onclick = () => {
   focusUserTouched = false;
   lastFocusQ = "";
   $("#examModal").style.display = "flex";
+  maybeOfferResume();                  // offer to restore a saved run (survives crash/power cut)
   // if a question is already sitting in the box, fill focus areas right away
   if ($("#examQ").value.trim().length >= 30) autoFillFocus();
 };
@@ -1969,6 +2033,7 @@ function renderExam() {
     });
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
   const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
+  scheduleSave();                 // persist the run after every render (debounced)
 }
 
 function followHTML(it, idx) {
@@ -2286,7 +2351,7 @@ async function weaveRunCases(bar, docEl, doc, wordName, defaultTitle, btn) {
         body: JSON.stringify({document: doc, cases: chosen})})).json();
       if (rr.error) { note.textContent = "⚠️ " + rr.error; add.disabled = false; add.textContent = "✓ Weave ticked into this document"; return; }
       const updated = rr.document || doc;
-      EXAM.doc = updated;
+      EXAM.doc = updated; saveExam();
       docEl.style.whiteSpace = "normal";
       docEl.innerHTML = mdToHtml(updated);
       bar.remove();                                   // rebuild the toolbar against the new doc
@@ -2314,7 +2379,7 @@ async function finalCheckDoc(bar, docEl, doc, wordName, defaultTitle, btn) {
       body: JSON.stringify({issue: "the full memorandum", answer: cur, question: EXAM.question || ""})})).json();
     if (cb && cb.answer && cb.answer.trim()) cur = cb.answer;
     // update the shown document and rebuild the toolbar so exports use the new text
-    EXAM.doc = cur;
+    EXAM.doc = cur; saveExam();
     docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(cur);
     const fixed = aud.fixed_count || 0, removed = aud.removed_count || 0;
     const summary = '<div style="font-size:12px;color:#7fdca0;font-weight:600">🔒 Final check complete'
@@ -2347,7 +2412,7 @@ async function findDocCases(bar, docEl, doc, wordName, defaultTitle, btn) {
           body: JSON.stringify({issue: "the memorandum", answer: doc, cases: chosen})})).json();
         if (rr.error) { host.querySelector(".mcNote").textContent = "⚠️ " + rr.error; add.disabled = false; add.textContent = "✓ Add ticked cases to the document"; return; }
         const updated = rr.answer || doc;
-        EXAM.doc = updated;
+        EXAM.doc = updated; saveExam();
         docEl.style.whiteSpace = "normal";
         docEl.innerHTML = mdToHtml(updated);            // refresh the shown document
         bar.remove();                                    // rebuild the toolbar against the new doc
@@ -2609,7 +2674,7 @@ async function compileExam() {
   // final formatted render
   docEl.style.whiteSpace = "normal";
   docEl.innerHTML = mdToHtml(document);
-  EXAM.doc = document;                       // expose the compiled text for the pipeline
+  EXAM.doc = document; saveExam();           // expose the compiled text for the pipeline
   EXAM.cost = (EXAM.cost || 0) + (meta.cost ? (meta.cost.this_usd || 0) : 0);
   $("#examStatus").textContent = meta.cost
     ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $"
@@ -2783,7 +2848,7 @@ async function deepenDoc(anchorEl, doc, wordName, defaultTitle, btn) {
   }
   renderExportBar(tail, upgraded, wordName + " (deepened)", defaultTitle);
   if (btn) { btn.disabled = false; btn.textContent = "🔬 Deepen"; }
-  EXAM.doc = upgraded;                                   // the deepened version is now canonical
+  EXAM.doc = upgraded; saveExam();                       // the deepened version is now canonical
   // Auto Final check (pipeline): re-audit authorities + verbatim-quote check + calibrate the
   // WHOLE deepened document — closes the gap where Deepen re-introduces anything after the
   // per-issue passes. Runs only when the pipeline armed it.
