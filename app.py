@@ -1203,6 +1203,79 @@ REFORM_METHOD = (
     "HOW this framework is or is not future-proof on a concrete, grounded point — "
     "that is the distinction-level version; the generic one is filler.")
 
+STATUTORY_INTERPRETATION = (
+    "STATUTORY INTERPRETATION — how to READ a provision you have retrieved. These are canons "
+    "of construction (METHOD applied to the text in front of you), not law recited from memory: "
+    "they tell you how to read the enacted words, and never license inventing them.\n"
+    "- TEXT FIRST. Start from the ordinary meaning of the words ACTUALLY ENACTED; the enacted "
+    "text is the law. Do not substitute what the provision 'should' say, or a policy gloss, for "
+    "what it says.\n"
+    "- READ THE WHOLE INSTRUMENT; GIVE EVERY WORD WORK. Construe a provision in the context of "
+    "the section, the Part and the whole Act; prefer a reading that leaves NO word redundant "
+    "(the presumption against surplusage) and that HARMONISES provisions rather than setting "
+    "them at war. A definitions / interpretation section CONTROLS the terms it defines — apply "
+    "it before ordinary meaning.\n"
+    "- ORDINARY vs TECHNICAL MEANING. Words bear their ordinary meaning unless the Act defines "
+    "them or they are legal/technical terms of art, in which case the term-of-art meaning "
+    "governs.\n"
+    "- EJUSDEM GENERIS. General words that FOLLOW a list of specific items are read as limited "
+    "to the same class as those items ('cars, vans, lorries and other vehicles' — 'other "
+    "vehicles' means like road vehicles, not aircraft).\n"
+    "- NOSCITUR A SOCIIS. An ambiguous word takes its colour from the words around it; read it "
+    "consistently with its neighbours, not in isolation.\n"
+    "- EXPRESSIO UNIUS EST EXCLUSIO ALTERIUS. Express mention of one thing can imply exclusion "
+    "of others — BUT apply it with care: it is DEFEATED where the list is non-exhaustive "
+    "('includes', 'such as', 'without limitation') or where exclusion would make no sense. Never "
+    "over-read a list as CLOSED when the text signals it is open — this is the interpretive side "
+    "of stating a rule at its TRUE width: capture every limb, neither wider nor narrower than the "
+    "terms.\n"
+    "- SPECIFIC OVER GENERAL (generalia specialibus non derogant). Where a specific provision and "
+    "a general one both touch the point, the specific governs. (A conflict between successive "
+    "WHOLE instruments over time is handled by the succession rules, not this canon.)\n"
+    "- MANDATORY vs DIRECTORY. 'Shall' is presumptively mandatory and imposes a duty; 'may' is "
+    "permissive and confers a discretion or power. The presumption yields to purpose and to the "
+    "consequences the Act attaches to non-compliance — but never silently convert a discretion "
+    "into a duty, or a power into a right.\n"
+    "- PROVISOS, EXCEPTIONS, 'SUBJECT TO'. A proviso or exception qualifies only what it attaches "
+    "to; read carve-outs no wider than their words, and ALWAYS apply an express 'subject to X' "
+    "limit — a provision read without its proviso is a different rule.\n"
+    "- PURPOSE RESOLVES AMBIGUITY; IT DOES NOT OVERRIDE CLEAR TEXT. Keep two situations apart. "
+    "(a) Where the enacted words are genuinely AMBIGUOUS, it is your DUTY to RESOLVE the ambiguity: "
+    "choose the reading that best advances the Act's evident object and purpose and COMMIT to it — "
+    "merely observing that 'the text is unclear' and stopping is an interpretive FAILURE, not "
+    "restraint. (b) Where the words are CLEAR, apply them even if the result seems unwelcome; "
+    "depart from the literal meaning only to avoid genuine absurdity or self-contradiction (the "
+    "golden rule), and never use 'purpose' to rewrite plain text or to add a requirement "
+    "Parliament did not enact.\n"
+    "- AMBIGUITY IS NOT SILENCE — do not confuse them, and do not let restraint tip into "
+    "literalism. A provision whose enacted words admit two readings is AMBIGUOUS: you must pick the "
+    "better reading (purpose, structure, the canons) and say which — that is interpretation, not "
+    "gap-filling. Reserve 'the Act is SILENT' for where the words do not address the matter AT ALL. "
+    "Do NOT retreat to 'the text is silent' to avoid resolving which of two available readings the "
+    "enacted words bear; a genuine interpretive choice must be MADE, not merely noted.\n"
+    "- DO NOT LEGISLATE FROM THE BENCH. Never read in words Parliament did not enact, and never "
+    "stretch a provision beyond what its language can bear to reach a desired result. Where the Act "
+    "is genuinely silent — the words do not reach the matter at all, as distinct from being merely "
+    "ambiguous (above) — SAY so and frame the question as whether the enacted words REACH the "
+    "facts; do not supply the missing rule. This is the interpretive face of the grounded-only "
+    "rule: construe the retrieved text; never invent it.\n"
+    "CANON CONFLICT & RESTRAINT — canons are interpretive AIDS, not independent sources of law; "
+    "never apply one mechanically, and never SELECT a canon because it yields a preferred outcome "
+    "('canon-shopping'). Where more than one canon could apply: (1) BEGIN with the verified text, "
+    "its definitions, structure and applicable amendments; (2) IDENTIFY each canon that GENUINELY "
+    "applies and the reading it supports; (3) ask whether the statutory wording or context "
+    "DEFEATS that canon; (4) NAME any material CONFLICT between competing canons rather than "
+    "hiding it; (5) PREFER the reading that best reconciles the text, structure and legally "
+    "permissible purpose of the enactment; (6) do NOT use a general canon to override an express "
+    "definition, proviso, exception or specific provision; and (7) where competing readings "
+    "remain reasonably available, STATE the ambiguity — do not present one canon as conclusive. A "
+    "canon must NEVER be used to supply missing statutory text, to create a power or duty "
+    "Parliament did not enact, or to convert legislative silence into an affirmative legal rule."
+)
+# Canons of construction ride wherever the doctrinal-precision discipline already goes (answer,
+# gather, deepen, research, chat, advisory, voice) — they are HOW a retrieved provision is read.
+DOCTRINAL_PRECISION = DOCTRINAL_PRECISION + "\n\n" + STATUTORY_INTERPRETATION
+
 # Citation integrity — how to cite law. A wrong or second-hand authority is worse
 # than a candid gap, and in a knowledge base it contaminates every downstream
 # answer that retrieves it. Codifies the citation failures this tool must avoid.
@@ -1265,6 +1338,53 @@ CITATION_INTEGRITY = (
     "the corpus does not support a proposition, say so and mark it for "
     "verification against the primary source."
 )
+
+PROPOSITION_VALIDATION = (
+    "SOURCE & PROPOSITION VALIDATION — before you commit to any material proposition, know "
+    "which of five kinds it is and write it AS that kind, never dressed up as more:\n"
+    "(1) EXPRESSLY STATED in a verified primary authority; (2) a REASONABLE INTERPRETATION of "
+    "verified primary authority; (3) an INFERENCE from the assumed facts; (4) drawn from "
+    "SECONDARY literature, regulatory practice or POLICY; (5) UNRESOLVED — needing further "
+    "authority or factual verification. Present ONLY (1) as express law. Signal (2) as a reading "
+    "('on the better construction', 'the provision is best read as'), (3) as an inference from "
+    "the facts, (4) as what it is (commentary / practice / policy — persuasive, NOT binding), "
+    "and (5) as open — resolve or bracket it with a fallback that lets the analysis proceed, "
+    "never assert it. Passing a (2)-(5) proposition off as (1) express law is the core error "
+    "this discipline guards against.\n"
+    "For EVERY material conclusion, run this check before you rely on it:\n"
+    "- DOES THE AUTHORITY ACTUALLY SUPPORT THIS EXACT PROPOSITION? — not merely the general "
+    "area, this precise point. If the source supports only a neighbouring point, state the "
+    "narrower thing the source actually says.\n"
+    "- IS THE SOURCE CURRENT, COMPLETE AND AUTHORITATIVE? — has a missing word, a later "
+    "amendment, a proviso, an exception or a cross-reference altered the meaning? A provision "
+    "read without its proviso or its 'subject to' clause is a different rule.\n"
+    "- WHAT DOES THE PROVISION DO? — keep apart a POWER (may), a DUTY (shall), a RIGHT conferred, "
+    "and a mere guide to DISCRETION. Do not read a discretion as a duty, or a power as a right.\n"
+    "- WHICH QUESTION IS THIS? — keep VALIDITY, ENFORCEABILITY, PROCEDURE, SCOPE and REMEDY "
+    "distinct; a conclusion on one is not a conclusion on another. Do not let a scope finding "
+    "pass for a validity finding.\n"
+    "- EXISTENCE OF AN INSTRUMENT IS NOT ITS FULL LEGAL EFFECT. Do not treat acceptance, "
+    "payment, approval, registration or ratification as legally FINAL or self-executing merely "
+    "because the instrument exists — examine its TERMS and STATUTORY EFFECT (what it authorises, "
+    "and what preconditions or 'subject to' limits still bite). BOUNDARY WITH THE PRESUMPTION OF "
+    "REGULARITY: that a stated official act OCCURRED is accepted — do not reopen or verify it "
+    "(the fact-discipline rules govern that). What its occurrence legally ACHIEVES is a "
+    "substantive question you must still work through. A ratified lease is validly ratified — and "
+    "may still not authorise commencement where its own terms require permits first.\n"
+    "- POLICY IS NOT BINDING LAW. A policy, guideline, White Paper or ministerial statement "
+    "informs and may guide discretion; it creates a binding legal obligation only where a "
+    "provision gives it legal force — say which provision does.\n"
+    "- ONE INSTANCE IS NOT A PRACTICE. Do not use a single transaction, licence or example as "
+    "proof of general regulatory practice or settled law; treat it as illustrative, not "
+    "determinative.\n"
+    "- INCOMPLETE / UNOFFICIAL / OCR-DERIVED SOURCE — where the text is incomplete, internally "
+    "inconsistent, unofficial, OCR-garbled or hard to reconcile with the wider statute, FLAG the "
+    "uncertainty and rely on it only provisionally; seek or ask for the verified version before "
+    "treating it as settled."
+)
+# Rides every path that already carries the grounded-only citation rules (answer, gather,
+# assemble, research, deepen, chat, voice) — the validation discipline is inseparable from them.
+CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + PROPOSITION_VALIDATION
 
 PRECISION_DISCIPLINE = (
     "CALIBRATED PRECISION — be exactly as specific as your sources are, and no "
@@ -2925,6 +3045,49 @@ def grounding_audit(question, course, answer, retrieved, path="ask"):
         pass
 
 
+# --- Reasoning-modules monitor (Safeguard 3) --------------------------------
+# PROPOSITION_VALIDATION + STATUTORY_INTERPRETATION ship as ONE tested release
+# (Safeguard 1: versioned together). This monitor records, per real answer, the
+# signals a human needs to judge whether the modules help or over-caveat: answer
+# length, caveat density, and which interpretive canons / source-type moves fired.
+# It is telemetry, NOT an A/B vs modules-off — it tracks absolute rates you read via
+# /api/admin/reasoning to watch for (b) unnecessary caveats and (c) length inflation;
+# (a) "caught an issue ordinary review would miss" and (d) "jurisdiction-doctrine
+# conflict" still need a human to read the flagged sample. Never raises.
+REASONING_MODULES_VERSION = "reasoning-modules-v1 (2026-07-14)"
+REASONING_LOG = os.path.join(DATA, "reasoning_audit.jsonl")
+
+_RM_CAVEAT = re.compile(
+    r"(subject to|on the assumed facts|on the better (?:view|construction)|the better view|"
+    r"it is arguable|arguably|provision it|not in the materials|further (?:verification|authority)|"
+    r"would (?:need|have) to be (?:checked|confirmed)|to be confirmed|cannot (?:confirm|be confirmed)|"
+    r"persuasive(?:,| but| not)|not binding|illustrative(?:,| not| rather)|remains? (?:open|uncertain))",
+    re.I)
+_RM_CANON = re.compile(
+    r"(ejusdem generis|noscitur a sociis|expressio unius|generalia specialibus|purposive|"
+    r"mandatory|directory|golden rule|read(?:ing)? in(?:to)?|plain meaning|term of art|proviso|"
+    r"the enacted words|policy is not|specific over general|closed list)",
+    re.I)
+
+
+def reasoning_delta_log(question, course, answer, mode):
+    """Non-fatal telemetry for the reasoning modules. One JSON line per answer; read the
+    trend via /api/admin/reasoning. Never raises into the request path."""
+    try:
+        words = len(re.findall(r"\S+", answer or ""))
+        caveats = len(_RM_CAVEAT.findall(answer or ""))
+        canon = sorted({m.group(0).lower() for m in _RM_CANON.finditer(answer or "")})
+        rec = {"ts": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+               "v": REASONING_MODULES_VERSION, "mode": mode, "course": course,
+               "q": (question or "")[:200], "words": words, "caveats": caveats,
+               "caveat_per_1k": round(1000.0 * caveats / max(1, words), 2),
+               "canon": canon, "fired": bool(canon)}
+        with open(REASONING_LOG, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
+
+
 def load_full_docs(full_docs):
     """Load the ENTIRE text of specific documents (every chunk, in page order) so the
     model works from the complete instrument — not 25 similarity excerpts. Returns
@@ -3246,6 +3409,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     _final_answer = "".join(s["text"] for s in segments).strip()
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
+    reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
+                        _final_answer, mode)
     return {"answer": _final_answer,
             "answer_annotated": annotated,
             "segments": segments, "sources": sources,
@@ -6190,7 +6355,7 @@ def api_issue_calibrate():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
-    sys = (CALIBRATION + "\n\nOUTPUT FORMAT — return the FULL calibrated answer text first "
+    sys = (CALIBRATION + "\n\n" + PROPOSITION_VALIDATION + "\n\nOUTPUT FORMAT — return the FULL calibrated answer text first "
            "(preserving structure, headers, authorities and facts, changing only what "
            "calibration requires), then a line containing exactly '===CHANGES===', then up to 6 "
            "one-line bullets naming the calibrations made (e.g. \"'cannot save through JV' -> "
@@ -8596,6 +8761,53 @@ def api_grounding():
         "note": "ungrounded = distinctive pinpoint absent from retrieved text and "
                 "unhedged (the correct-but-ungrounded cite). Drop the monitor once "
                 "this holds at 0 across a few hundred answers spanning rich+thin courses.",
+    })
+
+
+@app.route("/api/admin/reasoning")
+def api_reasoning():
+    """Admin: read the reasoning-modules monitor (Safeguard 3). Aggregates
+    reasoning_audit.jsonl into average answer length, caveat density, and how often the
+    interpretive canons fire — the numbers that reveal (b) over-caveating and (c) length
+    inflation. Returns a recent sample so a human can judge (a) issues the module caught
+    and (d) any jurisdiction-doctrine conflict, which no counter can decide."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    n = 0
+    sum_words = sum_cav = sum_cpk = fired = 0
+    canon_freq = {}
+    recent = []
+    try:
+        for ln in open(REASONING_LOG):
+            ln = ln.strip()
+            if not ln:
+                continue
+            r = json.loads(ln)
+            n += 1
+            sum_words += r.get("words", 0)
+            sum_cav += r.get("caveats", 0)
+            sum_cpk += r.get("caveat_per_1k", 0)
+            fired += 1 if r.get("fired") else 0
+            for c in r.get("canon") or []:
+                canon_freq[c] = canon_freq.get(c, 0) + 1
+            recent.append({"ts": r.get("ts"), "mode": r.get("mode"), "course": r.get("course"),
+                           "q": r.get("q", ""), "words": r.get("words"),
+                           "caveats": r.get("caveats"), "canon": r.get("canon")})
+    except FileNotFoundError:
+        pass
+    return jsonify({
+        "version": REASONING_MODULES_VERSION,
+        "answers_logged": n,
+        "avg_words": round(sum_words / n, 1) if n else 0,
+        "avg_caveats": round(sum_cav / n, 2) if n else 0,
+        "avg_caveats_per_1k_words": round(sum_cpk / n, 2) if n else 0,
+        "pct_answers_invoking_a_canon": round(100 * fired / n, 1) if n else 0,
+        "canon_frequency": dict(sorted(canon_freq.items(), key=lambda kv: -kv[1])),
+        "recent_for_human_review": recent[-25:],
+        "note": "Counters flag (b) caveat inflation and (c) length; a rising "
+                "avg_caveats_per_1k with flat accuracy is the warning sign. Read "
+                "recent_for_human_review to judge (a) real catches and (d) any "
+                "jurisdiction-doctrine conflict — those need a human, not a metric.",
     })
 
 
