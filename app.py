@@ -742,7 +742,15 @@ CALIBRATION = (
     "operational functions beyond those described and would require reconsideration if the role "
     "expands into activities falling within the regulated set — this ties the opinion to the "
     "assumed facts and protects against later factual drift. Use it ONCE, at the end; do not "
-    "repeat it per role.")
+    "repeat it per role.\n"
+    "15) FRAME A 'DOES NOT COVER' NEGATIVE AROUND THE ACTUAL STATUTORY QUESTION, NOT THE ACT'S "
+    "SCOPE. When you say a statute 'does not extend to' or 'does not cover' some conduct, keep it "
+    "on the question actually analysed — does the conduct fall within the REGULATED ACTIVITY? — "
+    "not a broader proposition about the Act's reach, scope or TERRITORIALITY you did not examine. "
+    "Prefer 'nothing in [the Act] expressly indicates that [conduct], without more, constitutes a "
+    "[licensable/regulated activity]' over '[the Act] does not extend [the requirement] to "
+    "[conduct]': the former answers the s.X question and leaves open that another provision or "
+    "subsidiary instrument could alter it.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
