@@ -736,7 +736,13 @@ CALIBRATION = (
     "'is valid', 'is enforceable', 'requires no licence' — where the body only reached them 'on "
     "the better view': recast to match, e.g. 'appears capable of lawfully participating' or 'may, "
     "on the better view, lawfully participate'. And where the body said an outcome 'may' occur "
-    "'depending on how it is implemented', the conclusion must say 'may', not 'would likely'.")
+    "'depending on how it is implemented', the conclusion must say 'may', not 'would likely'.\n"
+    "14) TIE THE CONCLUSION TO THE ASSUMED ROLE — DRIFT CAVEAT. Where a conclusion depends on the "
+    "party performing only the roles/functions described, add that it assumes no additional "
+    "operational functions beyond those described and would require reconsideration if the role "
+    "expands into activities falling within the regulated set — this ties the opinion to the "
+    "assumed facts and protects against later factual drift. Use it ONCE, at the end; do not "
+    "repeat it per role.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
@@ -1208,7 +1214,12 @@ CITATION_INTEGRITY = (
     "your sources, call them 'the materials reviewed' or 'the materials available for this "
     "opinion' — NEVER 'the retrieved materials / retrieved text / retrieved provisions' or "
     "'the corpus'; those expose how the research was assembled and read as an AI artifact in a "
-    "professional opinion.\n"
+    "professional opinion. RESERVE that phrase for statements about the LIMITS of the sources "
+    "(a provision or authority NOT before you, a status you cannot confirm). When INTERPRETING "
+    "the instrument — what it does or does not PROVIDE — refer DIRECTLY to the Act/section, not "
+    "the materials: write 'Act 691 does not expressly extend the licensing requirement to X', "
+    "NOT 'the materials reviewed do not extend the licensing requirement'. The statute extends "
+    "or does not; the materials are only the record you worked from.\n"
     "AUTHORITY & CITATION INTEGRITY — citation accuracy is not cosmetic; a wrong, "
     "second-hand or unsupported authority is worse than a candid gap:\n"
     "- CITE INSTRUMENTS BY PROVISION, NOT PAGE. For any instrument (treaty, "
