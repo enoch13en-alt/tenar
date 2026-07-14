@@ -6389,6 +6389,99 @@ def api_issue_cases():
     return jsonify({"cases": cases[:5]})
 
 
+@app.route("/api/issue/scholarship", methods=["POST"])
+def api_issue_scholarship():
+    """Surface ACADEMIC WRITINGS FROM THE STUDENT'S OWN CORPUS (indexed articles / book chapters)
+    that strengthen a gathered issue analysis — the literature counterpart of /api/issue/cases, but
+    GROUNDED IN THE RETRIEVED CHUNKS, not the web. It reads the actual work text and attributes what
+    the author genuinely argues (never a title guess). Candidates for the student to verify before
+    weaving. Metered as one question — no web credit."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    context = (body.get("question") or "").strip()
+    courses = [safe_course(x) for x in (body.get("courses") or []) if x]
+    if not courses and body.get("course"):
+        courses = [safe_course(body.get("course"))]
+    courses = [x for x in courses if _may_read_course(x)]
+    if not courses:
+        return jsonify({"error": "No course to search for scholarship.", "scholarship": []}), 400
+    if len(answer) < 40 and len(issue) < 5:
+        return jsonify({"error": "Gather the law for this issue first.", "scholarship": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "scholarship": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "scholarship": []}), 402
+    consume("questions")
+    # Retrieve from the corpus, then keep ONLY secondary-literature chunks (articles / books) —
+    # that is the scholarship. Statutes/cases belong to the main answer and the ⚖️ cases tool.
+    query = (issue + " " + context[:300] + " " + answer[:300]).strip()
+    hits = (search_multi(courses, query, k=40) if len(courses) > 1 else search(courses[0], query, k=40))
+    lit, seen = [], set()
+    for h in hits:
+        if display_type(h["doc"]) not in ("article", "book"):
+            continue
+        hc = h.get("_course", courses[0])
+        pdir, _ = course_paths(hc)
+        pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+        key = (hc, h["doc"], pg)
+        if key in seen:
+            continue
+        seen.add(key)
+        lit.append({"title": display_name(h["doc"]), "page": pg, "text": h["text"]})
+        if len(lit) >= 14:
+            break
+    if not lit:
+        return jsonify({"scholarship": [], "note": "No academic writings in your materials touch "
+                        "this point — this corpus is primary-law heavy here. Upload the relevant "
+                        "articles/chapters (or provision them) to engage the literature."})
+    blocks = "\n\n".join(f"[{w['title']} — p.{w['page']}]\n{w['text']}" for w in lit)
+    sys = (
+        "You are given ACADEMIC WRITINGS retrieved from the student's OWN materials — each labelled "
+        "with its work title (which usually carries the author) and page — plus a legal issue "
+        "analysis. Identify which of these writings bear DIRECTLY on this issue and would strengthen "
+        "it, and for each state — GROUNDED IN THE RETRIEVED PASSAGE, never from memory or the title "
+        "alone — what the author actually argues, ATTRIBUTED by name.\n"
+        "THE CARDINAL RULE — the 'point' and the woven sentence must reflect ONLY what the retrieved "
+        "passage actually says. A work's TITLE is not its argument: if a passage is on-topic but "
+        "does not itself contain an argument on this point, EXCLUDE it — never manufacture a thesis "
+        "from the title. Never invent an author, work or claim; use ONLY the passages given. Quote "
+        "or closely paraphrase the passage; do not overstate it.\n"
+        "ATTRIBUTION — derive the author from the work title (e.g. 'Acquiring Water Rights… — "
+        "Ainuson' → Ainuson); if the title shows no personal author, attribute to the work itself "
+        "('the commentary in [title]'). RELEVANCE IS STRICT — a work earns its place ONLY if its "
+        "passage speaks to THIS issue's specific point; an EMPTY list is correct when none do. "
+        "Return STRICT JSON {\"scholarship\":[{\"author\":<author from the title, or the work "
+        "name>, \"title\":<work title>, \"page\":<page as given>, \"point\":<the author's claim AS "
+        "SHOWN in the passage>, \"strengthens\":<the specific point in THIS analysis it "
+        "reinforces>, \"woven\":<a READY-TO-INSERT attributed sentence applying the passage to THIS "
+        "issue: 'As [Author] argues …, so here …', grounded in the passage>}]}. At most 5, most "
+        "on-point first. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2600, system=sys,
+            messages=[{"role": "user", "content":
+                       "RETRIEVED ACADEMIC WRITINGS FROM YOUR MATERIALS:\n" + blocks[:16000]
+                       + (("\n\nProblem: " + context[:600]) if context else "")
+                       + "\n\nISSUE: " + issue + "\n\nISSUE ANALYSIS to strengthen:\n" + answer[:4000]}])
+        return _first_json_obj(_text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140], "scholarship": []})
+    works = data.get("scholarship") if isinstance(data, dict) else data
+    if not isinstance(works, list):
+        works = []
+    for w in works:            # tag the in-corpus source for the UI (their own materials)
+        if isinstance(w, dict):
+            w["source"] = (str(w.get("title", "")) + (f" — p.{w.get('page')}" if w.get("page") else "")).strip(" —")
+    return jsonify({"scholarship": works[:5]})
+
+
 @app.route("/api/issue/calibrate", methods=["POST"])
 def api_issue_calibrate():
     """Calibrate the legal language of a gathered/audited issue answer — strip unjustified
@@ -6479,6 +6572,100 @@ def api_document_cases_add():
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
     return jsonify({"document": updated or document, "added": len(cases)})
+
+
+@app.route("/api/document/scholarship/add", methods=["POST"])
+def api_document_scholarship_add():
+    """Weave PRE-WORKED, student-verified academic writings into the FINAL compiled document —
+    the literature counterpart of /api/document/cases/add. Each item carries a ready, ATTRIBUTED
+    'woven' sentence; this step is PLACEMENT, not re-argument. Preserves everything else verbatim."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    works = body.get("scholarship") or []
+    if not document or not isinstance(works, list) or not works:
+        return jsonify({"error": "Need the document and at least one selected writing."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You weave PRE-VERIFIED academic writings into a FINISHED legal answer. Each item comes "
+        "with a READY, ATTRIBUTED 'woven' sentence already worked out. Your job is PLACEMENT, not "
+        "re-argument: insert each 'woven' sentence at the logically correct point — the passage "
+        "dealing with the issue it belongs to — adjusting ONLY the connective words needed to read "
+        "naturally. KEEP THE ATTRIBUTION INTACT: the author's name and work must remain; never "
+        "strip a citation or restate a scholar's claim as unattributed law. Respect each item's "
+        "confidence: an 'argument' item states the author's reported claim; an 'exists' item only "
+        "points the reader to consult the work — do NOT upgrade an 'exists' item into an asserted "
+        "thesis. DO NOT re-argue, expand, generalise or over-say; keep each to the one sentence "
+        "provided (light connective edits only). If an item has no natural home, leave it out. "
+        "PRESERVE everything else — analysis, authorities, structure, headings and the CONCLUSION "
+        "— VERBATIM except for the inserted sentence(s). Return ONLY the updated document text.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "FINAL DOCUMENT:\n" + document
+                       + "\n\nPRE-WORKED WRITINGS TO PLACE (each with its ready attributed 'woven' "
+                       "sentence, its confidence, and the issue it belongs to):\n" + json.dumps(works)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"document": updated or document, "added": len(works)})
+
+
+@app.route("/api/issue/scholarship/add", methods=["POST"])
+def api_issue_scholarship_add():
+    """Weave student-VERIFIED academic writings into an issue's answer, ATTRIBUTED by name at the
+    point each strengthens — the literature twin of /api/issue/cases/add. Changes nothing else."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    works = body.get("scholarship") or []
+    if not answer or not isinstance(works, list) or not works:
+        return jsonify({"error": "Need the answer and at least one verified writing."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You STRENGTHEN a legal issue analysis by weaving in ACADEMIC WRITINGS the student has "
+        "already VERIFIED — and nothing else. Each item names its author(s), title, year, a "
+        "confidence flag, and the point it strengthens. Integrate it at the logically correct "
+        "place, usually ONE attributed sentence.\n"
+        "ATTRIBUTION IS MANDATORY — always name the author and work ('As Ainuson argues in […] "
+        "(2018), …'); NEVER launder a scholar's view into unattributed law.\n"
+        "RESPECT THE CONFIDENCE FLAG — this is the cardinal rule:\n"
+        "- verified='argument': the author's claim is confirmed, so you MAY state what they argue "
+        "(in their reported terms) and apply it to THIS issue.\n"
+        "- verified='exists': the work is real and on-topic but its actual argument was NOT "
+        "confirmed — so you may ONLY point the reader to it ('[Author]'s [work] ([year]) is "
+        "directly on this question and should be consulted'); you must NOT state or invent what it "
+        "argues. Do not upgrade an 'exists' item into an asserted thesis.\n"
+        "DO NOT OVER-SAY: confine each item to the single point it supports; never stretch or "
+        "generalise a scholar's claim, never recite an abstract, never add background the point "
+        "does not need. Place each at the EXACT point it bears on and connect it to that "
+        "proposition; if it does not fit, leave it out — never a bare drop-in or a 'see also' list. "
+        "PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim except for "
+        "the short woven-in sentence(s); do NOT re-argue or change any conclusion. Return ONLY the "
+        "updated issue answer.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
+                       + "\n\nVERIFIED WRITINGS TO WEAVE IN (respect each 'verified' flag):\n"
+                       + json.dumps(works)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"answer": updated or answer})
 
 
 @app.route("/api/issue/cases/add", methods=["POST"])

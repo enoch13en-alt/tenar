@@ -1972,9 +1972,11 @@ function renderExam() {
           + '</button>'
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<button class="btn mini casesIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">⚖️ Cases &amp; incidents</button>'
+          + '<button class="btn mini scholarIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">📚 Writers &amp; scholarship</button>'
           + '<button class="btn mini calibrateIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">🎚 Calibrate language</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + '<div class="scholarIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="calibrateIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
@@ -1998,6 +2000,8 @@ function renderExam() {
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".casesIssueBtn").forEach(b =>
     b.onclick = () => findCasesForIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".scholarIssueBtn").forEach(b =>
+    b.onclick = () => findScholarshipForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".calibrateIssueBtn").forEach(b =>
     b.onclick = () => calibrateIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
@@ -2282,6 +2286,70 @@ async function addCasesToIssue(i, out) {
     it.answer = r.answer; it.answer_annotated = "";
     renderExam();                                  // re-render with the cases woven into the answer
   } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } }
+}
+
+// --- Academic writings (literature) — the scholarship twin of the cases flow ---
+async function findScholarshipForIssue(i) {
+  const it = EXAM.issues[i];
+  if (!it || !it.answer) return;
+  const btn = document.querySelector('.scholarIssueBtn[data-i="' + i + '"]');
+  const out = document.querySelector('.scholarIssueOut[data-i="' + i + '"]');
+  if (!out) return;
+  if (!it._audited && !confirm("Best AFTER 'Audit & fix authorities', so the writings support verified law. Find scholarship now anyway?")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "📚 Searching…"; }
+  out.innerHTML = '<span style="font-size:11px;color:#8b93a7">searching your materials for academic writings on this point… (10–30s)</span>';
+  const _courses = (typeof examCourses === "function" ? examCourses() : []) ;
+  try {
+    const r = await (await fetch("/api/issue/scholarship", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || "",
+                            courses: (_courses && _courses.length ? _courses : undefined),
+                            course: (typeof COURSE !== "undefined" ? COURSE : "")})})).json();
+    if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); if (btn){ btn.disabled=false; btn.textContent="📚 Writers & scholarship"; } return; }
+    const works = r.scholarship || [];
+    it._scholarCandidates = works;
+    if (!works.length) {
+      out.innerHTML = '<span style="font-size:12px;color:#8b93a7">' + esc(r.note || "No academic writing in your materials speaks to this point — better none than a work characterised from its title alone.") + '</span>';
+    } else {
+      out.innerHTML = renderScholarCandidates(i, works);
+      const add = out.querySelector(".addScholarBtn");
+      if (add) add.onclick = () => addScholarshipToIssue(i, out);
+    }
+  } catch (e) { out.innerHTML = "Error — try again."; }
+  if (btn) { btn.disabled = false; btn.textContent = "📚 Re-find writers"; }
+}
+
+function renderScholarCandidates(i, works) {
+  let h = '<div style="font-size:12px;color:#7ab0c9;font-weight:600;margin:2px 0 4px">📚 Academic writings from YOUR materials — each grounded in a retrieved passage. Confirm the point reads right, then tick to weave in (attributed):</div>';
+  h += works.map((w, k) => {
+    return '<div style="border-left:3px solid #7ab0c9;padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px">'
+    + '<label style="cursor:pointer"><input type="checkbox" class="scholarChk" data-k="' + k + '"> '
+    + '<span style="background:#16242a;color:#7ab0c9;border-radius:3px;padding:0 5px;font-size:10px;margin-right:4px" title="Grounded in a passage retrieved from your own corpus — the argument is what the passage shows, not a title guess.">📖 IN YOUR MATERIALS</span>'
+    + '<b>' + esc(w.author||"") + '</b>' + (w.title ? ', <i>' + esc(w.title||"") + '</i>' : '') + '</label>'
+    + (w.point ? '<div style="color:#aab4c6;margin:2px 0 0 20px">argues: ' + esc(w.point) + '</div>' : '')
+    + (w.strengthens ? '<div style="color:#8b93a7;margin-left:20px">strengthens: ' + esc(w.strengthens) + '</div>' : '')
+    + (w.source ? '<div style="margin-left:20px;color:#7a8296;font-size:11px">📄 ' + esc(w.source) + ' — in your materials (open the source to confirm)</div>' : '')
+    + '</div>';
+  }).join("");
+  h += '<button class="btn gold mini addScholarBtn" data-i="' + i + '" style="width:auto;margin-top:6px">✓ Add ticked writings to the answer</button>'
+    + '<span class="addScholarNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span>';
+  return h;
+}
+
+async function addScholarshipToIssue(i, out) {
+  const it = EXAM.issues[i];
+  const cands = it._scholarCandidates || [];
+  const chosen = [...out.querySelectorAll(".scholarChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
+  const note = out.querySelector(".addScholarNote");
+  if (!chosen.length) { if (note) note.textContent = "Tick at least one verified writing first."; return; }
+  const add = out.querySelector(".addScholarBtn");
+  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
+  try {
+    const r = await (await fetch("/api/issue/scholarship/add", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, scholarship: chosen})})).json();
+    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } return; }
+    it.answer = r.answer; it.answer_annotated = "";
+    renderExam();
+  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } }
 }
 
 // Shared case-verification panel: render candidates with checkboxes + verify links, and
