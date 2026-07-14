@@ -3096,7 +3096,7 @@ def grounding_audit(question, course, answer, retrieved, path="ask"):
 # /api/admin/reasoning to watch for (b) unnecessary caveats and (c) length inflation;
 # (a) "caught an issue ordinary review would miss" and (d) "jurisdiction-doctrine
 # conflict" still need a human to read the flagged sample. Never raises.
-REASONING_MODULES_VERSION = "reasoning-modules-v1.2 (2026-07-14)"
+REASONING_MODULES_VERSION = "reasoning-modules-v1.3 (2026-07-14)"
 REASONING_LOG = os.path.join(DATA, "reasoning_audit.jsonl")
 
 _RM_CAVEAT = re.compile(
