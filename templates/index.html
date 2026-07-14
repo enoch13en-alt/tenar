@@ -1747,6 +1747,29 @@ document.addEventListener("click", e => {
   if (b){ e.preventDefault(); recheckAuthority(b); }
 });
 // Full audit report for one issue (passed + corrected + flagged), used by 'Do it all'.
+// A small always-visible stamp on the answer itself, so calibration status is provable at a
+// glance and never disappears on re-render.
+function calibratedBadge(it) {
+  const parts = [];
+  if (it._audited) parts.push('<span style="background:#16351f;color:#7fdca0;border-radius:3px;padding:0 6px;font-size:10px;margin-right:4px">🔍 audited</span>');
+  if (it._calibrated) parts.push('<span style="background:#1a2740;color:#8fb4ff;border-radius:3px;padding:0 6px;font-size:10px;margin-right:4px">🎚 calibrated</span>');
+  return parts.length ? '<div style="margin:4px 0 0">' + parts.join("") + '</div>' : "";
+}
+// Persistent calibration record under the answer: what changed + before/after (mirrors the
+// audit block). Stays as long as the calibrated answer stays — this is the "real proof".
+function issueCalibrateHtml(it, idx) {
+  if (!it._calibrated) return "";
+  const changes = (it._calibrateChanges || []).map(x => '<div style="margin:1px 0">• ' + esc(x) + '</div>').join("");
+  const orig = it._calibrateOriginal
+    ? '<button class="btn alt showOrigCal" data-i="' + idx + '" style="width:auto;font-size:10px;margin-top:4px">⌄ show original (before calibration)</button>'
+      + '<div class="origCalBoxI" data-i="' + idx + '" style="display:none;white-space:pre-wrap;color:#98a2b3;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:6px;margin-top:4px">' + esc(it._calibrateOriginal) + '</div>'
+    : '';
+  return '<div style="font-size:11px;margin-top:5px;border-left:3px solid #8fb4ff;padding:5px 9px;background:#0f131a;border-radius:4px">'
+    + '<div style="color:#8fb4ff;margin-bottom:3px;font-weight:600">🎚 Language calibrated'
+    + ((it._calibrateChanges && it._calibrateChanges.length) ? ' — ' + it._calibrateChanges.length + ' change(s)' : '') + '</div>'
+    + (changes ? '<div style="color:#aab4c6">' + changes + '</div>' : '')
+    + orig + '</div>';
+}
 function issueAuditHtml(it, idx) {
   const a = it._audit; if (!a || !a.length) return "";
   const passed = a.filter(x => x.verdict === "supported").length;
@@ -1812,7 +1835,7 @@ function renderExam() {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
-        body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + issueAuditHtml(it, idx)
+        body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
           + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
@@ -1854,6 +1877,12 @@ function renderExam() {
     if (!box) return; const sh = box.style.display === "none";
     box.style.display = sh ? "block" : "none";
     b.textContent = (sh ? "⌃ hide" : "⌄ show") + " original (before fix)";
+  });
+  $("#examOut").querySelectorAll(".showOrigCal").forEach(b => b.onclick = () => {
+    const box = $("#examOut").querySelector('.origCalBoxI[data-i="' + b.dataset.i + '"]');
+    if (!box) return; const sh = box.style.display === "none";
+    box.style.display = sh ? "block" : "none";
+    b.textContent = (sh ? "⌃ hide" : "⌄ show") + " original (before calibration)";
   });
   const sendFup = i => {
     const sel = document.querySelector('.modeSel[data-i="' + i + '"]');
@@ -2356,6 +2385,7 @@ async function calibrateIssue(i) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
     if (r.error) { if (outEl) outEl.textContent = "⚠️ " + esc(r.error); if (btn){ btn.disabled=false; btn.textContent="🎚 Calibrate language"; } return; }
     if (r.answer && r.answer.trim() && r.answer.trim() !== original.trim()) {
+      it._calibrateOriginal = original; it._calibrateChanges = r.changes || [];
       it.answer = r.answer; it.answer_annotated = ""; it._calibrated = true;
       renderExam();                                    // re-render calibrated answer above
       const o2 = document.querySelector('.calibrateIssueOut[data-i="' + i + '"]');
