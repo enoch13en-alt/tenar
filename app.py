@@ -4266,6 +4266,58 @@ def api_research_issues():
         return jsonify({"issues": []})
 
 
+def _norm_for_quote(s):
+    """Normalise for verbatim quote matching: unify smart quotes/dashes, collapse whitespace,
+    lowercase. Makes the check robust to PDF-extraction spacing and typographic variants while
+    still catching a genuine misquote or paraphrase-passed-as-quote."""
+    s = s or ""
+    for a, b in (("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'),
+                 ("–", "-"), ("—", "-"), ("‑", "-"), (" ", " ")):
+        s = s.replace(a, b)
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _verbatim_quote_check(text, courses):
+    """DETERMINISTIC (no LLM) fidelity check: every quoted string of real length in `text` must
+    appear VERBATIM in the corpus of `courses` (after whitespace/typography normalisation).
+    Returns [{quote, ok, nearest}] — nearest = the closest actual corpus passage for a miss.
+    This is what makes 'reproduce the law' provably exact rather than model-trusted."""
+    if not text:
+        return []
+    raws = []
+    for course in courses:
+        try:
+            ensure_loaded(course)
+            raws.extend(ch.get("text", "") for ch in INDEXES[course]["chunks"])
+        except Exception:
+            pass
+    if not raws:
+        return []
+    big = _norm_for_quote("\n".join(raws))
+    norms = [(_norm_for_quote(r), r) for r in raws]
+    # extract double-quoted spans of >=25 chars (skip trivial quotes like "a person")
+    t2 = text.replace("“", '"').replace("”", '"')
+    out, seen = [], set()
+    for q in re.findall(r'"([^"]{25,})"', t2):
+        q = q.strip()
+        if not q or q in seen:
+            continue
+        seen.add(q)
+        qn = _norm_for_quote(q)
+        item = {"quote": q[:300], "ok": qn in big}
+        if not item["ok"]:
+            qw = set(re.findall(r"[a-z0-9]{4,}", qn))
+            best, score = "", 0
+            for rn, raw in norms:
+                sc = len(qw & set(re.findall(r"[a-z0-9]{4,}", rn)))
+                if sc > score:
+                    score, best = sc, raw
+            if best and score >= 3:
+                item["nearest"] = best.strip()[:400]
+        out.append(item)
+    return out
+
+
 @app.route("/api/audit", methods=["POST"])
 def api_audit():
     """Independent citation auditor. Extracts the answer's checkable authorities, RE-
@@ -4618,6 +4670,12 @@ def api_audit():
         result["removed_count"] = len(removed)
         result["removed"] = [{"authority": it["authority"], "claim": it.get("claim", "")}
                              for it, v in removed]
+    # Deterministic verbatim-quote fidelity check — run on the corrected text if we produced
+    # one, else the input. Provably confirms every quoted provision is in the corpus verbatim.
+    try:
+        result["quotes"] = _verbatim_quote_check(result.get("corrected") or answer, courses)
+    except Exception:
+        result["quotes"] = []
     return jsonify(result)
 
 

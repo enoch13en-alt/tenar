@@ -2189,6 +2189,41 @@ async function weaveRunCases(bar, docEl, doc, wordName, defaultTitle, btn) {
   };
 }
 
+// Final check on the WHOLE document (closes the Deepen-drift gap): re-audit authorities against
+// the corpus + fix, run the deterministic verbatim-quote check, then calibrate the language.
+async function finalCheckDoc(bar, docEl, doc, wordName, defaultTitle, btn) {
+  const lbl = btn.textContent; btn.disabled = true; btn.textContent = "🔒 Auditing…";
+  let panel = bar.querySelector(".finalChkOut");
+  if (!panel) { panel = document.createElement("div"); panel.className = "finalChkOut"; panel.style.marginTop = "6px"; bar.appendChild(panel); }
+  panel.innerHTML = '<span style="font-size:11px;color:#8b93a7">re-auditing the whole document against the corpus…</span>';
+  let cur = doc, aud = {};
+  try {
+    aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true})})).json();
+    if (aud.error) { panel.innerHTML = "⚠️ " + esc(aud.error); btn.disabled=false; btn.textContent=lbl; return; }
+    if (aud.corrected) cur = aud.corrected;
+    btn.textContent = "🔒 Calibrating…";
+    panel.innerHTML = '<span style="font-size:11px;color:#8b93a7">calibrating the final language…</span>';
+    const cb = await (await fetch("/api/issue/calibrate", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: "the full memorandum", answer: cur, question: EXAM.question || ""})})).json();
+    if (cb && cb.answer && cb.answer.trim()) cur = cb.answer;
+    // update the shown document and rebuild the toolbar so exports use the new text
+    EXAM.doc = cur;
+    docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(cur);
+    const fixed = aud.fixed_count || 0, removed = aud.removed_count || 0;
+    const summary = '<div style="font-size:12px;color:#7fdca0;font-weight:600">🔒 Final check complete'
+      + (fixed ? (' · 🔧 ' + fixed + ' corrected') : '')
+      + (removed ? (' · 🗑️ ' + removed + ' cut') : '') + ' · 🎚 language calibrated</div>'
+      + quotesHtml(aud.quotes)
+      + ((cb && cb.changes && cb.changes.length)
+          ? '<div style="font-size:11px;color:#8fb4ff;margin-top:4px">Calibrations: ' + cb.changes.map(esc).join(' · ') + '</div>' : '');
+    bar.remove();
+    renderExportBar(docEl, cur, wordName, defaultTitle);
+    const nb = docEl.nextElementSibling;
+    if (nb) { const p = document.createElement("div"); p.className = "finalChkOut"; p.style.marginTop = "6px"; p.innerHTML = summary; nb.appendChild(p); }
+  } catch (e) { panel.innerHTML = "Final-check error — try again."; btn.disabled = false; btn.textContent = lbl; }
+}
+
 // Finished-document: find leading cases that strengthen the whole memo, verify, weave in.
 async function findDocCases(bar, docEl, doc, wordName, defaultTitle, btn) {
   let panel = bar.querySelector(".docCasesOut");
@@ -2219,6 +2254,21 @@ async function findDocCases(bar, docEl, doc, wordName, defaultTitle, btn) {
 
 // Audit an issue's gathered answer against the corpus and auto-correct flagged
 // authorities AT SOURCE — before they can propagate into the compiled document.
+// Render the deterministic verbatim-quote check (from the audit response). Green when every
+// quoted provision is verbatim in the corpus; flags any quote that isn't, with the real text.
+function quotesHtml(quotes) {
+  if (!quotes || !quotes.length) return "";
+  const bad = quotes.filter(q => !q.ok);
+  const head = '<div style="font-size:11px;margin-top:6px;color:' + (bad.length ? '#e0b050' : '#7fdca0') + '">'
+    + '📝 Quote check: ' + (quotes.length - bad.length) + '/' + quotes.length + ' verbatim'
+    + (bad.length ? (' · ⚠️ ' + bad.length + ' not found verbatim') : ' ✓') + '</div>';
+  if (!bad.length) return head;
+  return head + bad.map(q =>
+    '<div style="font-size:11px;margin:2px 0 2px 12px;border-left:2px solid #e0b050;padding-left:6px">'
+    + '⚠️ quoted, not verbatim in your materials: <span style="color:#e6b0a0">"' + esc(q.quote) + '"</span>'
+    + (q.nearest ? '<div style="color:#8b93a7;margin-top:1px">closest actual text: "' + esc(q.nearest) + '"</div>' : '')
+    + '</div>').join("");
+}
 async function auditAndFixIssue(i) {
   const it = EXAM.issues[i];
   if (!it || !it.answer) return;
@@ -2261,6 +2311,7 @@ async function auditAndFixIssue(i) {
           + '<div style="border-left:3px solid #7fdca0;padding:5px 9px;background:#11151d;border-radius:4px">' + fixedHtml + removedHtml + '</div>'
           + '<button class="btn alt showOrigBtn" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before fix)</button>'
           + '<div class="origBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">' + esc(original) + '</div>'
+          + quotesHtml(d.quotes)
           + '<div style="margin-top:8px;font-size:11px;color:#6b7488">Full audit (' + items.length + '):</div>' + list;
         const sb = o2.querySelector(".showOrigBtn");
         if (sb) sb.onclick = () => {
@@ -2272,7 +2323,7 @@ async function auditAndFixIssue(i) {
       return;
     }
     const clean = !items.some(x => x.verdict !== "supported");
-    if (outEl) outEl.innerHTML = (clean ? '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Authorities check out.</div>' : '') + list;
+    if (outEl) outEl.innerHTML = (clean ? '<div style="font-size:11px;color:#7fdca0;margin-bottom:4px">✅ Authorities check out.</div>' : '') + list + quotesHtml(d.quotes);
     if (btn) { btn.disabled = false; btn.textContent = "🔍 Re-audit"; }
     const cb = document.querySelector('.copyIssueBtn[data-i="' + i + '"]');   // relabel Copy → verified
     if (cb) { cb.textContent = "📋 Copy verified answer"; cb.title = "Audited — ungrounded claims removed and citations checked."; }
@@ -2510,10 +2561,13 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
           ? "Weave in the cases &amp; incidents found and pre-applied during the run. You verify each (open the link) before it is added."
           : "Find leading / locus classicus cases &amp; incidents that strengthen this finished document. You verify each before it is woven in.")
       + "'>" + (hasRunCases ? "⚖️ Cases from run" : "⚖️ Include cases") + "</button>";
+  const finalBtn = "<button class='btn mini bFinalChk' style='margin-left:6px' "
+      + "title='Final check on the WHOLE document: re-audit authorities against the corpus, "
+      + "verbatim-quote check, and calibrate the language — catches anything Deepen re-introduced.'>🔒 Final check</button>";
   box.innerHTML = coverBlock
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + deepBtn + fitBtn + casesBtn + "</div>";
+    + pdfBtn + deepBtn + fitBtn + casesBtn + finalBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
   box.querySelector(".bCopy").onclick = e => {
@@ -2555,6 +2609,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   if (casesEl) casesEl.onclick = () => (EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length)
     ? weaveRunCases(box, afterEl, doc, wordName, defaultTitle, casesEl)
     : findDocCases(box, afterEl, doc, wordName, defaultTitle, casesEl);
+  const finalEl = box.querySelector(".bFinalChk");
+  if (finalEl) finalEl.onclick = () => finalCheckDoc(box, afterEl, doc, wordName, defaultTitle, finalEl);
 }
 
 // Deepen a competent answer to "examined argument" standard. Streams the upgraded
