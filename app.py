@@ -676,9 +676,13 @@ CALIBRATION = (
     "INTERPRETATION vs what is UNCERTAIN or fact-dependent; make clear which each proposition is.\n"
     "2) STRIP UNJUSTIFIED ABSOLUTES — 'clearly', 'automatically', 'necessarily', 'cannot', "
     "'will', 'always', 'squarely', 'entirely' — UNLESS the legislation, authority AND facts truly "
-    "justify that certainty. Where they DO (a given fact, an express provision squarely on point), "
-    "keep the firm statement; do NOT manufacture doubt about something settled or GIVEN — that "
-    "breaches fact-discipline and the presumption of regularity.\n"
+    "justify that certainty. This INCLUDES CATEGORICAL NEGATIVES stated flatly where the statute "
+    "has not expressly addressed the precise arrangement — 'requires no licence', 'does not bring "
+    "X within s.Y', 'is not caught', 'has no effect' — recast them as 'does not appear to require "
+    "a licence under s.Y' / 'does not, on the available materials, appear to bring X within s.Y'. "
+    "Where they DO justify certainty (a given fact, an express provision squarely on point), keep "
+    "the firm statement; do NOT manufacture doubt about something settled or GIVEN — that breaches "
+    "fact-discipline and the presumption of regularity.\n"
     "3) QUALIFY genuinely uncertain propositions with calibrated language where warranted: "
     "'likely', 'arguably', 'on the better view', 'on the assumed facts', 'may amount to', "
     "'creates a material risk', 'would depend on', 'the stronger argument is', 'the available "
@@ -720,7 +724,15 @@ CALIBRATION = (
     "12) FOR A LICENSING / REGULATORY ISSUE, ANCHOR IN SUBSTANCE OVER FORM as the organising "
     "principle: where the statute regulates an ACTIVITY (what a person DOES) rather than a status "
     "or label, say so — the analysis turns on the substance of the party's operational role, not "
-    "its description in the transaction documents.")
+    "its description in the transaction documents. Where the practical operation of the "
+    "transaction may diverge from its documentation, add that the regulatory analysis is likely to "
+    "follow the substance of the parties' conduct rather than the labels used in the agreements.\n"
+    "13) MIRROR THE BODY'S CALIBRATION IN THE CONCLUSION. The Conclusion must carry the SAME degree "
+    "of qualification as the analysis that produced it — if the body reasons in 'appears', 'on the "
+    "better view', 'arguably', 'would depend', the Conclusion must NOT suddenly harden into a flat "
+    "definitive statement. Anchor it 'on the assumed facts' and keep the hedging the body "
+    "established; a confident conclusion sitting on a carefully-qualified body is a calibration "
+    "failure.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
@@ -6028,8 +6040,12 @@ def api_issue_calibrate():
            "one-line bullets naming the calibrations made (e.g. \"'cannot save through JV' -> "
            "'the stronger view is that the JV is not the only route'\"). No preamble, no fences.")
     try:
+        # calibration is a careful proposition-by-proposition review, where deeper reasoning
+        # genuinely helps — run at high effort with generous room so the full calibrated answer
+        # (plus the change list) can't truncate behind the thinking budget.
         r, _m = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=8000, system=cached_system(sys),
+            c, model=ANSWER_MODEL, max_tokens=16000, output_config={"effort": "high"},
+            system=cached_system(sys),
             messages=[{"role": "user", "content":
                        (("Problem: " + context[:900] + "\n\n") if context else "")
                        + "ISSUE: " + issue + "\n\nANSWER TO CALIBRATE:\n" + answer}])
