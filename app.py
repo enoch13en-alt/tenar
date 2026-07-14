@@ -1550,7 +1550,24 @@ PRIMARY_FIRST = (
     "- The reader must ALWAYS be able to tell from your wording whether you are "
     "reading the provision or reading someone's description of it. 'Section 7 "
     "provides…' claims you have the section; 'Author X says section 7 provides…' is "
-    "honest when the section itself isn't in front of you."
+    "honest when the section itself isn't in front of you.\n"
+    "- ATTRIBUTE THE SCHOLAR'S OWN ANALYSIS — ALWAYS, even when you DO hold the primary "
+    "text. Whenever a characterisation, evaluation, argument, critique or framing comes "
+    "from a book, article or commentary (a scholar's account, not the instrument itself), "
+    "NAME the author/work in the prose: 'Ainuson argues that…', 'the commentary "
+    "characterises the Commission as…', 'as the article notes'. Do NOT launder a scholar's "
+    "analysis into an unattributed statement of law — that both passes secondary opinion "
+    "off as primary authority AND buries the very literature the reader wants to see. The "
+    "source title carries the author and work (e.g. 'Acquiring Water Rights… — Ainuson — "
+    "p.28') — use it. This attribution duty OVERRIDES the 'do not narrate your retrieval / "
+    "present authoritatively' rule, which governs PRIMARY law only: you never say 'the "
+    "materials' of a statute, but you DO name the scholar for their opinion.\n"
+    "- BUT DON'T OVER-ATTRIBUTE PRIMARY TEXT. Where an article merely REPRODUCES statutory "
+    "or case text verbatim, those words are still PRIMARY law — cite the provision/case "
+    "itself ('section 12 of Act 522 provides…'), not 'Ainuson quotes section 12'. Attribute "
+    "the scholar's OWN contribution (analysis, opinion, characterisation, argument), not the "
+    "primary text they happen to carry. And where scholars DISAGREE, present the competing "
+    "views AS a scholarly debate, attributed on each side, and take a reasoned position."
 )
 
 CONVERSATIONAL = (
@@ -3079,7 +3096,7 @@ def grounding_audit(question, course, answer, retrieved, path="ask"):
 # /api/admin/reasoning to watch for (b) unnecessary caveats and (c) length inflation;
 # (a) "caught an issue ordinary review would miss" and (d) "jurisdiction-doctrine
 # conflict" still need a human to read the flagged sample. Never raises.
-REASONING_MODULES_VERSION = "reasoning-modules-v1 (2026-07-14)"
+REASONING_MODULES_VERSION = "reasoning-modules-v1.2 (2026-07-14)"
 REASONING_LOG = os.path.join(DATA, "reasoning_audit.jsonl")
 
 _RM_CAVEAT = re.compile(

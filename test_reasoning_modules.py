@@ -91,6 +91,14 @@ check(re.search(r"DUTY to RESOLVE", SI) is not None,
 check("MANDATORY vs DIRECTORY" in SI and re.search(r"'shall'.*duty", SI, re.S | re.I),
       "refined modal rule (shall=duty / may=discretion) weakened")
 
+# 7b) Secondary-source attribution rule in PRIMARY_FIRST (the literature-engagement fix):
+#     scholars' analysis must be named, and must NOT over-attribute reproduced primary text.
+PF = const("PRIMARY_FIRST") or ""
+check("ATTRIBUTE THE SCHOLAR'S OWN ANALYSIS" in PF,
+      "PRIMARY_FIRST lost the secondary-source attribution rule (literature engagement)")
+check("OVER-ATTRIBUTE PRIMARY TEXT" in PF,
+      "PRIMARY_FIRST lost the over-attribution guard (reproduced primary text stays primary)")
+
 # 8) Versioned-together marker (Safeguard 1) + monitor plumbing (Safeguard 3).
 check(const("REASONING_MODULES_VERSION") is not None,
       "REASONING_MODULES_VERSION marker missing (Safeguard 1)")
