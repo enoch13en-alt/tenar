@@ -6016,7 +6016,12 @@ def api_issue_cases():
         "\"court\":<case only; empty for an incident>, \"year\":..., \"principle\":<for a case, "
         "the narrow ratio it decides; for an incident, WHAT IT ILLUSTRATES about the risk/duty/"
         "consequence>, \"strengthens\":<the specific point in this analysis it reinforces, and if "
-        "it supports it only partly, say so>, \"url\":<a source URL you actually saw in results>, "
+        "it supports it only partly, say so>, \"woven\":<a READY-TO-INSERT ONE sentence applying "
+        "this item to THIS issue's facts — for a case, 'As in [name], where …, so here …' stating "
+        "the narrow proposition and applying it; for an incident, a tight illustration flagged as "
+        "illustrative — stated NO WIDER than it supports. This is the exact sentence that will "
+        "later be woven into the final answer, so work out its application NOW, in this focused "
+        "context>, \"url\":<a source URL you actually saw in results>, "
         "\"source\":<short source name>}]}. Return at most 5, most on-point first (a good mix where "
         "both help); return an EMPTY list rather than any doubtful, over-stretched or unverifiable "
         "item. No prose, no fences.")
@@ -6088,6 +6093,50 @@ def api_issue_calibrate():
             if ln:
                 changes.append(ln)
     return jsonify({"answer": calibrated or answer, "changes": changes[:6]})
+
+
+@app.route("/api/document/cases/add", methods=["POST"])
+def api_document_cases_add():
+    """Weave PRE-WORKED, student-verified cases/incidents into the FINAL compiled document.
+    Each item carries a ready 'woven' sentence worked out at the issue stage, so this step is
+    PLACEMENT — drop each sentence at the logically correct point — NOT re-argument in a large
+    text. Preserves everything else verbatim. Metered as one question."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    cases = body.get("cases") or []
+    if not document or not isinstance(cases, list) or not cases:
+        return jsonify({"error": "Need the document and at least one selected item."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You weave PRE-VERIFIED cases and incidents into a FINISHED legal answer. Each item comes "
+        "with a READY 'woven' sentence already worked out (its narrow application to the relevant "
+        "issue). Your job is PLACEMENT, not re-argument: insert each 'woven' sentence at the "
+        "logically correct point in the document — the passage dealing with the issue/point it "
+        "belongs to — adjusting ONLY the connective words needed for it to read naturally in "
+        "flow. A CASE is legal authority; an INCIDENT is a tight factual illustration flagged as "
+        "such, never cited as authority. DO NOT re-argue, expand, generalise or over-say; keep "
+        "each to the one sentence provided (light connective edits only). If an item has no "
+        "natural home in the document, leave it out rather than force it. PRESERVE everything "
+        "else — the analysis, authorities, structure, headings and the CONCLUSION — VERBATIM "
+        "except for the inserted sentence(s). Return ONLY the updated document text — no preamble, "
+        "no notes.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "FINAL DOCUMENT:\n" + document
+                       + "\n\nPRE-WORKED ITEMS TO PLACE (each with its ready 'woven' sentence and "
+                       "the issue it belongs to):\n" + json.dumps(cases)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"document": updated or document, "added": len(cases)})
 
 
 @app.route("/api/issue/cases/add", methods=["POST"])
