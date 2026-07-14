@@ -732,7 +732,11 @@ CALIBRATION = (
     "better view', 'arguably', 'would depend', the Conclusion must NOT suddenly harden into a flat "
     "definitive statement. Anchor it 'on the assumed facts' and keep the hedging the body "
     "established; a confident conclusion sitting on a carefully-qualified body is a calibration "
-    "failure.")
+    "failure. WATCH DEFINITIVE LEGAL CHARACTERISATIONS in the conclusion — 'may lawfully appear', "
+    "'is valid', 'is enforceable', 'requires no licence' — where the body only reached them 'on "
+    "the better view': recast to match, e.g. 'appears capable of lawfully participating' or 'may, "
+    "on the better view, lawfully participate'. And where the body said an outcome 'may' occur "
+    "'depending on how it is implemented', the conclusion must say 'may', not 'would likely'.")
 
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
@@ -1200,7 +1204,11 @@ CITATION_INTEGRITY = (
     "provision it and I will apply it' and stop there for that point. A candid 'not in the "
     "materials' is REQUIRED and is better than a confident memory. Do not paraphrase a "
     "statute from general knowledge and present it as its text; quote/cite only what is "
-    "actually present.\n"
+    "actually present. CLIENT-FACING PHRASING: when you refer in the OUTPUT to the limits of "
+    "your sources, call them 'the materials reviewed' or 'the materials available for this "
+    "opinion' — NEVER 'the retrieved materials / retrieved text / retrieved provisions' or "
+    "'the corpus'; those expose how the research was assembled and read as an AI artifact in a "
+    "professional opinion.\n"
     "AUTHORITY & CITATION INTEGRITY — citation accuracy is not cosmetic; a wrong, "
     "second-hand or unsupported authority is worse than a candid gap:\n"
     "- CITE INSTRUMENTS BY PROVISION, NOT PAGE. For any instrument (treaty, "
