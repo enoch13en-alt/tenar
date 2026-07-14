@@ -663,6 +663,46 @@ CASE_APPLICATION = (
     "incident shows is the same partly-true error as over-saying a case. If it only loosely fits "
     "the point, leave it out.")
 
+# Calibration of legal language — a dedicated polish pass that matches the CONFIDENCE of every
+# proposition to the support the law, authority and facts actually provide (no stronger, no weaker).
+CALIBRATION = (
+    "CALIBRATION OF LEGAL LANGUAGE — you are given a finished issue analysis. Rewrite it so the "
+    "CONFIDENCE of every proposition matches the support the law, authority and facts actually "
+    "provide — no stronger, no weaker. Change only the LANGUAGE, calibration and scope; preserve "
+    "the substance, the structure, every grounded authority/citation and the facts. Do NOT add "
+    "new law, cases or authorities, do NOT remove a grounded citation, and do NOT invent anything "
+    "(grounded-only still holds).\n"
+    "1) DISTINGUISH REGISTER — what the instrument EXPRESSLY provides vs a REASONABLE "
+    "INTERPRETATION vs what is UNCERTAIN or fact-dependent; make clear which each proposition is.\n"
+    "2) STRIP UNJUSTIFIED ABSOLUTES — 'clearly', 'automatically', 'necessarily', 'cannot', "
+    "'will', 'always', 'squarely', 'entirely' — UNLESS the legislation, authority AND facts truly "
+    "justify that certainty. Where they DO (a given fact, an express provision squarely on point), "
+    "keep the firm statement; do NOT manufacture doubt about something settled or GIVEN — that "
+    "breaches fact-discipline and the presumption of regularity.\n"
+    "3) QUALIFY genuinely uncertain propositions with calibrated language where warranted: "
+    "'likely', 'arguably', 'on the better view', 'on the assumed facts', 'may amount to', "
+    "'creates a material risk', 'would depend on', 'the stronger argument is', 'the available "
+    "materials do not conclusively establish'.\n"
+    "4) DO NOT UNDERSTATE RISK merely because the conduct is not expressly named in the "
+    "legislation — consider whether, IN SUBSTANCE, it could fall within a regulated activity or "
+    "attract consequences under related legislation, regulations, licence conditions, regulatory "
+    "practice or the doctrine of illegality, and say so.\n"
+    "5) CONCLUSIONS NO BROADER THAN THE FACTS ANALYSED — a conclusion about ONE contractual role, "
+    "transaction stage or enforcement mechanism must not be stated as applying to every possible "
+    "structure.\n"
+    "6) NAME THE PIVOT — identify the specific fact, contractual term or regulatory interpretation "
+    "that could change the conclusion, but ONLY where the outcome GENUINELY turns on it (never a "
+    "presumed-away or given point, and do not append a defect closer to a firmly settled point).\n"
+    "7) KEEP DISTINCTIONS CRISP — holding a contractual right vs exercising it; legal title vs "
+    "operational control; receiving payment vs undertaking the regulated transaction; taking "
+    "security vs enforcing it; a contract being unlawful in part vs the whole transaction being "
+    "unenforceable.\n"
+    "8) CERTAINTY CHECK on each proposition — is it directly supported by the cited authority? am "
+    "I stating an inference as an express rule? have I ignored a plausible alternative reading? is "
+    "the wording stronger or weaker than the evidence permits? Where the position is genuinely "
+    "uncertain, STATE the uncertainty directly rather than hide it behind confident wording — but "
+    "do NOT hedge what is settled or given.")
+
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
 # to COVERAGE — cover everything the facts raise, but nothing they don't.
@@ -5942,6 +5982,50 @@ def api_issue_cases():
     if not isinstance(cases, list):
         cases = []
     return jsonify({"cases": cases[:5]})
+
+
+@app.route("/api/issue/calibrate", methods=["POST"])
+def api_issue_calibrate():
+    """Calibrate the legal language of a gathered/audited issue answer — strip unjustified
+    absolutes, qualify genuinely uncertain propositions, keep conclusions no broader than the
+    facts, name the pivot fact, and state uncertainty directly — WITHOUT softening what the law
+    and facts justify, adding new law, or removing grounded authority. Metered as one question."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(answer) < 40:
+        return jsonify({"error": "Gather (and ideally audit) the issue answer first."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (CALIBRATION + "\n\nOUTPUT FORMAT — return the FULL calibrated answer text first "
+           "(preserving structure, headers, authorities and facts, changing only what "
+           "calibration requires), then a line containing exactly '===CHANGES===', then up to 6 "
+           "one-line bullets naming the calibrations made (e.g. \"'cannot save through JV' -> "
+           "'the stronger view is that the JV is not the only route'\"). No preamble, no fences.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=8000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       (("Problem: " + context[:900] + "\n\n") if context else "")
+                       + "ISSUE: " + issue + "\n\nANSWER TO CALIBRATE:\n" + answer}])
+        out = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    parts = out.split("===CHANGES===")
+    calibrated = parts[0].strip()
+    changes = []
+    if len(parts) > 1:
+        for ln in parts[1].splitlines():
+            ln = ln.strip().lstrip("-•* ").strip()
+            if ln:
+                changes.append(ln)
+    return jsonify({"answer": calibrated or answer, "changes": changes[:6]})
 
 
 @app.route("/api/issue/cases/add", methods=["POST"])

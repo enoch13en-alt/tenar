@@ -1835,8 +1835,10 @@ function renderExam() {
           + '</button>'
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<button class="btn mini casesIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">⚖️ Cases &amp; incidents</button>'
+          + '<button class="btn mini calibrateIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">🎚 Calibrate language</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + '<div class="calibrateIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
@@ -1859,6 +1861,8 @@ function renderExam() {
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".casesIssueBtn").forEach(b =>
     b.onclick = () => findCasesForIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".calibrateIssueBtn").forEach(b =>
+    b.onclick = () => calibrateIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
     b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(it.answer || "", b); });
   $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
@@ -2253,6 +2257,41 @@ async function auditAndFixIssue(i) {
     const cb = document.querySelector('.copyIssueBtn[data-i="' + i + '"]');   // relabel Copy → verified
     if (cb) { cb.textContent = "📋 Copy verified answer"; cb.title = "Audited — ungrounded claims removed and citations checked."; }
   } catch (e) { if (outEl) outEl.textContent = "Audit error — try again."; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } }
+}
+// Calibrate the legal language of an issue answer — strip unjustified absolutes, qualify
+// genuinely uncertain points, keep conclusions no broader than the facts, name the pivot.
+// Rewrites AT SOURCE; keeps the original for before/after.
+async function calibrateIssue(i) {
+  const it = EXAM.issues[i];
+  if (!it || !it.answer) return;
+  const original = it.answer;
+  const btn = document.querySelector('.calibrateIssueBtn[data-i="' + i + '"]');
+  const outEl = document.querySelector('.calibrateIssueOut[data-i="' + i + '"]');
+  if (btn) { btn.disabled = true; btn.textContent = "🎚 Calibrating…"; }
+  if (outEl) outEl.innerHTML = '<span style="font-size:11px;color:#8b93a7">calibrating certainty, qualifiers and scope…</span>';
+  try {
+    const r = await (await fetch("/api/issue/calibrate", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
+    if (r.error) { if (outEl) outEl.textContent = "⚠️ " + esc(r.error); if (btn){ btn.disabled=false; btn.textContent="🎚 Calibrate language"; } return; }
+    if (r.answer && r.answer.trim() && r.answer.trim() !== original.trim()) {
+      it.answer = r.answer; it.answer_annotated = ""; it._calibrated = true;
+      renderExam();                                    // re-render calibrated answer above
+      const o2 = document.querySelector('.calibrateIssueOut[data-i="' + i + '"]');
+      if (o2) {
+        const chg = (r.changes || []).map(x => '<div style="font-size:11px;margin:2px 0;color:#cdd5e6">• ' + esc(x) + '</div>').join("");
+        o2.innerHTML =
+          '<div style="font-size:12px;color:#8fb4ff;font-weight:600;margin-bottom:4px">🎚 Language calibrated — applied to the answer above.</div>'
+          + (chg ? '<div style="border-left:3px solid #8fb4ff;padding:5px 9px;background:#11151d;border-radius:4px">' + chg + '</div>' : '')
+          + '<button class="btn alt showOrigCalBtn" style="width:auto;font-size:11px;margin-top:6px">⌄ Show original (before calibration)</button>'
+          + '<div class="origCalBox" style="display:none;font-size:11px;color:#98a2b3;white-space:pre-wrap;background:#0d1017;border:1px solid #2a3344;border-radius:4px;padding:8px;margin-top:6px">' + esc(original) + '</div>';
+        const sb = o2.querySelector(".showOrigCalBtn");
+        if (sb) sb.onclick = () => { const b = o2.querySelector(".origCalBox"); const show = b.style.display === "none"; b.style.display = show ? "block" : "none"; sb.textContent = (show ? "⌃ Hide" : "⌄ Show") + " original (before calibration)"; };
+      }
+    } else {
+      if (outEl) outEl.innerHTML = '<span style="font-size:11px;color:#7fdca0">✅ Already well-calibrated — nothing overstated to soften.</span>';
+      if (btn) { btn.disabled = false; btn.textContent = "🎚 Re-calibrate"; }
+    }
+  } catch (e) { if (outEl) outEl.textContent = "Calibration error — try again."; if (btn){ btn.disabled=false; btn.textContent="🎚 Calibrate language"; } }
 }
 // Audit + fix every gathered issue's authorities (limited concurrency), correcting
 // AT SOURCE. Returns how many authority issues were fixed. Used by 'Do it all'.
