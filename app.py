@@ -3711,6 +3711,72 @@ def api_docs_health():
                     "indexing": _status(course)["running"]})
 
 
+@app.route("/api/docs/hygiene", methods=["POST"])
+def api_docs_hygiene():
+    """'Clean house' scan: fingerprint every document's indexed content to find EXACT
+    duplicates (same file re-uploaded under two names) and NEAR duplicates (heavy verbatim
+    overlap), plus errors that hurt retrieval — docs with 0 chunks (indexing dropped / needs
+    OCR) and near-empty docs. Deterministic; owner/admin-gated so it can offer deletions."""
+    import hashlib
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can clean a shared course."}), 403
+    ensure_loaded(course)
+    by_doc = {}
+    for ch in INDEXES[course]["chunks"]:
+        by_doc.setdefault(ch["doc"], []).append(ch.get("text", ""))
+    files = sorted(course_pdfs(course))
+
+    def _n(t):
+        return re.sub(r"\s+", " ", (t or "")).strip().lower()
+
+    info = {}
+    for f in files:
+        texts = by_doc.get(f, [])
+        joined = _n(" ".join(texts))
+        cset = frozenset(hashlib.sha1(_n(t).encode()).hexdigest() for t in texts if _n(t))
+        info[f] = {"chunks": len(texts), "chars": len(joined),
+                   "hash": hashlib.sha1(joined.encode()).hexdigest() if joined else "",
+                   "cset": cset}
+    # EXACT duplicates — identical full-text fingerprint
+    buckets = {}
+    for f in files:
+        if info[f]["hash"]:
+            buckets.setdefault(info[f]["hash"], []).append(f)
+    exact = [[{"file": f, "name": display_name(f), "chunks": info[f]["chunks"]} for f in fs]
+             for fs in buckets.values() if len(fs) > 1]
+    exact_flat = {x["file"] for g in exact for x in g}
+    # NEAR duplicates — high verbatim chunk overlap (Jaccard), not already exact
+    withc = [f for f in files if info[f]["cset"] and f not in exact_flat]
+    near = []
+    for i in range(len(withc)):
+        for j in range(i + 1, len(withc)):
+            a, b = withc[i], withc[j]
+            ca, cb = info[a]["cset"], info[b]["cset"]
+            inter = len(ca & cb)
+            union = len(ca | cb)
+            sim = inter / union if union else 0.0
+            if sim >= 0.55:
+                near.append({"a": {"file": a, "name": display_name(a), "chunks": len(ca)},
+                             "b": {"file": b, "name": display_name(b), "chunks": len(cb)},
+                             "similarity": round(sim, 2)})
+    near.sort(key=lambda x: -x["similarity"])
+    # ERRORS — unindexed / near-empty
+    issues = []
+    for f in files:
+        v = info[f]
+        if v["chunks"] == 0:
+            issues.append({"file": f, "name": display_name(f), "kind": "unindexed",
+                           "problem": "0 chunks — not indexed (needs Index it, or OCR if scanned)"})
+        elif v["chars"] < 200:
+            issues.append({"file": f, "name": display_name(f), "kind": "empty",
+                           "problem": "very little text — likely a scan or a near-empty file"})
+    return jsonify({"total_docs": len(files),
+                    "exact_duplicates": exact, "near_duplicates": near[:25],
+                    "issues": issues})
+
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     course = safe_course(request.form.get("course", ""))

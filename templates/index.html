@@ -253,8 +253,10 @@
 
   <h2>Documents in this course</h2>
   <button class="btn gold" id="docHealth" title="Check which documents the bot can actually read, which it can only see partially (and why), and which are only summary/short versions.">🩺 What can the bot see?</button>
+  <button class="btn gold" id="cleanHouse" title="Scan this course for DUPLICATE documents (same file under two names, or heavy verbatim overlap) and errors that hurt retrieval (unindexed / near-empty docs). Offers one-click delete/re-index to tidy up.">🧹 Clean house (duplicates & errors)</button>
   <div id="mix"></div>
   <div id="healthOut" style="margin:8px 0"></div>
+  <div id="hygieneOut" style="margin:8px 0"></div>
   <div id="docs">none yet</div>
 
   <h2>Study tools</h2>
@@ -1238,6 +1240,70 @@ async function runDocHealth() {
       watchIndexThen(runDocHealth);
     };
   } catch (e) { out.innerHTML = "⚠️ couldn't read the report (server busy) — click 🩺 again in a moment."; }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+// 🧹 Clean house — scan for duplicate documents and source errors, with one-click fixes.
+$("#cleanHouse").onclick = runHygiene;
+async function runHygiene() {
+  const btn = $("#cleanHouse"), out = $("#hygieneOut");
+  const label = "🧹 Clean house (duplicates & errors)";
+  btn.disabled = true; btn.textContent = "Scanning for duplicates & errors…";
+  out.innerHTML = '<span style="font-size:12px;color:#8b93a7">fingerprinting each document…</span>';
+  try {
+    const r = await (await fetch("/api/docs/hygiene", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE})})).json();
+    if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+    const ex = r.exact_duplicates || [], near = r.near_duplicates || [], iss = r.issues || [];
+    const delBtn = (f) => '<button class="btn mini hyDel" data-f="' + encodeURIComponent(f)
+      + '" style="width:auto;padding:1px 6px;font-size:10px">🗑 delete this copy</button>';
+    const idxBtn = (f) => '<button class="btn mini hyIndex" data-f="' + encodeURIComponent(f)
+      + '" style="width:auto;padding:1px 6px;font-size:10px">Index it</button>';
+    let h = '<div style="font-size:12px;margin-bottom:6px;color:#cdd5e6">🧹 Scanned ' + (r.total_docs||0) + ' document(s): '
+      + '<b style="color:' + (ex.length?'#e58f8f':'#7fd18b') + '">' + ex.length + '</b> exact-duplicate group(s) · '
+      + '<b style="color:' + (near.length?'#e6c565':'#7fd18b') + '">' + near.length + '</b> near-duplicate pair(s) · '
+      + '<b style="color:' + (iss.length?'#e6c565':'#7fd18b') + '">' + iss.length + '</b> error(s)</div>';
+    if (!ex.length && !near.length && !iss.length)
+      h += '<div style="font-size:12px;color:#7fd18b">✅ House is clean — no duplicates or source errors.</div>';
+    // exact duplicates
+    ex.forEach((grp, gi) => {
+      h += '<div style="border-left:3px solid #e58f8f;padding:5px 9px;background:#160f0f;border-radius:4px;margin:5px 0;font-size:12px">'
+        + '<div style="color:#e58f8f;font-weight:600">⛔ Identical copies — keep one, delete the rest:</div>'
+        + grp.map((d, di) => '<div style="margin:2px 0 2px 8px">' + (di===0?'⭐ ':'') + esc(d.name)
+            + ' <span style="color:#8b93a7">(' + d.chunks + ' chunks)</span>'
+            + (di===0 ? ' <span style="color:#7fd18b;font-size:10px">keep</span>' : ' ' + delBtn(d.file)) + '</div>').join("")
+        + '</div>';
+    });
+    // near duplicates
+    near.forEach(p => {
+      h += '<div style="border-left:3px solid #e6c565;padding:5px 9px;background:#15130c;border-radius:4px;margin:5px 0;font-size:12px">'
+        + '<div style="color:#e6c565">≈ ' + Math.round(p.similarity*100) + '% overlap — likely the same source:</div>'
+        + '<div style="margin:2px 0 2px 8px">• ' + esc(p.a.name) + ' <span style="color:#8b93a7">(' + p.a.chunks + ')</span> ' + delBtn(p.a.file) + '</div>'
+        + '<div style="margin:2px 0 2px 8px">• ' + esc(p.b.name) + ' <span style="color:#8b93a7">(' + p.b.chunks + ')</span> ' + delBtn(p.b.file) + '</div>'
+        + '</div>';
+    });
+    // issues
+    if (iss.length) h += '<div style="font-size:12px;color:#e6c565;margin-top:6px">Source errors:</div>'
+      + iss.map(x => '<div style="margin:2px 0 2px 8px;font-size:12px">⚠️ ' + esc(x.name)
+          + ' <span style="color:#8b93a7">— ' + esc(x.problem) + '</span> '
+          + (x.kind === "unindexed" ? idxBtn(x.file) : '') + '</div>').join("");
+    out.innerHTML = h;
+    // wire delete + index actions
+    out.querySelectorAll(".hyDel").forEach(b => b.onclick = async () => {
+      const f = decodeURIComponent(b.dataset.f);
+      if (!confirm("Delete this copy from " + COURSE + "?\n\n" + f)) return;
+      b.disabled = true; b.textContent = "deleting…";
+      await fetch("/api/doc/delete", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, file: f})});
+      setTimeout(() => { runHygiene(); refresh(); }, 1500);
+    });
+    out.querySelectorAll(".hyIndex").forEach(b => b.onclick = async () => {
+      const f = decodeURIComponent(b.dataset.f);
+      b.disabled = true; b.textContent = "queued…";
+      await fetchT("/api/doc/index", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, file: f})}, 30000).catch(()=>{});
+      watchIndexThen(runHygiene);
+    });
+  } catch (e) { out.innerHTML = "⚠️ scan failed — try again."; }
   finally { btn.disabled = false; btn.textContent = label; }
 }
 // Watch the background index queue via the banner, then run a callback when it's done.
