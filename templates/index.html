@@ -1973,10 +1973,12 @@ function renderExam() {
           + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
           + '<button class="btn mini casesIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">⚖️ Cases &amp; incidents</button>'
           + '<button class="btn mini scholarIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">📚 Writers &amp; scholarship</button>'
+          + '<button class="btn mini reportsIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Search the web for VERIFIED official/government reports, reputable news, and current/trending developments on this issue — each with a link. They are woven in as CONTEXT (evidence of policy/practice/fact), never as legal authority. You verify each before it is added. Uses one web credit.">🏛️ Reports, news &amp; trends</button>'
           + '<button class="btn mini calibrateIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">🎚 Calibrate language</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="scholarIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + '<div class="reportsIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="calibrateIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
@@ -2002,6 +2004,8 @@ function renderExam() {
     b.onclick = () => findCasesForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".scholarIssueBtn").forEach(b =>
     b.onclick = () => findScholarshipForIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".reportsIssueBtn").forEach(b =>
+    b.onclick = () => findReportsForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".calibrateIssueBtn").forEach(b =>
     b.onclick = () => calibrateIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
@@ -2357,6 +2361,75 @@ async function addScholarshipToIssue(i, out) {
       quote: x.point || "" })));
     renderExam();
   } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } }
+}
+
+// --- Official reports / news / trends (web-verified) — the context twin of the cases flow ---
+async function findReportsForIssue(i) {
+  const it = EXAM.issues[i];
+  if (!it || !it.answer) return;
+  const btn = document.querySelector('.reportsIssueBtn[data-i="' + i + '"]');
+  const out = document.querySelector('.reportsIssueOut[data-i="' + i + '"]');
+  if (!out) return;
+  if (!it._audited && !confirm("Best AFTER 'Audit & fix authorities', so reports/news support verified law. Search now anyway?")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "🏛️ Searching…"; }
+  out.innerHTML = '<span style="font-size:11px;color:#8b93a7">searching the web for verified official reports, news &amp; current developments… (15–40s)</span>';
+  try {
+    const r = await (await fetch("/api/issue/reports", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, question: EXAM.question || ""})})).json();
+    if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); if (btn){ btn.disabled=false; btn.textContent="🏛️ Reports, news & trends"; } return; }
+    const items = r.reports || [];
+    it._reportCandidates = items;
+    if (!items.length) {
+      out.innerHTML = '<span style="font-size:12px;color:#8b93a7">No verifiable official report, reputable news or current development surfaced — better none than an unverified source.</span>';
+    } else {
+      out.innerHTML = renderReportCandidates(i, items);
+      const add = out.querySelector(".addReportsBtn");
+      if (add) add.onclick = () => addReportsToIssue(i, out);
+    }
+  } catch (e) { out.innerHTML = "Error — try again."; }
+  if (btn) { btn.disabled = false; btn.textContent = "🏛️ Re-search"; }
+}
+
+function renderReportCandidates(i, items) {
+  const meta = { report: ["🏛️ OFFICIAL REPORT","#6fb0c9","#12242c"], news: ["📰 NEWS","#c9a86a","#2a2417"], trend: ["📈 TREND","#c98fb0","#2a1f28"] };
+  let h = '<div style="font-size:12px;color:#6fb0c9;font-weight:600;margin:2px 0 4px">🏛️ Reports · news · trends — CONTEXT, not legal authority. Open each 🔗, confirm it is real &amp; on point, then tick to weave in:</div>';
+  h += items.map((c, k) => {
+    const m = meta[c.kind] || meta.report;
+    return '<div style="border-left:3px solid ' + m[1] + ';padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px">'
+    + '<label style="cursor:pointer"><input type="checkbox" class="reportChk" data-k="' + k + '"> '
+    + '<span style="background:' + m[2] + ';color:' + m[1] + ';border-radius:3px;padding:0 5px;font-size:10px;margin-right:4px">' + m[0] + '</span>'
+    + '<b>' + esc(c.body||"") + '</b>' + (c.title ? ', ' + esc(c.title) : '')
+    + (c.date ? ' <span style="color:#7a8296">(' + esc(c.date) + ')</span>' : '') + '</label>'
+    + (c.point ? '<div style="color:#aab4c6;margin:2px 0 0 20px">shows: ' + esc(c.point) + '</div>' : '')
+    + (c.strengthens ? '<div style="color:#8b93a7;margin-left:20px">strengthens: ' + esc(c.strengthens) + '</div>' : '')
+    + (c.url ? '<div style="margin-left:20px"><a href="' + esc(c.url) + '" target="_blank" rel="noopener" style="font-size:11px">🔗 verify source (' + esc(c.source||"link") + ')</a></div>'
+             : '<div style="margin-left:20px;color:#e0a0a0;font-size:11px">⚠ no source link — verify independently before including</div>')
+    + '</div>';
+  }).join("");
+  h += '<button class="btn gold mini addReportsBtn" data-i="' + i + '" style="width:auto;margin-top:6px">✓ Add ticked reports/news to the answer</button>'
+    + '<span class="addReportsNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span>';
+  return h;
+}
+
+async function addReportsToIssue(i, out) {
+  const it = EXAM.issues[i];
+  const cands = it._reportCandidates || [];
+  const chosen = [...out.querySelectorAll(".reportChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
+  const note = out.querySelector(".addReportsNote");
+  if (!chosen.length) { if (note) note.textContent = "Tick at least one verified item first."; return; }
+  const add = out.querySelector(".addReportsBtn");
+  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
+  try {
+    const r = await (await fetch("/api/issue/reports/add", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: it.issue, answer: it.answer, reports: chosen})})).json();
+    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked reports/news to the answer"; } return; }
+    it.answer = r.answer; it.answer_annotated = "";
+    // carry the woven reports/news into the issue's sources for the OSCOLA bibliography
+    it.sources = (it.sources || []).concat(chosen.map(x => ({
+      title: (x.body || "") + (x.title ? ", " + x.title : "") + (x.date ? " (" + x.date + ")" : ""),
+      url: x.url || "", quote: x.point || "" })));
+    renderExam();
+  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked reports/news to the answer"; } }
 }
 
 // Shared case-verification panel: render candidates with checkboxes + verify links, and

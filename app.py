@@ -6539,6 +6539,86 @@ def api_issue_scholarship():
     return jsonify({"scholarship": works[:5]})
 
 
+@app.route("/api/issue/reports", methods=["POST"])
+def api_issue_reports():
+    """Find REAL, verifiable OFFICIAL REPORTS (verified government/institutional bodies),
+    reputable NEWS, and CURRENT/TRENDING developments that bear on a gathered issue — the
+    web counterpart of /api/issue/cases and /api/issue/scholarship. Web-grounded so every item
+    is real and linked (a fabricated report or mis-stated statistic is the worst error).
+    Candidates for the student to verify before weaving. Metered as one question."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(answer) < 40 and len(issue) < 5:
+        return jsonify({"error": "Gather the law for this issue first.", "reports": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "reports": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "reports": []}), 402
+    consume("questions")
+    sys = (
+        "You find REAL, verifiable OFFICIAL REPORTS, VERIFIED NEWS and CURRENT DEVELOPMENTS that "
+        "bear on the legal issue analysis given — of THREE kinds. Use WEB SEARCH to ground EVERY "
+        "item in a real, locatable source with a URL.\n"
+        "(1) kind='report' — an OFFICIAL / INSTITUTIONAL report from a VERIFIED government body, "
+        "regulator, statutory commission, ministry, central bank, or official inquiry — or a "
+        "reputable inter-governmental / research institution. For Ghana: e.g. the Minerals "
+        "Commission, Petroleum Commission, EPA, Bank of Ghana, Ministry of Lands & Natural "
+        "Resources, GRA, the Auditor-General, PIAC; internationally: World Bank, IMF, EITI, NRGI, "
+        "IEA, OECD, UN bodies. State what the report actually SHOWS — a datum, finding or policy "
+        "position — no wider than it says.\n"
+        "(2) kind='news' — a factual development reported by a REPUTABLE, NAMED news outlet (a "
+        "national daily, Reuters, Bloomberg, an established Ghanaian outlet). It is a FACTUAL "
+        "development, NOT legal authority.\n"
+        "(3) kind='trend' — a CURRENT / EMERGING issue relevant to the topic (a new bill or "
+        "policy shift, a major transaction, a live controversy) — the 'what is happening now' "
+        "layer that shows the topic's live significance.\n"
+        "CRITICAL — a report / news / trend is CONTEXT and EVIDENCE OF PRACTICE, POLICY OR FACT; "
+        "it is NOT a proposition of LAW and NEVER decides the legal point. Do not let it carry a "
+        "legal conclusion or stand in for a statute or case. Prefer OFFICIAL / GOVERNMENT sources; "
+        "for news prefer the most reputable outlet; distrust unverified, anonymous or partisan "
+        "sources. NEVER invent a body, report, title, date, statistic, outlet, headline or URL, "
+        "and never reconstruct one from memory — a fabricated report or a mis-stated figure is the "
+        "worst possible error. Include an item ONLY if you actually found it in the search results "
+        "with a real URL. RELEVANCE IS STRICT AND IN CONTEXT — it must bear DIRECTLY on THIS "
+        "issue's specific question/topic; an EMPTY list is correct when nothing fits.\n"
+        "Return STRICT JSON {\"reports\":[{\"kind\":\"report|news|trend\", \"body\":<issuing body "
+        "or outlet>, \"title\":<report / headline title>, \"date\":<date or year>, \"point\":<what "
+        "it actually shows, no wider than the source>, \"strengthens\":<the specific point in THIS "
+        "analysis it supports or contextualises; if only partly, say so>, \"woven\":<a "
+        "READY-TO-INSERT sentence applying it to THIS issue, ATTRIBUTED to the body/outlet and "
+        "flagged for what it is — 'The [body]'s [year] report records that …, which supports …'; "
+        "'As reported by [outlet] ([date]), … — a factual development, not authority'. State it NO "
+        "WIDER than the source and NEVER as a proposition of law>, \"url\":<a real source URL you "
+        "saw>, \"source\":<short source name>}]}. Return at most 5, most authoritative / on-point "
+        "first (official reports before news before trend); an EMPTY list rather than any "
+        "unverifiable, partisan or over-stretched item. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2600,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 10}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Problem: " + context[:900] + "\n\n") if context else "")
+                       + "Issue: " + issue + "\n\nIssue analysis — find official reports, verified "
+                       "news and current developments that strengthen or contextualise THIS "
+                       "argument:\n" + answer[:6000]}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140], "reports": []})
+    items = data.get("reports") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        items = []
+    return jsonify({"reports": items[:5]})
+
+
 @app.route("/api/issue/calibrate", methods=["POST"])
 def api_issue_calibrate():
     """Calibrate the legal language of a gathered/audited issue answer — strip unjustified
@@ -6719,6 +6799,54 @@ def api_issue_scholarship_add():
                        "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
                        + "\n\nVERIFIED WRITINGS TO WEAVE IN (respect each 'verified' flag):\n"
                        + json.dumps(works)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"answer": updated or answer})
+
+
+@app.route("/api/issue/reports/add", methods=["POST"])
+def api_issue_reports_add():
+    """Weave student-VERIFIED official reports / news / trends into an issue's answer, ATTRIBUTED
+    and flagged as CONTEXT (never as legal authority). The report/news twin of the cases add."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    items = body.get("reports") or []
+    if not answer or not isinstance(items, list) or not items:
+        return jsonify({"error": "Need the answer and at least one verified item."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You STRENGTHEN a legal issue analysis by weaving in OFFICIAL REPORTS, NEWS or CURRENT "
+        "developments the student has already VERIFIED — and nothing else. Each item names its "
+        "issuing body / outlet, title, date, and the point it supports. Integrate it at the "
+        "logically correct place, usually ONE attributed sentence.\n"
+        "ATTRIBUTE AND FLAG THE KIND — this is the cardinal rule:\n"
+        "- kind='report': attribute to the issuing body ('The Minerals Commission's 2023 report "
+        "records that …'); it is EVIDENCE of policy/practice/data, NOT legal authority.\n"
+        "- kind='news': attribute to the outlet and flag it as a factual development ('as reported "
+        "by [outlet] ([date])'); NEVER cite it for a proposition of law.\n"
+        "- kind='trend': present as a current development showing the topic's live significance.\n"
+        "NONE of these decides the legal point or stands in for a statute or case — do not let one "
+        "carry a legal conclusion. DO NOT OVER-SAY: confine each to the single point it supports, "
+        "never stretch a figure or finding, never recite the whole report. Place each at the EXACT "
+        "point it bears on; if it does not fit, leave it out — never a bare drop-in or a 'see also' "
+        "list. PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim "
+        "except for the short woven-in sentence(s); do NOT re-argue or change any conclusion. "
+        "Return ONLY the updated issue answer.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
+                       + "\n\nVERIFIED REPORTS / NEWS / TRENDS TO WEAVE IN (respect each 'kind'):\n"
+                       + json.dumps(items)[:8000]}])
         updated = (_text_of(r) or "").strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
