@@ -7327,10 +7327,22 @@ def api_issue_chat_add():
         "and has NOT entered into force (per [source]); accordingly no Charter duty yet binds on this "
         "event, and its five-year staged commencement has not begun to run.' A verified 'not yet' is "
         "an ANSWER, not a lingering doubt.\n"
-        "- OTHERWISE PRESERVE the existing analysis, authorities and structure; change a CONCLUSION "
-        "only where the verified fact bears on it, and then only as far as the fact supports — firm "
-        "up a tentative conclusion the fact resolves, leave untouched every conclusion the fact does "
-        "not reach. Return ONLY the updated issue answer — no preamble, no notes.")
+        "- A MATERIAL FACT MUST FLOW THROUGH THE WHOLE ANSWER — Rule-application AND Conclusion, "
+        "consistently. First judge whether the fact is MATERIAL (it changes whether a legal element "
+        "or condition is satisfied, the legal status / existence / timing of an instrument, right or "
+        "duty, or a fact a conclusion rests on) or merely CONTEXTUAL (background, illustration, a "
+        "non-determinative development). If MATERIAL: re-run the affected step of the Application "
+        "against the new fact and CARRY THE CONSEQUENCE INTO THE CONCLUSION — if the fact changes "
+        "the outcome, change the conclusion to match; if it confirms the outcome, state it more "
+        "firmly; if it removes the basis for a duty or right, say that duty/right does not (yet) "
+        "arise and follow that through every dependent step. Leave NO sentence or conclusion "
+        "standing that the new fact has falsified — the whole answer must be internally consistent "
+        "with the fact. If merely CONTEXTUAL: place it where it bears and do NOT disturb the "
+        "conclusion. Judge materiality honestly and propagate only as far as the fact actually "
+        "reaches — never over-propagate a contextual fact into a conclusion it does not control, and "
+        "never manufacture a consequence the fact does not support.\n"
+        "- OTHERWISE PRESERVE the existing analysis, authorities and structure unchanged. Return "
+        "ONLY the updated issue answer — no preamble, no notes.")
     try:
         r, _m = _create_final(
             c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
