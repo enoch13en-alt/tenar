@@ -7347,6 +7347,22 @@ def _fact_src_line(user_source, sources):
     return src_line
 
 
+# Shared reconcile instruction — used by the consistency sweep AND the per-issue read-along check,
+# so an auto-fix and a manual "apply this fix" produce IDENTICAL reconciliation.
+RECONCILE_SYS = (
+    "You RECONCILE one issue's analysis with CONCLUSIONS ALREADY ESTABLISHED in earlier issues of "
+    "the SAME legal answer, so the whole piece is internally consistent — and change NOTHING else. "
+    "The earlier conclusions are FIXED and GOVERN: rewrite every statement, assumption and "
+    "conclusion in THIS issue that contradicts them so it conforms, and PROPAGATE the change "
+    "through the Application AND Conclusion (a reframed premise must flow to the outcome). Keep the "
+    "earlier conclusion's exact register (binding / not binding / source-relative / conditional). "
+    "Do NOT re-open or re-argue the earlier conclusion; do NOT weaken this issue's own valid "
+    "analysis beyond what consistency requires; introduce no new law or facts. Where an instrument "
+    "was held NOT established as binding earlier, treat it here as persuasive / operational / "
+    "evidence of regional standards, not as an independent source of binding obligation. Return "
+    "ONLY the corrected issue answer — no preamble, no notes.")
+
+
 @app.route("/api/exam/propagate", methods=["POST"])
 def api_exam_propagate():
     """Propagate a MATERIAL verified fact from one issue into every OTHER issue it bears on, so the
@@ -8955,18 +8971,7 @@ def api_exam_consistency():
         fi = cf.get("fix")
         if isinstance(fi, int) and fi in valid:
             fixes.setdefault(fi, []).append(cf)
-    recon_sys = (
-        "You RECONCILE one issue's analysis with CONCLUSIONS ALREADY ESTABLISHED in earlier issues of "
-        "the SAME legal answer, so the whole piece is internally consistent — and change NOTHING else. "
-        "The earlier conclusions are FIXED and GOVERN: rewrite every statement, assumption and "
-        "conclusion in THIS issue that contradicts them so it conforms, and PROPAGATE the change "
-        "through the Application AND Conclusion (a reframed premise must flow to the outcome). Keep the "
-        "earlier conclusion's exact register (binding / not binding / source-relative / conditional). "
-        "Do NOT re-open or re-argue the earlier conclusion; do NOT weaken this issue's own valid "
-        "analysis beyond what consistency requires; introduce no new law or facts. Where an instrument "
-        "was held NOT established as binding earlier, treat it here as persuasive / operational / "
-        "evidence of regional standards, not as an independent source of binding obligation. Return "
-        "ONLY the corrected issue answer — no preamble, no notes.")
+    recon_sys = RECONCILE_SYS
     results = []
     for fi, cfs in fixes.items():
         ok, _msg = can_consume("questions")
@@ -8994,6 +8999,86 @@ def api_exam_consistency():
         results.append({"i": fi, "changed": changed, "answer": updated if changed else prior,
                         "why": "; ".join(str(cf.get("direction", "")) for cf in cfs)[:200]})
     return jsonify({"results": results, "conflicts": conflicts})
+
+
+@app.route("/api/exam/issue_check", methods=["POST"])
+def api_exam_issue_check():
+    """Read-along consistency helper for ONE issue. DETECT (default) flags, non-destructively, where
+    THIS issue contradicts the CONCLUSIONS of the earlier issues — you read and decide. APPLY (opt-in)
+    reconciles just this issue to the earlier conclusions using the SAME engine as the sweep. Detect
+    = one question; apply = one more. Nothing is changed unless you choose apply."""
+    body = request.json or {}
+    issues = body.get("issues") or []
+    target = body.get("target")
+    do_apply = bool(body.get("apply"))
+    if (not isinstance(issues, list) or not isinstance(target, int)
+            or not (0 <= target < len(issues))):
+        return jsonify({"error": "Bad request."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    tgt = issues[target]
+    tgt_ans = str(tgt.get("answer") or "")
+    if not tgt_ans.strip():
+        return jsonify({"error": "Gather this issue first."}), 400
+    earlier = [(i, it) for i, it in enumerate(issues)
+               if i < target and str(it.get("answer") or "").strip()
+               and not str(it.get("answer") or "").startswith("Error")]
+    if not earlier:
+        return jsonify({"conflicts": [], "note": "No earlier issue to check against yet."})
+    # APPLY — reconcile just this issue to the earlier conclusions (uses the flags from the detect)
+    if do_apply:
+        cfs = body.get("conflicts") or []
+        if not cfs:
+            return jsonify({"error": "Nothing to apply."}), 400
+        ok, msg = can_consume("questions")
+        if not ok:
+            return jsonify({"error": msg}), 402
+        consume("questions")
+        instr = "\n".join(
+            "- " + str(cf.get("direction", "reconcile with the earlier conclusion"))
+            + " (established earlier: " + str(cf.get("established", "")) + "; inconsistent here: "
+            + str(cf.get("inconsistent", "")) + ")" for cf in cfs if isinstance(cf, dict))
+        try:
+            r, _wm = _create_final(
+                c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(RECONCILE_SYS),
+                messages=[{"role": "user", "content":
+                           "ISSUE: " + str(tgt.get("issue", "")) + "\n\nCURRENT ANSWER:\n" + tgt_ans
+                           + "\n\nEARLIER-ESTABLISHED CONCLUSIONS THIS ISSUE MUST CONFORM TO:\n" + instr}])
+            updated = (_text_of(r) or "").strip()
+        except Exception as e:
+            return jsonify({"error": str(e)[:140]})
+        return jsonify({"answer": updated or tgt_ans})
+    # DETECT — flag contradictions between THIS issue and the earlier conclusions (no change)
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    earlier_in = [{"i": i, "issue": it.get("issue", ""), "answer": str(it.get("answer", ""))[:1400]}
+                  for i, it in earlier]
+    try:
+        s, _sm = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1400,
+            system=("You check whether ONE target issue contradicts the CONCLUSIONS already "
+                    "established in the EARLIER issues of the same legal answer. Treat each earlier "
+                    "conclusion as a FIXED premise. Flag every place the TARGET issue asserts, assumes "
+                    "or relies on something an earlier conclusion DENIES or leaves unestablished "
+                    "(classic: an earlier issue holds an instrument's binding status NOT established, "
+                    "but the target treats it as binding — 'both bind concurrently'). Flag only GENUINE "
+                    "contradictions. STRICT JSON: {\"conflicts\":[{\"governing\":<earlier issue "
+                    "index>, \"established\":<the earlier conclusion, short>, \"inconsistent\":<the "
+                    "contradicting text in the target, short>, \"direction\":<one line: how to reframe "
+                    "the target to conform>}]}. Empty list if the target is already consistent. No "
+                    "prose, no fences."),
+            messages=[{"role": "user", "content":
+                       "EARLIER ISSUES (already concluded):\n" + json.dumps(earlier_in)[:7000]
+                       + "\n\nTARGET ISSUE TO CHECK:\nISSUE: " + str(tgt.get("issue", ""))
+                       + "\nANSWER:\n" + tgt_ans[:4000]}])
+        d = _first_json_obj(_text_of(s)) or {}
+        conflicts = d.get("conflicts", []) if isinstance(d, dict) else []
+    except Exception:
+        conflicts = []
+    return jsonify({"conflicts": conflicts if isinstance(conflicts, list) else []})
 
 
 @app.route("/api/exam/assemble", methods=["POST"])

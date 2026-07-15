@@ -2283,7 +2283,9 @@ function renderExam() {
           + '<button class="btn mini scholarIssueBtn'+(it._scholarAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">'+(it._scholarAdded?('✅ Writers added ('+it._scholarAdded+') — re-find'):'📚 Writers &amp; scholarship')+'</button>'
           + '<button class="btn mini reportsIssueBtn'+(it._reportsAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Search the web for VERIFIED official/government reports, reputable news, and current/trending developments on this issue — each with a link. They are woven in as CONTEXT (evidence of policy/practice/fact), never as legal authority. You verify each before it is added. Uses one web credit.">'+(it._reportsAdded?('✅ Reports added ('+it._reportsAdded+') — re-search'):'🏛️ Reports, news &amp; trends')+'</button>'
           + '<button class="btn mini calibrateIssueBtn'+(it._calibrated?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">'+(it._calibrated?'✅ Calibrated — re-run':'🎚 Calibrate language')+'</button>'
+          + (idx>0 ? '<button class="btn mini checkConsistBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Read along: see what the EARLIER issues concluded (free), then check whether THIS issue contradicts any of them (e.g. an earlier issue holds the Charter not binding, but this one treats it as binding). You decide whether to apply each fix or edit it yourself.">🧩 Check vs earlier conclusions</button>' : '')
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
+          + '<div class="consistIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="scholarIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="reportsIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
@@ -2317,6 +2319,8 @@ function renderExam() {
     b.onclick = () => findReportsForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".calibrateIssueBtn").forEach(b =>
     b.onclick = () => calibrateIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".checkConsistBtn").forEach(b =>
+    b.onclick = () => checkIssueConsistency(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
     b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(it.answer || "", b); });
   $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
@@ -3145,6 +3149,76 @@ async function runConsistency() {
     }
   } catch (e) { if (out) out.innerHTML = "Error — try again."; }
   if (btn) { btn.disabled = false; btn.textContent = "🧩 Make issues consistent"; }
+}
+// Pull the Conclusion section out of an issue's IRAC answer, so read-along shows what each earlier
+// issue actually concluded (free — no API call). Falls back to the tail of the answer.
+function extractConclusion(ans) {
+  if (!ans) return "";
+  const m = /(?:\*\*|#+\s*)Conclusion\b[^\n]*\n([\s\S]*?)$/i.exec(ans);
+  let t = m ? m[1].trim() : "";
+  if (!t) { const parts = ans.trim().split(/\n\s*\n/); t = parts[parts.length - 1] || ""; }
+  return t.replace(/\s+/g, " ").slice(0, 320);
+}
+// Read-along consistency for ONE issue: first show (free) what the EARLIER issues concluded, then
+// let the student check THIS issue against them (1 credit) and apply or edit each fix themselves.
+async function checkIssueConsistency(i) {
+  const it = EXAM.issues[i];
+  const out = document.querySelector('.consistIssueOut[data-i="' + i + '"]');
+  if (!it || !out) return;
+  const earlier = EXAM.issues.slice(0, i)
+    .map((e, j) => ({ j, e })).filter(x => x.e.done && x.e.answer && !String(x.e.answer).startsWith("Error"));
+  if (!earlier.length) { out.innerHTML = '<span style="font-size:12px;color:#8b93a7">No earlier issue to check against.</span>'; return; }
+  // free read-along: what's established so far
+  let h = '<div style="border-left:3px solid #6f8fc9;background:#0f131c;border-radius:4px;padding:7px 10px;font-size:12px">'
+    + '<b style="color:#8fb4ff">📌 Established by the earlier issues (these govern):</b>'
+    + earlier.map(x => '<div style="margin:3px 0;color:#c4cdda">• <b>' + esc((x.e.issue || ("Issue " + (x.j + 1))).slice(0, 50)) + ':</b> '
+        + esc(extractConclusion(x.e.answer)) + '</div>').join("")
+    + '<button class="btn alt mini runIssueCheck" data-i="' + i + '" style="width:auto;margin-top:6px">🔎 Check this issue for contradictions (1 credit)</button>'
+    + '<div class="issueCheckFlags" data-i="' + i + '" style="margin-top:6px"></div></div>';
+  out.innerHTML = h;
+  out.querySelector(".runIssueCheck").onclick = async (ev) => {
+    const btn = ev.currentTarget, flags = out.querySelector('.issueCheckFlags[data-i="' + i + '"]');
+    btn.disabled = true; btn.textContent = "🔎 checking against the earlier conclusions…";
+    try {
+      const payload = EXAM.issues.map(x => ({ issue: x.issue || "", answer: x.answer || "" }));
+      const r = await (await fetch("/api/exam/issue_check", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ issues: payload, target: i })})).json();
+      if (r.error) { flags.innerHTML = "⚠️ " + esc(r.error); btn.disabled = false; btn.textContent = "🔎 Check again"; return; }
+      const conflicts = r.conflicts || [];
+      if (!conflicts.length) {
+        flags.innerHTML = '<span style="font-size:12px;color:#7fd18b">✅ This issue is consistent with the earlier conclusions.</span>';
+      } else {
+        flags.innerHTML = renderIssueCheckFlags(i, conflicts);
+        const ap = flags.querySelector(".applyIssueFix");
+        if (ap) ap.onclick = () => applyIssueConsistency(i, conflicts, flags);
+      }
+    } catch (e) { flags.innerHTML = "Error — try again."; }
+    btn.disabled = false; btn.textContent = "🔎 Re-check";
+  };
+}
+function renderIssueCheckFlags(i, conflicts) {
+  let h = '<div style="font-size:12px;color:#e0a05a;font-weight:600;margin:2px 0">⚠️ This issue contradicts ' + conflicts.length + ' earlier conclusion(s):</div>';
+  h += conflicts.map(cf =>
+    '<div style="border-left:3px solid #e0a05a;background:#1c1710;border-radius:4px;padding:6px 9px;margin:4px 0;font-size:12px">'
+    + '<div style="color:#c4cdda">📌 <b>Established earlier:</b> ' + esc(cf.established || "") + '</div>'
+    + '<div style="color:#e0b090">🆕 <b>This issue says:</b> ' + esc(cf.inconsistent || "") + '</div>'
+    + '<div style="color:#9fb0c6;margin-top:2px">↪ <b>Reframe:</b> ' + esc(cf.direction || "") + '</div></div>').join("");
+  h += '<button class="btn gold mini applyIssueFix" data-i="' + i + '" style="width:auto;margin-top:4px">✓ Apply the reframe to this issue</button>'
+    + '<span style="font-size:11px;color:#8b93a7;margin-left:8px">…or edit the answer yourself using the notes above.</span>';
+  return h;
+}
+async function applyIssueConsistency(i, conflicts, flags) {
+  const it = EXAM.issues[i]; if (!it) return;
+  flags.innerHTML = '<span style="font-size:11px;color:#8b93a7">reconciling this issue with the earlier conclusions…</span>';
+  try {
+    const payload = EXAM.issues.map(x => ({ issue: x.issue || "", answer: x.answer || "" }));
+    const r = await (await fetch("/api/exam/issue_check", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ issues: payload, target: i, apply: true, conflicts })})).json();
+    if (r.error) { flags.innerHTML = "⚠️ " + esc(r.error); return; }
+    it.answer = r.answer; it.answer_annotated = ""; it._audited = false;
+    if (typeof saveExam === "function") saveExam();
+    renderExam();
+  } catch (e) { flags.innerHTML = "Error — try again."; }
 }
 async function compileExam() {
   const done = EXAM.issues.filter(it => it.done && it.answer);
