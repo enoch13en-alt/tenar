@@ -435,7 +435,7 @@
         <button id="chatDockMin" title="Minimise" style="background:none;border:none;color:#aab4c6;cursor:pointer;font-size:20px;line-height:1;margin-left:8px">×</button>
       </div>
     </div>
-    <div id="chatDockDocs" style="display:none;max-height:130px;overflow:auto;border-bottom:1px solid #2a3344;padding:6px 10px;font-size:12px">loading…</div>
+    <div id="chatDockDocs" style="display:none;max-height:130px;overflow:auto;border-bottom:1px solid #2a3344;padding:6px 10px;font-size:12px;color:#dbe2ee;background:#161c27">loading…</div>
     <div id="chatDockLog" style="flex:1;overflow:auto;padding:10px 12px;font-size:13px;line-height:1.55;color:#dbe2ee"></div>
     <div style="display:flex;gap:6px;padding:8px;border-top:1px solid #2a3344">
       <input id="chatDockQ" placeholder="Ask about your materials…" style="flex:1;padding:9px;border:1px solid #2a3344;background:#11151d;color:#e6e9ef;border-radius:8px;font-size:13px">
@@ -1383,8 +1383,11 @@ $("#chatDockPin").onclick = async () => {
   box.style.display = "block"; box.innerHTML = "loading…";
   try {
     const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
-    box.innerHTML = (r.docs || []).map(d =>
-      '<label style="display:block;cursor:pointer;margin:2px 0"><input type="checkbox" class="dockDoc" value="' + esc(d.file) + '"> ' + esc(d.name || d.file) + '</label>').join("") || "no documents";
+    const list = (r.docs || []).map(d =>
+      '<label style="display:block;cursor:pointer;margin:3px 0;color:#dbe2ee"><input type="checkbox" class="dockDoc" value="' + esc(d.file) + '"> ' + esc(d.name || d.file) + '</label>').join("");
+    box.innerHTML = list
+      ? '<div style="color:#9fc0ff;font-weight:600;margin-bottom:4px">Tick a document, then ask your question below 👇</div>' + list
+      : '<span style="color:#e0a0a0">No documents in this course yet.</span>';
   } catch (e) { box.innerHTML = "couldn't load docs"; }
 };
 $("#chatDockSend").onclick = sendDock;
