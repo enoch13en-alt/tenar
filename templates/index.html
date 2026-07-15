@@ -1402,8 +1402,8 @@ async function sendDock() {
       r = await (await fetch("/api/doc/chat", {method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({course: COURSE, docs, question: q})})).json();
     else
-      r = await (await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({course: COURSE, web: false, format: "chat", question: q})})).json();
+      r = await (await fetch("/api/dock/ask", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, question: q})})).json();
     ansEl.innerHTML = r.error ? ("⚠️ " + esc(r.error)) : mdToHtml(r.answer || "(no answer)");
   } catch (e) { ansEl.textContent = "Error — try again."; }
   btn.disabled = false; log.scrollTop = log.scrollHeight;

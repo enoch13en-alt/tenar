@@ -4534,6 +4534,62 @@ def api_doc_chat():
                     "sources": [{"title": display_name(d)} for d in docs]})
 
 
+@app.route("/api/dock/ask", methods=["POST"])
+def api_dock_ask():
+    """Whole-course quick chat for the floating dock. Retrieves WIDE (to minimise a
+    present-but-missed passage) and is EXPLICIT about coverage: if the retrieved passages do not
+    cover the question, it says so and points the user to pin the specific document for a full
+    read — rather than quietly answering from partial retrieval. Grounded-only; one question."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    q = (body.get("question") or "").strip()
+    if not q:
+        return jsonify({"error": "Ask something about your materials."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    ensure_loaded(course)
+    hits = search(course, q, k=40)             # WIDE retrieval, vs the usual ~25
+    if not hits:
+        return jsonify({"answer": "I don't find anything on that in this course's materials. If you "
+                        "expect it to be here, pin the specific document (🎯 pin docs) so I can read "
+                        "it in full — or it may need provisioning.", "sources": []})
+    pdir, _ = course_paths(course)
+    content = []
+    for h in hits[:26]:
+        pg = page_label(os.path.join(pdir, h["doc"]), h["doc"], h["page"])
+        content.append({"type": "document",
+                        "source": {"type": "text", "media_type": "text/plain", "data": h["text"]},
+                        "title": f'{display_name(h["doc"])} — p.{pg}', "citations": {"enabled": True}})
+    content.append({"type": "text", "text": q})
+    system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
+              + "\n\nCOVERAGE HONESTY — you are answering from a WIDE but still PARTIAL retrieval of "
+              "the course, not the full documents. If the retrieved passages do NOT actually contain "
+              "what is needed to answer, SAY SO PLAINLY: 'that's not in the retrieved materials — "
+              "pin the specific document (🎯 pin docs) and I'll read it in full, or it may need "
+              "provisioning.' Do NOT answer from memory or infer beyond the passages. If they only "
+              "PARTIALLY cover the point, answer what they support and flag exactly what is missing.")
+    try:
+        resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=1400,
+                                 system=cached_system(system),
+                                 messages=[{"role": "user", "content": content}])
+        answer = (_text_of(resp) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    seen, srcs = set(), []
+    for h in hits[:26]:
+        nm = display_name(h["doc"])
+        if nm not in seen:
+            seen.add(nm); srcs.append({"title": nm})
+    return jsonify({"answer": answer or "(no answer)", "sources": srcs})
+
+
 @app.route("/api/ask", methods=["POST"])
 def api_ask():
     body = request.json or {}
