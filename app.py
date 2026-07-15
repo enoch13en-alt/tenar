@@ -403,6 +403,28 @@ WRITING_STYLE = (
 # the report writer's pyramid). Appended to the system prompt when selected.
 FORMATS = {
     "essay": "",
+    "guide": (
+        "OUTPUT FORMAT — RESEARCH GUIDE (where to look & why; DIRECTION, not a drafted answer). "
+        "You are a senior lawyer's research guide. Do NOT draft the final answer — DIRECT the "
+        "research, with 100% honesty. For EACH issue give:\n"
+        "  1. THE QUESTION — the precise legal question to resolve.\n"
+        "  2. WHERE THE GOVERNING LAW IS — the exact instrument + provision (Act X s.Y / Article Z "
+        "/ LI N reg M), each marked [IN YOUR MATERIALS — pinpoint] or [NOT IN MATERIALS — get it "
+        "at <named official source>], and WHY it governs.\n"
+        "  3. SUPPORTING AUTHORITIES + WHY — the strongest cases / commentary / reports, where to "
+        "find each, and why preferred over the alternatives.\n"
+        "  4. HOW IT APPLIES (brief) — the line the facts point to, stated as direction, not a full "
+        "draft.\n"
+        "  5. WEAKNESSES & COUNTERARGUMENTS — where the argument is thin and what the other side "
+        "will press; what to shore it up with and where to find it.\n"
+        "  6. VERIFY THESE — genuine open points only, each with the OFFICIAL source to confirm it "
+        "(Gazette, depositary, repository, regulator).\n"
+        "  7. NEXT RESEARCH STEPS — a short, sequenced to-do.\n"
+        "100% HONESTY: never invent a provision, case, holding, number or source; clearly separate "
+        "what IS grounded in the materials from what must be FETCHED; no manufactured uncertainty "
+        "for matters already established. Be the research file of a top chambers — point the lawyer "
+        "to exactly the right place, and say why."
+    ),
     "notes": (
         "OUTPUT FORMAT — INTERNAL LEGAL RESEARCH NOTES (a lawyer's research file, NOT a client "
         "deliverable). This is the ONE mode where surfacing the research PROCESS is DESIRABLE: "
@@ -1585,6 +1607,32 @@ PROPOSITION_VALIDATION = (
 # Rides every path that already carries the grounded-only citation rules (answer, gather,
 # assemble, research, deepen, chat, voice) — the validation discipline is inseparable from them.
 CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + PROPOSITION_VALIDATION
+
+RESEARCH_GUIDE_ETHOS = (
+    "HONEST RESEARCH-GUIDE POSTURE — beyond answering, act as a perfect, 100%-HONEST guide who "
+    "directs the lawyer to exactly WHERE to look and WHY. This sits ON TOP of grounded-only and "
+    "does NOT soften the firm analysis (exam-firmness still governs the prose):\n"
+    "- BE SCRUPULOUSLY HONEST ABOUT WHAT YOU HAVE vs WHAT YOU LACK. For every governing authority: "
+    "if it IS in the materials, pinpoint it (instrument + provision/page). If it is NOT, say so "
+    "plainly and DIRECT the lawyer to exactly where to find it — the named instrument and "
+    "provision, and the OFFICIAL source to get it from (the Gazette, the treaty depositary, the "
+    "Parliament repository, GhaLII, the regulator's site) — and WHY it is needed. NEVER invent a "
+    "provision, number, holding, case or figure to fill a gap; a candid 'not in your materials — "
+    "get it here' is the honest, required move, not a failure.\n"
+    "- DIRECT, DON'T JUST ASSERT. Where it helps the lawyer, say WHICH authority governs and why it "
+    "beats the alternatives, WHERE the strongest support lies, and WHERE the argument is thin so "
+    "they know what to shore up.\n"
+    "- SURFACE GENUINE GAPS, WEAKNESSES AND VERIFICATION POINTS — the material fact left open, the "
+    "authority whose status needs checking, the point the opposing side will press — and say what "
+    "to verify and at which official source.\n"
+    "- BUT NO MANUFACTURED GAPS OR HEDGING (no-artificial-uncertainty binds here too): do not "
+    "invent uncertainty or verification busywork for matters already established — only genuine "
+    "gaps. In a FINAL deliverable (exam / memo / report / opinion) keep this direction OUT of the "
+    "firm analysis prose — give it as a short, clearly-labelled 'WHERE TO LOOK / GAPS TO CLOSE' "
+    "note at the end. In NOTES or RESEARCH-GUIDE mode it is the main content. The lawyer does the "
+    "reasoning; your job is to point them, honestly, to exactly the right place, and say why."
+)
+CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + RESEARCH_GUIDE_ETHOS
 
 PRECISION_DISCIPLINE = (
     "CALIBRATED PRECISION — be exactly as specific as your sources are, and no "
@@ -8597,7 +8645,8 @@ def api_exam_assemble():
     kind_map = {"exam": "a concise, well-structured exam answer",
                 "essay": "a full coursework essay with fuller analysis",
                 "memo": "a legal memorandum", "report": "a formal report",
-                "notes": "an internal legal research-notes file (research process, not a client deliverable)"}
+                "notes": "an internal legal research-notes file (research process, not a client deliverable)",
+                "guide": "a research GUIDE that directs where to look and why (honest direction, not a drafted answer)"}
     kind = kind_map.get(length, kind_map["exam"])
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]

@@ -127,6 +127,14 @@ check('PROPOSITION_VALIDATION + "\\n\\n" + EXAM_FIRMNESS' in SRC,
 check("ADVISER UNDER REAL-WORLD" in EF and "FINDING-TOOLS ARE NOT AUTHORITY" in EF,
       "EXAM_FIRMNESS lost its core rails (exam-vs-adviser / finding-tools-not-authority)")
 
+# 11) Honest research-guide ethos (default posture) — appended to CITATION_INTEGRITY.
+RGE = const("RESEARCH_GUIDE_ETHOS") or ""
+check(len(RGE) > 800, "RESEARCH_GUIDE_ETHOS missing or too short")
+check(append_present("CITATION_INTEGRITY", "RESEARCH_GUIDE_ETHOS"),
+      "RESEARCH_GUIDE_ETHOS not appended to CITATION_INTEGRITY")
+check("WHERE TO LOOK" in RGE and "NEVER invent" in RGE,
+      "research-guide ethos lost its where-to-look / no-invention rails")
+
 if fails:
     print("❌ REGRESSION — reasoning modules:")
     for f in fails:
