@@ -2311,25 +2311,50 @@ function renderCaseCandidates(i, cases) {
   return h;
 }
 
+// Shared conflict gate: when weaving new material would contradict the existing text, show the
+// clash and let the student pick a stance per conflict, then re-weave with those choices.
+function renderWeaveConflicts(out, conflicts, onResolve) {
+  let h = '<div style="font-size:12px;color:#e0a05a;font-weight:600;margin:4px 0">⚠️ The new material conflicts with your text — pick a stance for each, then weave:</div>';
+  h += conflicts.map((cf, k) =>
+    '<div style="border-left:3px solid #e0a05a;padding:6px 9px;background:#1c1710;border-radius:4px;margin:4px 0;font-size:12px">'
+    + '<div style="color:#e0c090;font-weight:600">' + esc(cf.question || "Which stance?") + '</div>'
+    + '<div style="color:#aab4c6;margin-top:3px">📄 <b>Your text:</b> ' + esc(cf.existing || "") + '</div>'
+    + '<div style="color:#aab4c6">🆕 <b>New' + (cf.item ? " (" + esc(cf.item) + ")" : "") + ':</b> ' + esc(cf.new || "") + '</div>'
+    + '<div style="margin-top:5px">'
+    + '<label style="margin-right:12px"><input type="radio" name="cf' + k + '" value="current" checked> Keep my text</label>'
+    + '<label style="margin-right:12px"><input type="radio" name="cf' + k + '" value="new"> Adopt the new</label>'
+    + '<label><input type="radio" name="cf' + k + '" value="reconcile"> Reconcile (note both)</label>'
+    + '</div></div>').join("");
+  h += '<button class="btn gold mini resolveWeaveBtn" style="width:auto;margin-top:6px">✓ Weave with these choices</button>';
+  out.innerHTML = h;
+  out.querySelector(".resolveWeaveBtn").onclick = () => {
+    const stances = conflicts.map((cf, k) => ({ item: cf.item, existing: cf.existing,
+      stance: ((out.querySelector('input[name="cf' + k + '"]:checked') || {}).value) || "current" }));
+    onResolve(stances);
+  };
+}
+
 async function addCasesToIssue(i, out) {
   const it = EXAM.issues[i];
   const cands = it._caseCandidates || [];
   const chosen = [...out.querySelectorAll(".caseChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
   const note = out.querySelector(".addCasesNote");
   if (!chosen.length) { if (note) note.textContent = "Tick at least one verified case first."; return; }
-  const add = out.querySelector(".addCasesBtn");
-  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
-  try {
-    const r = await (await fetch("/api/issue/cases/add", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({issue: it.issue, answer: it.answer, cases: chosen})})).json();
-    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } return; }
-    it.answer = r.answer; it.answer_annotated = "";
-    it._casesAdded = (it._casesAdded || 0) + chosen.length;
-    // carry the woven cases into the issue's sources so they reach the OSCOLA Table of Cases on synthesis
-    it.sources = (it.sources || []).concat(chosen.map(x => ({
-      title: (x.name || "") + (x.citation ? " " + x.citation : ""), url: x.url || "" })));
-    renderExam();                                  // re-render with the cases woven into the answer
-  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } }
+  async function doWeave(stances) {
+    out.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
+    try {
+      const r = await (await fetch("/api/issue/cases/add", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({issue: it.issue, answer: it.answer, cases: chosen, stances})})).json();
+      if (!stances && r.contradictions && r.contradictions.length) { renderWeaveConflicts(out, r.contradictions, doWeave); return; }
+      if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+      it.answer = r.answer; it.answer_annotated = "";
+      it._casesAdded = (it._casesAdded || 0) + chosen.length;
+      it.sources = (it.sources || []).concat(chosen.map(x => ({
+        title: (x.name || "") + (x.citation ? " " + x.citation : ""), url: x.url || "" })));
+      renderExam();
+    } catch (e) { out.innerHTML = "Error — try again."; }
+  }
+  doWeave(null);
 }
 
 // --- Academic writings (literature) — the scholarship twin of the cases flow ---
@@ -2385,20 +2410,22 @@ async function addScholarshipToIssue(i, out) {
   const chosen = [...out.querySelectorAll(".scholarChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
   const note = out.querySelector(".addScholarNote");
   if (!chosen.length) { if (note) note.textContent = "Tick at least one verified writing first."; return; }
-  const add = out.querySelector(".addScholarBtn");
-  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
-  try {
-    const r = await (await fetch("/api/issue/scholarship/add", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({issue: it.issue, answer: it.answer, scholarship: chosen})})).json();
-    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } return; }
-    it.answer = r.answer; it.answer_annotated = "";
-    it._scholarAdded = (it._scholarAdded || 0) + chosen.length;
-    // carry the woven academic writings into the issue's sources so they reach the OSCOLA Bibliography
-    it.sources = (it.sources || []).concat(chosen.map(x => ({
-      title: (x.author ? x.author + ", " : "") + (x.title || "") + (x.page ? " — p." + x.page : ""),
-      quote: x.point || "" })));
-    renderExam();
-  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } }
+  async function doWeave(stances) {
+    out.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
+    try {
+      const r = await (await fetch("/api/issue/scholarship/add", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({issue: it.issue, answer: it.answer, scholarship: chosen, stances})})).json();
+      if (!stances && r.contradictions && r.contradictions.length) { renderWeaveConflicts(out, r.contradictions, doWeave); return; }
+      if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+      it.answer = r.answer; it.answer_annotated = "";
+      it._scholarAdded = (it._scholarAdded || 0) + chosen.length;
+      it.sources = (it.sources || []).concat(chosen.map(x => ({
+        title: (x.author ? x.author + ", " : "") + (x.title || "") + (x.page ? " — p." + x.page : ""),
+        quote: x.point || "" })));
+      renderExam();
+    } catch (e) { out.innerHTML = "Error — try again."; }
+  }
+  doWeave(null);
 }
 
 // --- Official reports / news / trends (web-verified) — the context twin of the cases flow ---
@@ -2455,20 +2482,22 @@ async function addReportsToIssue(i, out) {
   const chosen = [...out.querySelectorAll(".reportChk")].filter(x => x.checked).map(x => cands[+x.dataset.k]).filter(Boolean);
   const note = out.querySelector(".addReportsNote");
   if (!chosen.length) { if (note) note.textContent = "Tick at least one verified item first."; return; }
-  const add = out.querySelector(".addReportsBtn");
-  if (add) { add.disabled = true; add.textContent = "weaving in…"; }
-  try {
-    const r = await (await fetch("/api/issue/reports/add", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({issue: it.issue, answer: it.answer, reports: chosen})})).json();
-    if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked reports/news to the answer"; } return; }
-    it.answer = r.answer; it.answer_annotated = "";
-    it._reportsAdded = (it._reportsAdded || 0) + chosen.length;
-    // carry the woven reports/news into the issue's sources for the OSCOLA bibliography
-    it.sources = (it.sources || []).concat(chosen.map(x => ({
-      title: (x.body || "") + (x.title ? ", " + x.title : "") + (x.date ? " (" + x.date + ")" : ""),
-      url: x.url || "", quote: x.point || "" })));
-    renderExam();
-  } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked reports/news to the answer"; } }
+  async function doWeave(stances) {
+    out.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
+    try {
+      const r = await (await fetch("/api/issue/reports/add", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({issue: it.issue, answer: it.answer, reports: chosen, stances})})).json();
+      if (!stances && r.contradictions && r.contradictions.length) { renderWeaveConflicts(out, r.contradictions, doWeave); return; }
+      if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+      it.answer = r.answer; it.answer_annotated = "";
+      it._reportsAdded = (it._reportsAdded || 0) + chosen.length;
+      it.sources = (it.sources || []).concat(chosen.map(x => ({
+        title: (x.body || "") + (x.title ? ", " + x.title : "") + (x.date ? " (" + x.date + ")" : ""),
+        url: x.url || "", quote: x.point || "" })));
+      renderExam();
+    } catch (e) { out.innerHTML = "Error — try again."; }
+  }
+  doWeave(null);
 }
 
 // Shared case-verification panel: render candidates with checkboxes + verify links, and

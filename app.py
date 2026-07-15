@@ -6754,6 +6754,50 @@ def api_document_scholarship_add():
     return jsonify({"document": updated or document, "added": len(works)})
 
 
+def _detect_weave_conflicts(c, existing, items, kind):
+    """Flag GENUINE contradictions between NEW material about to be woven in and the existing
+    analysis, so the student can choose a stance before anything is inserted. Returns a list of
+    {item, existing, new, question}; empty when the new material only adds to / supports the text.
+    Non-fatal — any error returns [] (weave proceeds normally)."""
+    try:
+        v, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1400,
+            system=("You compare NEW material a student wants to weave into an existing legal "
+                    "analysis against that analysis, and flag ONLY GENUINE CONTRADICTIONS — where "
+                    "a new item asserts something INCONSISTENT with a statement, conclusion or "
+                    "proposition ALREADY in the text (opposite holding, a figure that differs, a "
+                    "position the analysis rejected, a fact that cuts against a stated conclusion). "
+                    "Do NOT flag material that merely ADDS to, illustrates or REINFORCES the text — "
+                    "only real tension. For each, identify the existing statement and the "
+                    "conflicting new point and frame the CHOICE. STRICT JSON: {\"conflicts\":[{"
+                    "\"item\":<short label of the new item>, \"existing\":<the existing statement it "
+                    "contradicts, quoted or closely paraphrased>, \"new\":<the conflicting new "
+                    "point>, \"question\":<one-line framing of the stance to choose>}]}. Empty "
+                    "conflicts list if there are none. No prose, no fences."),
+            messages=[{"role": "user", "content": "EXISTING ANALYSIS:\n" + existing[:6000]
+                       + "\n\nNEW " + kind + " THE STUDENT WANTS TO WEAVE IN:\n"
+                       + json.dumps(items)[:4000]}])
+        d = _first_json_obj(_text_of(v))
+        conf = d.get("conflicts", []) if isinstance(d, dict) else []
+        return conf if isinstance(conf, list) else []
+    except Exception:
+        return []
+
+
+def _stance_note(stances):
+    """Turn the student's chosen stances into a weave instruction. Empty when none."""
+    if not stances:
+        return ""
+    return ("\n\nCONFLICT RESOLUTION — the student has chosen a stance for each contradiction; "
+            "apply EXACTLY: " + json.dumps(stances)[:2000] + "\nFor stance 'current': KEEP the "
+            "existing statement and do NOT let the new item override it — weave the item only "
+            "where it does not conflict, or omit it. For 'new': UPDATE the text to the new "
+            "position, adjusting the affected statement/conclusion so the document is consistent. "
+            "For 'reconcile': present BOTH, explain the tension, and reach a calibrated view. Make "
+            "the resulting document internally consistent — no left-in statement that contradicts "
+            "the chosen stance.")
+
+
 @app.route("/api/issue/scholarship/add", methods=["POST"])
 def api_issue_scholarship_add():
     """Weave student-VERIFIED academic writings into an issue's answer, ATTRIBUTED by name at the
@@ -6771,6 +6815,11 @@ def api_issue_scholarship_add():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
+    stances = body.get("stances")
+    if not stances:
+        conflicts = _detect_weave_conflicts(c, answer, works, "academic writings")
+        if conflicts:
+            return jsonify({"contradictions": conflicts})
     sys = (
         "You STRENGTHEN a legal issue analysis by weaving in ACADEMIC WRITINGS the student has "
         "already VERIFIED — and nothing else. Each item names its author(s), title, year, a "
@@ -6798,7 +6847,7 @@ def api_issue_scholarship_add():
             messages=[{"role": "user", "content":
                        "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
                        + "\n\nVERIFIED WRITINGS TO WEAVE IN (respect each 'verified' flag):\n"
-                       + json.dumps(works)[:8000]}])
+                       + json.dumps(works)[:8000] + _stance_note(stances)}])
         updated = (_text_of(r) or "").strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
@@ -6822,6 +6871,11 @@ def api_issue_reports_add():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
+    stances = body.get("stances")
+    if not stances:
+        conflicts = _detect_weave_conflicts(c, answer, items, "reports/news")
+        if conflicts:
+            return jsonify({"contradictions": conflicts})
     sys = (
         "You STRENGTHEN a legal issue analysis by weaving in OFFICIAL REPORTS, NEWS or CURRENT "
         "developments the student has already VERIFIED — and nothing else. Each item names its "
@@ -6846,7 +6900,7 @@ def api_issue_reports_add():
             messages=[{"role": "user", "content":
                        "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
                        + "\n\nVERIFIED REPORTS / NEWS / TRENDS TO WEAVE IN (respect each 'kind'):\n"
-                       + json.dumps(items)[:8000]}])
+                       + json.dumps(items)[:8000] + _stance_note(stances)}])
         updated = (_text_of(r) or "").strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
@@ -6870,6 +6924,11 @@ def api_issue_cases_add():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
+    stances = body.get("stances")
+    if not stances:
+        conflicts = _detect_weave_conflicts(c, answer, cases, "cases/incidents")
+        if conflicts:
+            return jsonify({"contradictions": conflicts})
     sys = (
         "You STRENGTHEN a legal issue analysis by weaving in items the student has already "
         "VERIFIED — and nothing else. Each item is either a decided CASE (kind='case') or a "
@@ -6902,7 +6961,7 @@ def api_issue_cases_add():
             c, model=ANSWER_MODEL, max_tokens=8000, system=sys,
             messages=[{"role": "user", "content":
                        "ISSUE: " + issue + "\n\nCURRENT ANALYSIS:\n" + answer
-                       + "\n\nVERIFIED CASES TO WEAVE IN:\n" + json.dumps(cases)}])
+                       + "\n\nVERIFIED CASES TO WEAVE IN:\n" + json.dumps(cases) + _stance_note(stances)}])
         updated = _text_of(cor).strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
