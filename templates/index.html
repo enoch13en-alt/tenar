@@ -2423,6 +2423,28 @@ async function verifyAssumption(ai, btn) {
   }
 }
 
+// Pull the Rule section out of an issue's IRAC answer (between the Rule and the next header),
+// so later issues in the SAME exam can be told what law is already established and just apply it.
+function extractRuleSection(ans) {
+  if (!ans) return "";
+  const m = /(?:\*\*|#+\s*)Rule\b[^\n]*\n([\s\S]*?)(?:\n\s*(?:\*\*|#+\s*)(?:Application|Conclusion)\b)/i.exec(ans);
+  return m ? m[1].trim() : "";
+}
+// Compact ledger of rules ALREADY established in earlier (done) issues of this exam. Passed to the
+// gather so it applies them by cross-reference instead of re-stating (and re-paying for) them.
+function priorRulesLedger(uptoIndex) {
+  const parts = [];
+  for (let j = 0; j < uptoIndex && j < EXAM.issues.length; j++) {
+    const it = EXAM.issues[j];
+    if (!it || !it.done || !it.answer || String(it.answer).startsWith("Error")) continue;
+    const rule = extractRuleSection(it.answer) || (it.law || "");
+    if (!rule) continue;
+    const label = "ISSUE " + (it.n || (j + 1)) + (it.issue ? ' — "' + it.issue.slice(0, 90) + '"' : "");
+    parts.push(label + "\nRule established here:\n" + rule.slice(0, 900));
+  }
+  return parts.join("\n\n———\n\n");
+}
+
 async function gatherIssue(i) {
   const it = EXAM.issues[i];
   if (it.loading || it.done) return;          // ignore repeat clicks
@@ -2440,6 +2462,7 @@ async function gatherIssue(i) {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
+        prior: priorRulesLedger(i),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked)})})).json();
     it.answer = r.answer || r.error || "";

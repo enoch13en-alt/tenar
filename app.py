@@ -3408,7 +3408,7 @@ CONTEXT_USAGE = (
 
 
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
-                    mode="answer", use_context=False, max_quality=False):
+                    mode="answer", use_context=False, max_quality=False, prior=""):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -3490,6 +3490,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     "citations": {"enabled": True},
                 })
             ctx_note = "\n\n" + CONTEXT_USAGE
+    # ISSUE CONTINUITY — the exam's issues form ONE piece of work; law already stated in an
+    # earlier issue is given to the model here so later issues APPLY it by cross-reference
+    # instead of re-stating it (saves the re-extraction/re-statement spend the student flagged).
+    if mode == "gather" and prior:
+        content.append({"type": "text", "text":
+            "ALREADY-ESTABLISHED LAW FROM EARLIER ISSUES IN THIS SAME PIECE OF WORK (these issues "
+            "are already answered above/earlier; the rules below are settled — APPLY them here by "
+            "brief cross-reference, do NOT re-state or re-explain them):\n\n" + prior[:6000]})
     content.append({"type": "text", "text": question})
 
     # Routine/gather answers run WITHOUT extended thinking so cost is
@@ -3554,6 +3562,18 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "Be plain and direct throughout — no intro, no background lecture, no restating "
                   "the facts before the Application, no 'further facts would sharpen this' "
                   "digression, no essay prose. The four headers are mandatory and in order.")
+        if prior:
+            system = system + "\n\n" + (
+                "ISSUE CONTINUITY — these issues are parts of ONE continuous piece of work (a single "
+                "exam answer / memo), and the issues in the ALREADY-ESTABLISHED LAW block have been "
+                "answered earlier in that SAME piece, with their governing law fully set out there. "
+                "Do NOT re-state, re-explain or re-quote any rule already established earlier: in the "
+                "Rule section, APPLY it by a brief back-reference ('applying s.73 of Act 703, set out "
+                "under Issue 1 above, …') and move straight to this issue's facts. Set law out IN "
+                "FULL only where it is NEW to this issue (not already established). Never repeat a "
+                "full rule statement the reader has already been given — it wastes the piece's word "
+                "budget. If this issue is governed ENTIRELY by already-established law, keep the Rule "
+                "to a one-line cross-reference and spend the words on the Application.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -3574,6 +3594,16 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # the extracted rule is then handed to the writer (Phase 2) as the settled law to apply.
     pre_cost = 0.0
     if mode == "gather":
+        # When earlier issues already established rules, extract ONLY law NEW to this issue —
+        # the writer cross-references the rest. This is where the re-extraction spend is cut:
+        # a later issue governed by already-stated law returns almost nothing here.
+        new_only = ("\nALREADY-ESTABLISHED LAW (from earlier issues in this SAME piece) is listed "
+                    "in the passages/context. Extract ONLY the governing law that is NEW to THIS "
+                    "issue and NOT already in that established list — do NOT re-extract or repeat "
+                    "any rule already established (the writer will cross-reference those). If this "
+                    "issue introduces NO new governing law (it is fully governed by the "
+                    "already-established rules), output EXACTLY this one line and nothing else: "
+                    "NO NEW LAW — governed by already-established rules.") if prior else ""
         rule_sys = cached_system(
             CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n"
             + DOCTRINAL_PRECISION + "\n\n" + PRIMARY_FIRST + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
@@ -3585,9 +3615,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             "Issue, an Application or a Conclusion, and do NOT apply the law to the facts. If a "
             "governing provision's text is not in the passages, say 'not in the materials — "
             "provision it' for that point (never reproduce it from memory). Output tight markdown "
-            "bullets — this is the Rule the writer will apply.")
+            "bullets — this is the Rule the writer will apply." + new_only)
         rule_msg = list(content) + [{"type": "text",
-                    "text": "Extract ONLY the Rule for this issue: " + question}]
+                    "text": "Extract ONLY the "
+                    + ("NEW-to-this-issue Rule" if prior else "Rule")
+                    + " for this issue: " + question}]
         try:
             r1, m1 = _create_final(client, model=FABLE_MODEL, max_tokens=max_out,
                                    output_config={"effort": "high"},
@@ -3598,11 +3630,19 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             pre_cost += c1
             CONFIG["total_input_tokens"] += i1
             CONFIG["total_output_tokens"] += o1
-            if rule_text:
+            if rule_text and not rule_text.upper().startswith("NO NEW LAW"):
                 content = list(content) + [{"type": "text", "text":
                     "GOVERNING LAW ALREADY EXTRACTED FROM THE MATERIALS ABOVE (treat this as the "
                     "settled Rule — reproduce it VERBATIM in your Rule section; do NOT add, remove "
                     "or alter any law; your job is to APPLY this to the facts):\n\n" + rule_text}]
+            elif rule_text:
+                # this issue is fully governed by already-established law — tell the writer to
+                # cross-reference it (Rule = one line) rather than restate anything
+                content = list(content) + [{"type": "text", "text":
+                    "NO NEW GOVERNING LAW for this issue — it is governed ENTIRELY by law already "
+                    "established in earlier issues. In the Rule section, do NOT restate any rule: "
+                    "give a one-line cross-reference to where it was established and spend your "
+                    "words on applying it to THIS issue's facts."}]
         except Exception:
             pass          # extraction failed → writer still works from the passages directly
     # ---- PHASE 2: WRITE THE ANSWER -----------------------------------------------------
@@ -4644,7 +4684,8 @@ def api_ask():
             max_quality = False
     return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
                                    use_context=bool(body.get("use_context")),
-                                   max_quality=max_quality))
+                                   max_quality=max_quality,
+                                   prior=(body.get("prior") or "").strip()))
 
 
 @app.route("/api/cases", methods=["POST"])
