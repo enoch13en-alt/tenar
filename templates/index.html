@@ -1385,6 +1385,20 @@ $("#chatDockPin").onclick = async () => {
 };
 $("#chatDockSend").onclick = sendDock;
 $("#chatDockQ").addEventListener("keydown", e => { if (e.key === "Enter") sendDock(); });
+// Only a real, grounded FINDING is worth weaving into an issue. A clarifying question back to
+// you, a "not in the retrieved materials" miss, or an index/reference-page non-answer is not —
+// so the weave button is suppressed for those (it was showing on them, which is meaningless).
+function isSubstantiveAnswer(a) {
+  const t = (a || "").trim();
+  if (t.length < 200) return false;                 // misses & clarifications are short
+  const low = t.toLowerCase();
+  const missOpener = ["i only see", "i don't find anything", "i do not find anything",
+    "that's not in the retrieved materials", "that is not in the retrieved materials",
+    "that is not stated in", "that's not stated in", "what's your question", "what is your question"];
+  if (missOpener.some(p => low.startsWith(p))) return false;
+  return true;
+}
+let _dockPrevQ = "";       // last dock question, so a short follow-up ("page 24") has context
 async function sendDock() {
   const q = $("#chatDockQ").value.trim(); if (!q) return;
   if (typeof COURSE === "undefined" || !COURSE) { alert("Open a course first."); return; }
@@ -1396,16 +1410,20 @@ async function sendDock() {
   const ansEl = [...log.querySelectorAll(".dockA")].pop();
   log.scrollTop = log.scrollHeight; $("#chatDockQ").value = "";
   const btn = $("#chatDockSend"); btn.disabled = true;
+  const prevq = _dockPrevQ;
   try {
     let r;
     if (docs.length)
       r = await (await fetch("/api/doc/chat", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({course: COURSE, docs, question: q})})).json();
+        body: JSON.stringify({course: COURSE, docs, question: q, prevq})})).json();
     else
       r = await (await fetch("/api/dock/ask", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({course: COURSE, question: q})})).json();
+        body: JSON.stringify({course: COURSE, question: q, prevq})})).json();
     ansEl.innerHTML = r.error ? ("⚠️ " + esc(r.error)) : mdToHtml(r.answer || "(no answer)");
-    if (!r.error && r.answer) mountDockWeave(ansEl, q, r.answer, r.sources || []);
+    if (!r.error && r.answer) {
+      _dockPrevQ = q;                                 // remember for the next follow-up
+      if (isSubstantiveAnswer(r.answer)) mountDockWeave(ansEl, q, r.answer, r.sources || []);
+    }
   } catch (e) { ansEl.textContent = "Error — try again."; }
   btn.disabled = false; log.scrollTop = log.scrollHeight;
 }

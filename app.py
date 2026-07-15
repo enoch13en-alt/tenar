@@ -4537,6 +4537,8 @@ def api_doc_chat():
         return jsonify({"error": "You don't have access to that course."}), 403
     docs = [d for d in (body.get("docs") or []) if d]
     q = (body.get("question") or "").strip()
+    prevq = (body.get("prevq") or "").strip()
+    is_follow = bool(prevq) and len(q.split()) <= 4
     if not docs:
         return jsonify({"error": "Pick at least one document to query."}), 400
     if not q:
@@ -4553,7 +4555,8 @@ def api_doc_chat():
         return jsonify({"error": "Could not load the selected document(s) — are they indexed yet?"})
     blocks = blocks[:240]                     # bound context on very large instruments
     content = list(blocks)
-    content.append({"type": "text", "text": q})
+    content.append({"type": "text", "text":
+                    (("(Follow-up to: \"" + prevq[:200] + "\") ") if is_follow else "") + q})
     names = ", ".join(display_name(d) for d in docs)
     system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
               + "\n\nDOCUMENT-VERIFICATION MODE — the user has selected SPECIFIC document(s) ("
@@ -4562,7 +4565,11 @@ def api_doc_chat():
               "instruments, or memory. Quote the exact wording where it matters, with the page. If "
               "the answer is NOT in the selected document(s), say so plainly ('that is not stated "
               "in " + names + "') rather than inferring it — the whole point is to confirm what "
-              "THIS document actually says. Be direct and concise.")
+              "THIS document actually says. Be direct and concise."
+              + (("\n\nFOLLOW-UP CONTEXT — this is a SHORT follow-up to the user's previous question "
+                 "(\"" + prevq[:200] + "\"). Interpret a bare page/article/section number or 'read it "
+                 "in full' / 'the rest' as 'show me THAT part of the selected document(s)'. You have "
+                 "the FULL text above, so read it there and quote it.") if is_follow else ""))
     try:
         resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=1600,
                                  system=cached_system(system),
@@ -4585,6 +4592,7 @@ def api_dock_ask():
     if not _may_read_course(course):
         return jsonify({"error": "You don't have access to that course."}), 403
     q = (body.get("question") or "").strip()
+    prevq = (body.get("prevq") or "").strip()
     if not q:
         return jsonify({"error": "Ask something about your materials."}), 400
     c = _client()
@@ -4595,7 +4603,12 @@ def api_dock_ask():
         return jsonify({"error": msg, "limit": True})
     consume("questions")
     ensure_loaded(course)
-    hits = search(course, q, k=40)             # WIDE retrieval, vs the usual ~25
+    # Short deictic follow-up ("page 24", "read it in full", "the rest") carries no meaning on its
+    # own — a bare keyword search lands on the index/reference page. Fold in the previous question
+    # so retrieval stays on the SAME thread (e.g. Article 1 of the Water Charter, not 'page 24').
+    is_follow = bool(prevq) and len(q.split()) <= 4
+    rq = (prevq + " " + q) if is_follow else q
+    hits = search(course, rq, k=40)            # WIDE retrieval, vs the usual ~25
     if not hits:
         return jsonify({"answer": "I don't find anything on that in this course's materials. If you "
                         "expect it to be here, pin the specific document (🎯 pin docs) so I can read "
@@ -4607,7 +4620,8 @@ def api_dock_ask():
         content.append({"type": "document",
                         "source": {"type": "text", "media_type": "text/plain", "data": h["text"]},
                         "title": f'{display_name(h["doc"])} — p.{pg}', "citations": {"enabled": True}})
-    content.append({"type": "text", "text": q})
+    content.append({"type": "text", "text":
+                    (("(Follow-up to: \"" + prevq[:200] + "\") ") if is_follow else "") + q})
     system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
               + "\n\nCOVERAGE HONESTY — you are answering from a WIDE but still PARTIAL retrieval of "
               "the course, not the full documents. If the retrieved passages do NOT actually contain "
@@ -4615,6 +4629,14 @@ def api_dock_ask():
               "pin the specific document (🎯 pin docs) and I'll read it in full, or it may need "
               "provisioning.' Do NOT answer from memory or infer beyond the passages. If they only "
               "PARTIALLY cover the point, answer what they support and flag exactly what is missing.")
+    if is_follow:
+        system = system + ("\n\nFOLLOW-UP CONTEXT — this is a SHORT follow-up to the user's previous "
+                  "question (\"" + prevq[:200] + "\"). Interpret it on that SAME thread: a bare "
+                  "page/article/section number, or 'read it in full' / 'the rest', means 'show me THAT "
+                  "part of the SAME document we were just discussing'. If that specific part is not in "
+                  "the retrieved passages, say so and tell the user to pin that document (🎯 pin docs) "
+                  "for a full read — do NOT answer about a DIFFERENT document that merely shares the "
+                  "page number (e.g. some other file's index page).")
     try:
         resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=1400,
                                  system=cached_system(system),
