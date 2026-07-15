@@ -437,6 +437,9 @@
     </div>
     <div id="chatDockDocs" style="display:none;max-height:130px;overflow:auto;border-bottom:1px solid #2a3344;padding:6px 10px;font-size:12px;color:#dbe2ee;background:#161c27">loading…</div>
     <div id="chatDockLog" style="flex:1;overflow:auto;padding:10px 12px;font-size:13px;line-height:1.55;color:#dbe2ee"></div>
+    <div style="padding:4px 10px;border-top:1px solid #222b39;background:#151b26">
+      <button id="chatDockAddFact" title="Add a fact you verified elsewhere (a current event, a source the corpus doesn't have) and weave it — with its source — into an issue." style="background:none;border:none;color:#7ad0c0;cursor:pointer;font-size:11px;font-weight:600;padding:2px 0">➕ Weave a fact I verified elsewhere</button>
+    </div>
     <div style="display:flex;gap:6px;padding:8px;border-top:1px solid #2a3344">
       <input id="chatDockQ" placeholder="Ask about your materials…" style="flex:1;padding:9px;border:1px solid #2a3344;background:#11151d;color:#e6e9ef;border-radius:8px;font-size:13px">
       <button id="chatDockSend" class="btn gold" style="width:auto;padding:9px 13px">➤</button>
@@ -1439,13 +1442,13 @@ async function sendDock() {
 // Move accurate data from a chat answer into one of your Exam Coach issues. You curate the exact
 // text (trim to what you verified), pick the issue, and it is woven in — grounded, attributed,
 // conclusion preserved — through the same conflict/stance gate as the other weave-adds.
-function mountDockWeave(ansEl, question, answer, sources) {
+function mountDockWeave(ansEl, question, answer, sources, isFact) {
   const issues = (typeof EXAM !== "undefined" && EXAM.issues) ? EXAM.issues : [];
   const targets = issues.map((it, i) => ({ it, i })).filter(x => x.it.answer && x.it.done);
   const bar = document.createElement("div");
   bar.style.cssText = "margin-top:5px";
   if (!targets.length) {
-    bar.innerHTML = '<span style="font-size:10px;color:#6b7488">⤵ build & answer an issue in Exam Coach to weave this in</span>';
+    bar.innerHTML = '<span style="font-size:11px;color:#e0a05a">⚠ First build & answer an issue in Exam Coach — then you can weave a fact into it.</span>';
     ansEl.appendChild(bar); return;
   }
   ansEl.appendChild(bar);
@@ -1456,12 +1459,12 @@ function mountDockWeave(ansEl, question, answer, sources) {
   function open() {
     bar.innerHTML =
       '<div style="border-left:3px solid #7ad0c0;padding:6px 8px;background:#101a1a;border-radius:4px;font-size:12px">'
-      + '<div style="color:#7ad0c0;font-weight:600;margin-bottom:3px">⤵ Weave accurate data into an issue</div>'
+      + '<div style="color:#7ad0c0;font-weight:600;margin-bottom:3px">' + (isFact ? '➕ Weave a fact you verified elsewhere' : '⤵ Weave accurate data into an issue') + '</div>'
       + '<select class="dockWeaveSel" style="width:100%;margin-bottom:4px;font-size:11px;padding:3px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px">'
       + targets.map(t => '<option value="' + t.i + '">' + esc((t.it.issue || ("Issue " + (t.i + 1))).slice(0, 80)) + '</option>').join("")
       + '</select>'
-      + '<div style="color:#8b93a7;margin-bottom:2px">Trim to exactly what you verified (this exact text is woven in — nothing added):</div>'
-      + '<textarea class="dockWeaveTxt" style="width:100%;height:110px;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px;resize:vertical"></textarea>'
+      + '<div style="color:#8b93a7;margin-bottom:2px">' + (isFact ? 'Type or paste the fact you verified (exactly — this text is woven in as-is, nothing added):' : 'Trim to exactly what you verified (this exact text is woven in — nothing added):') + '</div>'
+      + '<textarea class="dockWeaveTxt" placeholder="' + (isFact ? 'e.g. On 30 June 2026 the VBA Heads of State convened an emergency session on the Togo–Ghana floods…' : '') + '" style="width:100%;height:110px;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px;resize:vertical"></textarea>'
       + '<div style="color:#e0c07a;margin:5px 0 2px;font-weight:600">Source you verified this against (required) — it is cited with the fact:</div>'
       + '<input class="dockWeaveSrc" placeholder="e.g. Volta Basin Authority, Communiqué of 30 June 2026 — vpenda.int/…" style="width:100%;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #3a4a66;border-radius:4px">'
       + '<div style="margin-top:5px"><button class="btn gold mini dockWeaveGo" style="width:auto">✓ Weave in</button>'
@@ -1497,8 +1500,20 @@ function mountDockWeave(ansEl, question, answer, sources) {
       doWeave(null);
     };
   }
-  collapse();
+  if (isFact) open(); else collapse();
 }
+
+// Open the fact-weave panel directly (for a CURRENT fact the corpus can't confirm — the student
+// verified it elsewhere and supplies the source). Not gated on a grounded chat answer.
+$("#chatDockAddFact").onclick = () => {
+  if (typeof COURSE === "undefined" || !COURSE) { alert("Open a course first."); return; }
+  const log = $("#chatDockLog"); const hint = $("#dockHint"); if (hint) hint.remove();
+  log.insertAdjacentHTML("beforeend",
+    '<div style="margin:8px 0"><div class="dockA factHost"></div></div>');
+  const host = [...log.querySelectorAll(".factHost")].pop();
+  mountDockWeave(host, "", "", [], true);
+  log.scrollTop = log.scrollHeight;
+};
 
 async function runHygiene() {
   const btn = $("#cleanHouse"), out = $("#hygieneOut");
