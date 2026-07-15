@@ -28,6 +28,8 @@
                         100% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
   /* busy state: dim, block re-clicks, show inline spinner */
   .btn.busy { opacity: .7; cursor: progress; pointer-events: none; }
+  .btn.done { background: #12301f; border-color: #2e6b47; color: #8fe0b0; }
+  .btn.done:hover { filter: brightness(1.1); }
   .btn .spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px;
          vertical-align: -1px; border: 2px solid rgba(255,255,255,.35);
          border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
@@ -1569,7 +1571,9 @@ function saveExam() {
         _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
         _autoRemoved: it._autoRemoved, _removed: it._removed, _auditOriginal: it._auditOriginal,
         _calibrated: it._calibrated, _calibrateOriginal: it._calibrateOriginal,
-        _calibrateChanges: it._calibrateChanges, _caseCandidates: it._caseCandidates
+        _calibrateChanges: it._calibrateChanges, _caseCandidates: it._caseCandidates,
+        _casesAdded: it._casesAdded, _scholarAdded: it._scholarAdded,
+        _reportsAdded: it._reportsAdded, sources: it.sources
       }))
     };
     localStorage.setItem("examRun_" + COURSE, JSON.stringify(snap));
@@ -1994,11 +1998,11 @@ function renderExam() {
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
           + '</button>'
-          + '<button class="btn mini auditIssueBtn" data-i="'+idx+'" style="margin-top:6px">🔍 Audit &amp; fix authorities</button>'
-          + '<button class="btn mini casesIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">⚖️ Cases &amp; incidents</button>'
-          + '<button class="btn mini scholarIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">📚 Writers &amp; scholarship</button>'
-          + '<button class="btn mini reportsIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Search the web for VERIFIED official/government reports, reputable news, and current/trending developments on this issue — each with a link. They are woven in as CONTEXT (evidence of policy/practice/fact), never as legal authority. You verify each before it is added. Uses one web credit.">🏛️ Reports, news &amp; trends</button>'
-          + '<button class="btn mini calibrateIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">🎚 Calibrate language</button>'
+          + '<button class="btn mini auditIssueBtn'+(it._audited?' done':'')+'" data-i="'+idx+'" style="margin-top:6px" title="Audit the authorities against the corpus and fix/cut ungrounded ones.">'+(it._audited?'✅ Audited — re-run':'🔍 Audit &amp; fix authorities')+'</button>'
+          + '<button class="btn mini casesIssueBtn'+(it._casesAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">'+(it._casesAdded?('✅ Cases added ('+it._casesAdded+') — re-find'):'⚖️ Cases &amp; incidents')+'</button>'
+          + '<button class="btn mini scholarIssueBtn'+(it._scholarAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">'+(it._scholarAdded?('✅ Writers added ('+it._scholarAdded+') — re-find'):'📚 Writers &amp; scholarship')+'</button>'
+          + '<button class="btn mini reportsIssueBtn'+(it._reportsAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Search the web for VERIFIED official/government reports, reputable news, and current/trending developments on this issue — each with a link. They are woven in as CONTEXT (evidence of policy/practice/fact), never as legal authority. You verify each before it is added. Uses one web credit.">'+(it._reportsAdded?('✅ Reports added ('+it._reportsAdded+') — re-search'):'🏛️ Reports, news &amp; trends')+'</button>'
+          + '<button class="btn mini calibrateIssueBtn'+(it._calibrated?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">'+(it._calibrated?'✅ Calibrated — re-run':'🎚 Calibrate language')+'</button>'
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="scholarIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
@@ -2312,6 +2316,7 @@ async function addCasesToIssue(i, out) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, cases: chosen})})).json();
     if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } return; }
     it.answer = r.answer; it.answer_annotated = "";
+    it._casesAdded = (it._casesAdded || 0) + chosen.length;
     // carry the woven cases into the issue's sources so they reach the OSCOLA Table of Cases on synthesis
     it.sources = (it.sources || []).concat(chosen.map(x => ({
       title: (x.name || "") + (x.citation ? " " + x.citation : ""), url: x.url || "" })));
@@ -2379,6 +2384,7 @@ async function addScholarshipToIssue(i, out) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, scholarship: chosen})})).json();
     if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } return; }
     it.answer = r.answer; it.answer_annotated = "";
+    it._scholarAdded = (it._scholarAdded || 0) + chosen.length;
     // carry the woven academic writings into the issue's sources so they reach the OSCOLA Bibliography
     it.sources = (it.sources || []).concat(chosen.map(x => ({
       title: (x.author ? x.author + ", " : "") + (x.title || "") + (x.page ? " — p." + x.page : ""),
@@ -2448,6 +2454,7 @@ async function addReportsToIssue(i, out) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, reports: chosen})})).json();
     if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked reports/news to the answer"; } return; }
     it.answer = r.answer; it.answer_annotated = "";
+    it._reportsAdded = (it._reportsAdded || 0) + chosen.length;
     // carry the woven reports/news into the issue's sources for the OSCOLA bibliography
     it.sources = (it.sources || []).concat(chosen.map(x => ({
       title: (x.body || "") + (x.title ? ", " + x.title : "") + (x.date ? " (" + x.date + ")" : ""),
