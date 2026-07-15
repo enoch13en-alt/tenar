@@ -428,25 +428,48 @@
     </div>
     <div class="rowbtn">
       <button class="btn alt" id="examUpload" style="width:auto">📎 Upload exam (PDF/Word)</button>
-      <label style="color:#aab4c6;font-size:12px">Output:
-        <select id="examLen" style="width:auto;display:inline-block">
-          <option value="exam">Exam answer (concise)</option>
-          <option value="essay">Coursework essay (full)</option>
-          <option value="memo">Legal memorandum</option>
-          <option value="report">Formal report</option>
-        </select>
-      </label>
-      <label style="color:#aab4c6;font-size:12px" title="Optional. After Deepen, the document is condensed to fit this many words. Leave blank for no limit.">
-        Word limit:
-        <input type="number" id="wordLimit" placeholder="none" min="100" step="50"
-               style="width:74px;display:inline-block">
-      </label>
-      <label style="color:#aab4c6;font-size:12px" title="Whether footnotes count toward the word limit — lecturers differ.">
-        <select id="fnCount" style="width:auto;display:inline-block">
-          <option value="nocount">footnotes NOT counted</option>
-          <option value="count">footnotes counted</option>
-        </select>
-      </label>
+      <details id="docSettings" style="border:1px solid #2a3344;border-radius:8px;padding:6px 10px;color:#aab4c6;font-size:12px">
+        <summary style="cursor:pointer">📄 Document settings <span style="color:#7a8296">(applied on 🧬 Synthesise)</span></summary>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:center">
+          <label title="Essay, memorandum, report, or a concise exam answer.">Type:
+            <select id="examLen" style="width:auto;display:inline-block">
+              <option value="essay">Essay</option>
+              <option value="memo">Memorandum</option>
+              <option value="report">Report</option>
+              <option value="exam">Exam answer (concise)</option>
+            </select>
+          </label>
+          <label title="Target word count for the synthesised document. Leave blank for no limit.">Words:
+            <input type="number" id="wordLimit" placeholder="none" min="100" step="50" style="width:74px;display:inline-block">
+          </label>
+          <label title="Whether footnotes count toward the word limit — lecturers differ.">
+            <select id="fnCount" style="width:auto;display:inline-block">
+              <option value="nocount">footnotes NOT counted</option>
+              <option value="count">footnotes counted</option>
+            </select>
+          </label>
+          <label title="Approximate page limit. Pages depend on font/size/spacing, so this is converted to a word target for writing.">Pages:
+            <input type="number" id="pageLimit" placeholder="none" min="1" step="1" style="width:56px;display:inline-block">
+          </label>
+          <label title="Font for the exported Word/PDF document.">Font:
+            <select id="docFont" style="width:auto;display:inline-block">
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Arial">Arial</option>
+              <option value="Calibri">Calibri</option>
+              <option value="Garamond">Garamond</option>
+              <option value="Georgia">Georgia</option>
+            </select>
+          </label>
+          <label title="Font size (points) for the exported document.">Size:
+            <select id="docFontSize" style="width:auto;display:inline-block">
+              <option value="11">11</option>
+              <option value="12" selected>12</option>
+              <option value="13">13</option>
+              <option value="14">14</option>
+            </select>
+          </label>
+        </div>
+      </details>
       <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
         <input type="checkbox" id="examWeb"> Comparative (web)
       </label>
@@ -724,8 +747,9 @@ window.fetch = function(...args) {
 };
 const esc = s => (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function downloadDocx(text, title) {
+  const font = (($("#docFont")||{}).value) || "", fontSize = parseInt(($("#docFontSize")||{}).value) || 0;
   const res = await fetch("/api/export", {method:"POST",
-    headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title})});
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title, font, font_size: fontSize})});
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2776,6 +2800,9 @@ async function compileExam() {
     const resp = await fetch("/api/exam/assemble", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
+        word_limit: parseInt(($("#wordLimit")||{}).value) || 0,
+        page_limit: parseInt(($("#pageLimit")||{}).value) || 0,
+        footnotes_inclusive: (($("#fnCount")||{}).value === "count"),
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
@@ -2910,7 +2937,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     try {
       const res = await fetch("/api/exam/pdf", {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({document: doc, meta})});
+        body: JSON.stringify({document: doc, meta,
+          font: (($("#docFont")||{}).value) || "", font_size: parseInt(($("#docFontSize")||{}).value) || 0})});
       if (!res.ok) { const er = await res.json().catch(()=>({})); alert(er.error || "PDF build failed"); }
       else {
         const blob = await res.blob(); const url = URL.createObjectURL(blob);

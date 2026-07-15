@@ -8292,6 +8292,12 @@ def api_exam_assemble():
     want_assumptions = bool(body.get("assumptions"))     # off by default → no assumptions section
     max_quality = bool(body.get("max_quality", False))   # use Fable 5 for compile
     compile_model = FABLE_MODEL if max_quality else ANSWER_MODEL
+    word_limit = int(body.get("word_limit") or 0)
+    page_limit = int(body.get("page_limit") or 0)
+    footnotes_inclusive = bool(body.get("footnotes_inclusive"))
+    # a page ~ 300 words of typical 12pt prose; convert a page target to a word target
+    if not word_limit and page_limit:
+        word_limit = page_limit * 300
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
@@ -8403,6 +8409,21 @@ def api_exam_assemble():
     kind = kind_map.get(length, kind_map["exam"])
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]
+    if word_limit:
+        fn_rule = ("Footnotes COUNT toward the limit — include footnote wording in the budget."
+                   if footnotes_inclusive else
+                   "Footnotes do NOT count toward the limit — count only the main text (body); "
+                   "exclude footnote content, the bibliography and the tables.")
+        system += ("\n\nLENGTH TARGET — write the document to approximately " + str(word_limit)
+                   + " words"
+                   + ((" (about " + str(page_limit) + " page(s))") if page_limit else "")
+                   + ". " + fn_rule + " Hit the target by DEPTH and SELECTION, never padding or "
+                   "truncation: cover every issue in proportion to its weight, keep the strongest "
+                   "authorities and analysis, and cut repetition and low-value material first. Do "
+                   "NOT drop an issue or omit its conclusion to fit — compress the least "
+                   "load-bearing prose instead. Keep the single connected argument (do not let "
+                   "length pressure fragment it back into separate mini-essays). Land within about "
+                   "5% of the target.")
     # comparative material is woven into the synthesis (not stapled on) — the
     # web-verified other-jurisdiction/case-law layer is part of the one document
     if include_web:
@@ -8630,10 +8651,21 @@ def _md_runs(line):
             yield part, False, False
 
 
-def _md_to_docx(text, title):
+def _md_to_docx(text, title, font="", font_size=0):
     import io
     import docx
+    from docx.shared import Pt
     d = docx.Document()
+    # Apply the requested font/size to the Normal (body) style so all body prose inherits it.
+    if font or font_size:
+        try:
+            st = d.styles["Normal"]
+            if font:
+                st.font.name = font
+            if font_size:
+                st.font.size = Pt(int(font_size))
+        except Exception:
+            pass
     if title:
         d.add_heading(title, level=0)
     for raw in text.split("\n"):
@@ -8660,9 +8692,11 @@ def api_export():
     body = request.json or {}
     text = body.get("text", "")
     title = (body.get("title", "Answer") or "Answer").strip()
+    font = (body.get("font") or "").strip()
+    font_size = int(body.get("font_size") or 0)
     if not text.strip():
         return jsonify({"error": "nothing to export"}), 400
-    bio = _md_to_docx(text, title)
+    bio = _md_to_docx(text, title, font=font, font_size=font_size)
     fname = (re.sub(r"[^\w -]", "", title)[:40].strip() or "answer") + ".docx"
     return send_file(bio, as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument"
