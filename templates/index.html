@@ -1405,8 +1405,68 @@ async function sendDock() {
       r = await (await fetch("/api/dock/ask", {method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({course: COURSE, question: q})})).json();
     ansEl.innerHTML = r.error ? ("⚠️ " + esc(r.error)) : mdToHtml(r.answer || "(no answer)");
+    if (!r.error && r.answer) mountDockWeave(ansEl, q, r.answer, r.sources || []);
   } catch (e) { ansEl.textContent = "Error — try again."; }
   btn.disabled = false; log.scrollTop = log.scrollHeight;
+}
+
+// Move accurate data from a chat answer into one of your Exam Coach issues. You curate the exact
+// text (trim to what you verified), pick the issue, and it is woven in — grounded, attributed,
+// conclusion preserved — through the same conflict/stance gate as the other weave-adds.
+function mountDockWeave(ansEl, question, answer, sources) {
+  const issues = (typeof EXAM !== "undefined" && EXAM.issues) ? EXAM.issues : [];
+  const targets = issues.map((it, i) => ({ it, i })).filter(x => x.it.answer && x.it.done);
+  const bar = document.createElement("div");
+  bar.style.cssText = "margin-top:5px";
+  if (!targets.length) {
+    bar.innerHTML = '<span style="font-size:10px;color:#6b7488">⤵ build & answer an issue in Exam Coach to weave this in</span>';
+    ansEl.appendChild(bar); return;
+  }
+  ansEl.appendChild(bar);
+  function collapse() {
+    bar.innerHTML = '<button class="btn alt dockWeaveOpen" style="width:auto;font-size:10px;padding:1px 7px" title="Move this grounded answer into one of your Exam Coach issues — you trim it to exactly what you verified first.">⤵ Weave into an issue</button>';
+    bar.querySelector(".dockWeaveOpen").onclick = open;
+  }
+  function open() {
+    bar.innerHTML =
+      '<div style="border-left:3px solid #7ad0c0;padding:6px 8px;background:#101a1a;border-radius:4px;font-size:12px">'
+      + '<div style="color:#7ad0c0;font-weight:600;margin-bottom:3px">⤵ Weave accurate data into an issue</div>'
+      + '<select class="dockWeaveSel" style="width:100%;margin-bottom:4px;font-size:11px;padding:3px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px">'
+      + targets.map(t => '<option value="' + t.i + '">' + esc((t.it.issue || ("Issue " + (t.i + 1))).slice(0, 80)) + '</option>').join("")
+      + '</select>'
+      + '<div style="color:#8b93a7;margin-bottom:2px">Trim to exactly what you verified (this exact text is woven in — nothing added):</div>'
+      + '<textarea class="dockWeaveTxt" style="width:100%;height:110px;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px;resize:vertical"></textarea>'
+      + '<div style="margin-top:5px"><button class="btn gold mini dockWeaveGo" style="width:auto">✓ Weave in</button>'
+      + '<button class="btn alt mini dockWeaveCancel" style="width:auto;margin-left:6px">cancel</button>'
+      + '<span class="dockWeaveNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span></div></div>';
+    bar.querySelector(".dockWeaveTxt").value = answer;
+    bar.querySelector(".dockWeaveCancel").onclick = collapse;
+    const noteEl = bar.querySelector(".dockWeaveNote");
+    bar.querySelector(".dockWeaveGo").onclick = () => {
+      const i = +bar.querySelector(".dockWeaveSel").value;
+      const material = bar.querySelector(".dockWeaveTxt").value.trim();
+      const it = EXAM.issues[i];
+      if (!it) { noteEl.textContent = "That issue is gone — re-run it."; return; }
+      if (!material) { noteEl.textContent = "Trim in the text to weave first."; return; }
+      async function doWeave(stances) {
+        bar.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
+        try {
+          const r = await (await fetch("/api/issue/chat/add", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({issue: it.issue, answer: it.answer, material, question, sources, stances})})).json();
+          if (!stances && r.contradictions && r.contradictions.length) { renderWeaveConflicts(bar, r.contradictions, doWeave); return; }
+          if (r.error) { bar.innerHTML = "⚠️ " + esc(r.error); return; }
+          it.answer = r.answer; it.answer_annotated = "";
+          it._chatAdded = (it._chatAdded || 0) + 1;
+          it._audited = false;                 // answer changed — re-audit for a verified copy
+          if (typeof renderExam === "function") renderExam();
+          if (typeof saveExam === "function") saveExam();
+          bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Woven into: <b>' + esc((it.issue || ("Issue " + (i + 1))).slice(0, 70)) + '</b> — check it in Exam Coach (re-audit recommended).</span>';
+        } catch (e) { bar.innerHTML = "Error — try again."; }
+      }
+      doWeave(null);
+    };
+  }
+  collapse();
 }
 
 async function runHygiene() {
@@ -1711,7 +1771,7 @@ function saveExam() {
         _calibrated: it._calibrated, _calibrateOriginal: it._calibrateOriginal,
         _calibrateChanges: it._calibrateChanges, _caseCandidates: it._caseCandidates,
         _casesAdded: it._casesAdded, _scholarAdded: it._scholarAdded,
-        _reportsAdded: it._reportsAdded, sources: it.sources
+        _reportsAdded: it._reportsAdded, _chatAdded: it._chatAdded, sources: it.sources
       }))
     };
     localStorage.setItem("examRun_" + COURSE, JSON.stringify(snap));
@@ -2049,6 +2109,7 @@ function calibratedBadge(it) {
   const parts = [];
   if (it._audited) parts.push('<span style="background:#16351f;color:#7fdca0;border-radius:3px;padding:0 6px;font-size:10px;margin-right:4px">🔍 audited</span>');
   if (it._calibrated) parts.push('<span style="background:#1a2740;color:#8fb4ff;border-radius:3px;padding:0 6px;font-size:10px;margin-right:4px">🎚 calibrated</span>');
+  if (it._chatAdded) parts.push('<span style="background:#132a2a;color:#7ad0c0;border-radius:3px;padding:0 6px;font-size:10px;margin-right:4px" title="Grounded material moved in from the corner chat.">🗨 chat woven ('+it._chatAdded+')</span>');
   return parts.length ? '<div style="margin:4px 0 0">' + parts.join("") + '</div>' : "";
 }
 // Persistent calibration record under the answer: what changed + before/after (mirrors the

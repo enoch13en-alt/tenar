@@ -7187,6 +7187,69 @@ def api_issue_reports_add():
     return jsonify({"answer": updated or answer})
 
 
+@app.route("/api/issue/chat/add", methods=["POST"])
+def api_issue_chat_add():
+    """Weave student-CURATED text FROM THE CORNER CHAT into an issue's answer. The material is the
+    grounded chat output the student has read and (usually) trimmed to exactly what they verified;
+    we transfer ONLY what it actually supports — carrying over any hedge or 'not in materials'
+    limitation rather than laundering it into an assertion — attributed to the source the chat
+    cited, preserving the existing conclusion. Same conflict-detection / stance gate as the other
+    weave-adds. This is the 'move accurate data from the chat into my analysis' tool."""
+    body = request.json or {}
+    issue = (body.get("issue") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    material = (body.get("material") or "").strip()
+    question = (body.get("question") or "").strip()
+    sources = body.get("sources") or []
+    if not answer or not material:
+        return jsonify({"error": "Need the issue answer and the chat text to weave in."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    stances = body.get("stances")
+    if not stances:
+        conflicts = _detect_weave_conflicts(c, answer, [{"chat_material": material[:3000]}], "chat findings")
+        if conflicts:
+            return jsonify({"contradictions": conflicts})
+    titles = [s.get("title", "") for s in sources if isinstance(s, dict) and s.get("title")]
+    src_line = ("\n\nSOURCES THE CHAT CITED (attribute to these; do not go beyond them): "
+                + json.dumps(titles)[:1500]) if titles else ""
+    sys = (
+        "You STRENGTHEN a legal issue analysis by weaving in MATERIAL the student pulled from the "
+        "corpus chat and curated — and NOTHING else. The material is grounded in the course "
+        "documents; your job is to move it into the analysis ACCURATELY:\n"
+        "- TRANSFER ONLY WHAT THE MATERIAL ACTUALLY SUPPORTS. Never add to it, extrapolate from it, "
+        "or upgrade a tentative/qualified point into a firm one. If the material hedges, or says "
+        "something is NOT in the materials / must be obtained elsewhere, CARRY THAT LIMITATION OVER "
+        "— never launder a stated gap into an assertion.\n"
+        "- KEEP EXACT WORDING for any quoted statutory or case text, and preserve pinpoint "
+        "references (section, clause, page) EXACTLY as the material gives them — do not renumber, "
+        "round, or paraphrase a citation. Attribute to the source document the chat named (see "
+        "below); if the material attributes a view to a scholar or body, keep that attribution.\n"
+        "- Integrate at the logically correct point in THIS issue's analysis, as flowing prose that "
+        "connects to the proposition it bears on — never a bare drop-in, a quote-dump, a 'see also', "
+        "or a heading of its own. If part of the material does not fit this issue, leave it out.\n"
+        "- PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim except for "
+        "the woven-in sentence(s); do NOT re-argue and do NOT change any conclusion. Return ONLY the "
+        "updated issue answer — no preamble, no notes.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
+                       + ("\n\nCHAT QUESTION: " + question if question else "")
+                       + "\n\nCURATED CHAT MATERIAL TO WEAVE IN (transfer only what it supports):\n"
+                       + material[:8000] + src_line + _stance_note(stances)}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"answer": updated or answer})
+
+
 @app.route("/api/issue/cases/add", methods=["POST"])
 def api_issue_cases_add():
     """Weave the student-VERIFIED cases into an issue's answer at the point each strengthens,
