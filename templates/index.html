@@ -1494,13 +1494,48 @@ function mountDockWeave(ansEl, question, answer, sources, isFact) {
           it._audited = false;                 // answer changed — re-audit for a verified copy
           if (typeof renderExam === "function") renderExam();
           if (typeof saveExam === "function") saveExam();
-          bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Woven into: <b>' + esc((it.issue || ("Issue " + (i + 1))).slice(0, 70)) + '</b> — check it in Exam Coach (re-audit recommended).</span>';
+          bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Woven into: <b>' + esc((it.issue || ("Issue " + (i + 1))).slice(0, 70)) + '</b> — check it in Exam Coach (re-audit recommended).</span>'
+            + '<div class="propStatus" style="font-size:11px;color:#8fb4ff;margin-top:3px">🔗 checking the other issues for this fact…</div>';
+          propagateFact(material, userSource, i, bar.querySelector(".propStatus"));
         } catch (e) { bar.innerHTML = "Error — try again."; }
       }
       doWeave(null);
     };
   }
   if (isFact) open(); else collapse();
+}
+
+// Automatically flow a just-woven MATERIAL fact into every OTHER issue it bears on, so the whole
+// exam stays consistent with it. The server screens which issues it's material to and updates only
+// those (issues it doesn't touch cost nothing and stay unchanged). Each updated issue = one credit.
+async function propagateFact(material, userSource, srcIndex, statusEl) {
+  const issues = (typeof EXAM !== "undefined" && EXAM.issues) ? EXAM.issues : [];
+  if (issues.length <= 1) { if (statusEl) statusEl.textContent = ""; return; }
+  try {
+    const payload = issues.map(it => ({ issue: it.issue || "", answer: it.answer || "" }));
+    const r = await (await fetch("/api/exam/propagate", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({material, user_source: userSource, source_issue: srcIndex, issues: payload})})).json();
+    if (r.error) { if (statusEl) statusEl.innerHTML = "🔗 couldn't propagate: " + esc(r.error); return; }
+    const changed = (r.results || []).filter(x => x.changed && EXAM.issues[x.i]);
+    changed.forEach(x => {
+      const it = EXAM.issues[x.i];
+      it.answer = x.answer; it.answer_annotated = "";
+      it._chatAdded = (it._chatAdded || 0) + 1;
+      it.sources = (it.sources || []).concat([{ title: userSource, quote: material.slice(0, 160) }]);
+      it._audited = false;                 // changed — re-audit for a verified copy
+    });
+    if (changed.length) {
+      if (typeof renderExam === "function") renderExam();
+      if (typeof saveExam === "function") saveExam();
+    }
+    if (statusEl) {
+      statusEl.innerHTML = changed.length
+        ? '🔗 Also flowed into ' + changed.length + ' other issue(s): '
+          + changed.map(x => '<b>' + esc((EXAM.issues[x.i].issue || ("Issue " + (x.i + 1))).slice(0, 44)) + '</b>').join('; ')
+          + ' — re-audit each.'
+        : '🔗 No other issue depends on this fact — nothing else changed.';
+    }
+  } catch (e) { if (statusEl) statusEl.textContent = "🔗 propagation error — try re-weaving."; }
 }
 
 // Open the fact-weave panel directly (for a CURRENT fact the corpus can't confirm — the student

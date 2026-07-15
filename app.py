@@ -7262,6 +7262,164 @@ def api_issue_reports_add():
     return jsonify({"answer": updated or answer})
 
 
+# Shared reasoning for weaving a verified fact into an issue — used by the fact-weave (/api/issue/
+# chat/add) AND the cross-issue propagation (/api/exam/propagate) so both apply IDENTICAL discipline:
+# transfer only what's supported, cite the source, resolve caveats in either direction, keep negatives
+# source-relative, and make a MATERIAL fact flow through Application + Conclusion (contextual facts don't).
+FACT_WEAVE_SYS = (
+    "You STRENGTHEN a legal issue analysis by weaving in MATERIAL the student pulled from the "
+    "corpus chat and curated — and NOTHING else. The material is grounded in the course "
+    "documents; your job is to move it into the analysis ACCURATELY:\n"
+    "- TRANSFER ONLY WHAT THE MATERIAL ACTUALLY SUPPORTS. Never add to it, extrapolate from it, "
+    "or upgrade a tentative/qualified point into a firm one. If the material hedges, or says "
+    "something is NOT in the materials / must be obtained elsewhere, CARRY THAT LIMITATION OVER "
+    "— never launder a stated gap into an assertion.\n"
+    "- CITE THE SOURCE: if a STUDENT-VERIFIED SOURCE is given below, you MUST attribute the "
+    "woven-in fact to it in-text; treat an externally-verified fact as CONTEXT/evidence, not as "
+    "a proposition of law, unless the source itself is a statute or case. Reproduce the "
+    "reference exactly as given.\n"
+    "- KEEP EXACT WORDING for any quoted statutory or case text, and preserve pinpoint "
+    "references (section, clause, page) EXACTLY as the material gives them — do not renumber, "
+    "round, or paraphrase a citation. Attribute to the source document the chat named (see "
+    "below); if the material attributes a view to a scholar or body, keep that attribution.\n"
+    "- Integrate at the logically correct point in THIS issue's analysis, as flowing prose that "
+    "connects to the proposition it bears on — never a bare drop-in, a quote-dump, a 'see also', "
+    "or a heading of its own. If part of the material does not fit this issue, leave it out.\n"
+    "- RESOLVE THE CAVEATS THIS FACT ANSWERS — RECALIBRATE, don't just append. If the current "
+    "answer carries an open caveat, assumption, or 'this needs to be confirmed / to be verified "
+    "/ subject to confirmation' flag that the verified fact (with its source) DIRECTLY answers, "
+    "UPDATE that passage: remove the now-satisfied caveat and restate the point with the "
+    "confirmed position (source cited, and any 'as of [date]' currency kept). Do NOT leave a "
+    "'still to be verified' note sitting next to the very fact that verifies it — that reads as "
+    "a contradiction. But resolve ONLY what the fact actually establishes: keep any part of the "
+    "caveat the fact does not reach (e.g. if entry-into-force is now confirmed but the staged "
+    "commencement of a specific duty is still unverified, resolve the first and expressly keep "
+    "the second). Never manufacture certainty the source does not give.\n"
+    "- A CAVEAT IS RESOLVED IN EITHER DIRECTION — this is decisive. If the fact confirms the "
+    "condition IS met, state it as settled. If it confirms the condition is NOT met or is STILL "
+    "PENDING as of the verified date, state THAT as the now-settled position — do NOT restyle it "
+    "into an open 'should be confirmed' question; it HAS been confirmed. BUT MATCH THE CLAIM TO "
+    "WHAT THE SOURCE ACTUALLY PROVES — this is critical for negatives. A source can prove a "
+    "positive event, but a source that merely lists steps as OUTSTANDING, or is silent on a "
+    "point, does NOT prove the negative — the record may be out of date. So:\n"
+    "    · if the source EXPRESSLY states the negative ('X has not entered into force'), you may "
+    "state that negative, attributed and dated;\n"
+    "    · if the source only shows a step as OUTSTANDING / does not establish it, state it "
+    "SOURCE-RELATIVELY: 'on the most recent official [body] materials, accessed [date], [X] has "
+    "not been established — [the source] continues to identify [the outstanding steps] as "
+    "remaining', and draw the consequence in the SAME source-relative terms ('on that official "
+    "record, the Charter has not yet been shown to be binding treaty law, so no Charter duty is "
+    "established as binding on this event'). NEVER convert a source's silence or an 'outstanding "
+    "steps' record into a bald assertion that the event did not happen.\n"
+    "  State the source-relative proposition FIRMLY (no 'might / appears' reflexive hedging) — "
+    "firmness kills empty doubt; it does not licence a claim wider than the source proves. A "
+    "verified 'not established on the current official record, as of [date]' is an ANSWER.\n"
+    "- A MATERIAL FACT MUST FLOW THROUGH THE WHOLE ANSWER — Rule-application AND Conclusion, "
+    "consistently. First judge whether the fact is MATERIAL (it changes whether a legal element "
+    "or condition is satisfied, the legal status / existence / timing of an instrument, right or "
+    "duty, or a fact a conclusion rests on) or merely CONTEXTUAL (background, illustration, a "
+    "non-determinative development). If MATERIAL: re-run the affected step of the Application "
+    "against the new fact and CARRY THE CONSEQUENCE INTO THE CONCLUSION — if the fact changes "
+    "the outcome, change the conclusion to match; if it confirms the outcome, state it more "
+    "firmly; if it removes the basis for a duty or right, say that duty/right does not (yet) "
+    "arise and follow that through every dependent step. Leave NO sentence or conclusion "
+    "standing that the new fact has falsified — the whole answer must be internally consistent "
+    "with the fact. If merely CONTEXTUAL: place it where it bears and do NOT disturb the "
+    "conclusion. Judge materiality honestly and propagate only as far as the fact actually "
+    "reaches — never over-propagate a contextual fact into a conclusion it does not control, and "
+    "never manufacture a consequence the fact does not support.\n"
+    "- OTHERWISE PRESERVE the existing analysis, authorities and structure unchanged. Return "
+    "ONLY the updated issue answer — no preamble, no notes.")
+
+
+def _fact_src_line(user_source, sources):
+    """Build the source-attribution note appended to a fact weave (shared by weave + propagate)."""
+    titles = [s.get("title", "") for s in (sources or []) if isinstance(s, dict) and s.get("title")]
+    src_line = ("\n\nSOURCES THE CHAT CITED (attribute to these; do not go beyond them): "
+                + json.dumps(titles)[:1500]) if titles else ""
+    if user_source:
+        src_line += ("\n\nSTUDENT-VERIFIED SOURCE — the student independently verified this material "
+                     "against the following source and REQUIRES it to be cited with the fact: \""
+                     + user_source[:400] + "\". You MUST attribute the woven-in fact to this source "
+                     "in-text (e.g. '… (per " + user_source[:120] + ")') so it is never stated "
+                     "unattributed. Reproduce the source reference EXACTLY as given — do not alter, "
+                     "shorten misleadingly, or invent any part of it (URL, date, body, title).")
+    return src_line
+
+
+@app.route("/api/exam/propagate", methods=["POST"])
+def api_exam_propagate():
+    """Propagate a MATERIAL verified fact from one issue into every OTHER issue it bears on, so the
+    whole exam stays consistent with it. One screening pass decides which issues the fact is material
+    to; each of those is re-woven through FACT_WEAVE_SYS (recalibration + Application/Conclusion
+    propagation). Issues the fact doesn't touch are left alone — no spend, no forced-in fact. Metered
+    one question per issue actually updated. Returns per-issue updated answers + a summary."""
+    body = request.json or {}
+    material = (body.get("material") or "").strip()
+    user_source = (body.get("user_source") or "").strip()
+    src = body.get("source_issue")
+    issues = body.get("issues") or []          # full ordered list: [{issue, answer}]
+    if not material or not isinstance(issues, list) or not issues:
+        return jsonify({"error": "Need the fact and the issues."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    cand = [(i, it) for i, it in enumerate(issues)
+            if i != src and (it.get("answer") or "").strip()
+            and not str(it.get("answer") or "").startswith("Error")]
+    if not cand:
+        return jsonify({"results": [], "screened": 0})
+    # SCREEN — which candidate issues is the fact MATERIAL to? (one call, cheap vs re-weaving all)
+    screen_in = [{"i": i, "issue": it.get("issue", ""), "answer": str(it.get("answer", ""))[:1400]}
+                 for i, it in cand]
+    try:
+        s, _sm = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1200,
+            system=("You decide which issues a VERIFIED FACT is MATERIAL to. It is MATERIAL to an "
+                    "issue if it changes whether a legal element/condition is satisfied, the status / "
+                    "timing / existence of an instrument, right or duty the issue relies on, or a fact "
+                    "a conclusion rests on — OR if the issue currently carries a caveat the fact now "
+                    "answers. It is NOT material if the issue does not rely on the thing the fact "
+                    "concerns. Return ONLY issues it is genuinely material to. STRICT JSON: "
+                    "{\"material\":[{\"i\":<index>,\"why\":<one line>}]}. No prose, no fences."),
+            messages=[{"role": "user", "content": "VERIFIED FACT:\n" + material[:2500]
+                       + "\n\nISSUES:\n" + json.dumps(screen_in)[:7000]}])
+        d = _first_json_obj(_text_of(s)) or {}
+        mat = d.get("material", []) if isinstance(d, dict) else []
+    except Exception:
+        mat = []
+    valid = {i for i, _ in cand}
+    targets = [(m["i"], m.get("why", "")) for m in mat
+               if isinstance(m, dict) and isinstance(m.get("i"), int) and m["i"] in valid]
+    src_line = _fact_src_line(user_source, [])
+    results = []
+    for i, why in targets:
+        ok, _msg = can_consume("questions")
+        if not ok:
+            results.append({"i": i, "changed": False, "note": "query limit reached — stopped here"})
+            break
+        consume("questions")
+        it = issues[i]
+        prior_ans = str(it.get("answer", ""))
+        try:
+            r, _wm = _create_final(
+                c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(FACT_WEAVE_SYS),
+                messages=[{"role": "user", "content":
+                           "ISSUE: " + str(it.get("issue", "")) + "\n\nCURRENT ANSWER:\n" + prior_ans
+                           + "\n\nVERIFIED FACT TO PROPAGATE (apply ONLY if genuinely material to THIS "
+                           "issue; resolve any caveat it answers; make a material fact flow through the "
+                           "Application AND Conclusion; if on reflection it is NOT material here, return "
+                           "the answer UNCHANGED):\n" + material[:8000] + src_line}])
+            updated = (_text_of(r) or "").strip()
+        except Exception as e:
+            results.append({"i": i, "changed": False, "note": str(e)[:120]})
+            continue
+        changed = bool(updated) and updated != prior_ans
+        results.append({"i": i, "changed": changed, "why": why,
+                        "answer": updated if changed else prior_ans})
+    return jsonify({"results": results, "screened": len(cand)})
+
+
 @app.route("/api/issue/chat/add", methods=["POST"])
 def api_issue_chat_add():
     """Weave student-CURATED text FROM THE CORNER CHAT into an issue's answer. The material is the
@@ -7301,70 +7459,7 @@ def api_issue_chat_add():
                      "in-text (e.g. '… (per " + user_source[:120] + ")') so it is never stated "
                      "unattributed. Reproduce the source reference EXACTLY as given — do not alter, "
                      "shorten misleadingly, or invent any part of it (URL, date, body, title).")
-    sys = (
-        "You STRENGTHEN a legal issue analysis by weaving in MATERIAL the student pulled from the "
-        "corpus chat and curated — and NOTHING else. The material is grounded in the course "
-        "documents; your job is to move it into the analysis ACCURATELY:\n"
-        "- TRANSFER ONLY WHAT THE MATERIAL ACTUALLY SUPPORTS. Never add to it, extrapolate from it, "
-        "or upgrade a tentative/qualified point into a firm one. If the material hedges, or says "
-        "something is NOT in the materials / must be obtained elsewhere, CARRY THAT LIMITATION OVER "
-        "— never launder a stated gap into an assertion.\n"
-        "- CITE THE SOURCE: if a STUDENT-VERIFIED SOURCE is given below, you MUST attribute the "
-        "woven-in fact to it in-text; treat an externally-verified fact as CONTEXT/evidence, not as "
-        "a proposition of law, unless the source itself is a statute or case. Reproduce the "
-        "reference exactly as given.\n"
-        "- KEEP EXACT WORDING for any quoted statutory or case text, and preserve pinpoint "
-        "references (section, clause, page) EXACTLY as the material gives them — do not renumber, "
-        "round, or paraphrase a citation. Attribute to the source document the chat named (see "
-        "below); if the material attributes a view to a scholar or body, keep that attribution.\n"
-        "- Integrate at the logically correct point in THIS issue's analysis, as flowing prose that "
-        "connects to the proposition it bears on — never a bare drop-in, a quote-dump, a 'see also', "
-        "or a heading of its own. If part of the material does not fit this issue, leave it out.\n"
-        "- RESOLVE THE CAVEATS THIS FACT ANSWERS — RECALIBRATE, don't just append. If the current "
-        "answer carries an open caveat, assumption, or 'this needs to be confirmed / to be verified "
-        "/ subject to confirmation' flag that the verified fact (with its source) DIRECTLY answers, "
-        "UPDATE that passage: remove the now-satisfied caveat and restate the point with the "
-        "confirmed position (source cited, and any 'as of [date]' currency kept). Do NOT leave a "
-        "'still to be verified' note sitting next to the very fact that verifies it — that reads as "
-        "a contradiction. But resolve ONLY what the fact actually establishes: keep any part of the "
-        "caveat the fact does not reach (e.g. if entry-into-force is now confirmed but the staged "
-        "commencement of a specific duty is still unverified, resolve the first and expressly keep "
-        "the second). Never manufacture certainty the source does not give.\n"
-        "- A CAVEAT IS RESOLVED IN EITHER DIRECTION — this is decisive. If the fact confirms the "
-        "condition IS met, state it as settled. If it confirms the condition is NOT met or is STILL "
-        "PENDING as of the verified date, state THAT as the now-settled position — do NOT restyle it "
-        "into an open 'should be confirmed' question; it HAS been confirmed. BUT MATCH THE CLAIM TO "
-        "WHAT THE SOURCE ACTUALLY PROVES — this is critical for negatives. A source can prove a "
-        "positive event, but a source that merely lists steps as OUTSTANDING, or is silent on a "
-        "point, does NOT prove the negative — the record may be out of date. So:\n"
-        "    · if the source EXPRESSLY states the negative ('X has not entered into force'), you may "
-        "state that negative, attributed and dated;\n"
-        "    · if the source only shows a step as OUTSTANDING / does not establish it, state it "
-        "SOURCE-RELATIVELY: 'on the most recent official [body] materials, accessed [date], [X] has "
-        "not been established — [the source] continues to identify [the outstanding steps] as "
-        "remaining', and draw the consequence in the SAME source-relative terms ('on that official "
-        "record, the Charter has not yet been shown to be binding treaty law, so no Charter duty is "
-        "established as binding on this event'). NEVER convert a source's silence or an 'outstanding "
-        "steps' record into a bald assertion that the event did not happen.\n"
-        "  State the source-relative proposition FIRMLY (no 'might / appears' reflexive hedging) — "
-        "firmness kills empty doubt; it does not licence a claim wider than the source proves. A "
-        "verified 'not established on the current official record, as of [date]' is an ANSWER.\n"
-        "- A MATERIAL FACT MUST FLOW THROUGH THE WHOLE ANSWER — Rule-application AND Conclusion, "
-        "consistently. First judge whether the fact is MATERIAL (it changes whether a legal element "
-        "or condition is satisfied, the legal status / existence / timing of an instrument, right or "
-        "duty, or a fact a conclusion rests on) or merely CONTEXTUAL (background, illustration, a "
-        "non-determinative development). If MATERIAL: re-run the affected step of the Application "
-        "against the new fact and CARRY THE CONSEQUENCE INTO THE CONCLUSION — if the fact changes "
-        "the outcome, change the conclusion to match; if it confirms the outcome, state it more "
-        "firmly; if it removes the basis for a duty or right, say that duty/right does not (yet) "
-        "arise and follow that through every dependent step. Leave NO sentence or conclusion "
-        "standing that the new fact has falsified — the whole answer must be internally consistent "
-        "with the fact. If merely CONTEXTUAL: place it where it bears and do NOT disturb the "
-        "conclusion. Judge materiality honestly and propagate only as far as the fact actually "
-        "reaches — never over-propagate a contextual fact into a conclusion it does not control, and "
-        "never manufacture a consequence the fact does not support.\n"
-        "- OTHERWISE PRESERVE the existing analysis, authorities and structure unchanged. Return "
-        "ONLY the updated issue answer — no preamble, no notes.")
+    sys = FACT_WEAVE_SYS
     try:
         r, _m = _create_final(
             c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
