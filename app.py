@@ -4485,6 +4485,55 @@ def api_names():
                     "options": TYPES, "labels": TYPE_LABEL})
 
 
+@app.route("/api/doc/chat", methods=["POST"])
+def api_doc_chat():
+    """Chat with SPECIFIC document(s) to VERIFY their content. Loads the FULL text of the
+    selected docs (every chunk, in page order) and answers grounded ONLY in them — with an honest
+    'that is not stated in [document]' when the point is absent. This is the confirm-what-a-doc-
+    actually-says companion to the research guide. Metered as one question."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    docs = [d for d in (body.get("docs") or []) if d]
+    q = (body.get("question") or "").strip()
+    if not docs:
+        return jsonify({"error": "Pick at least one document to query."}), 400
+    if not q:
+        return jsonify({"error": "Ask a question about the document(s)."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    blocks, _keys = load_full_docs([{"course": course, "file": d} for d in docs])
+    if not blocks:
+        return jsonify({"error": "Could not load the selected document(s) — are they indexed yet?"})
+    blocks = blocks[:240]                     # bound context on very large instruments
+    content = list(blocks)
+    content.append({"type": "text", "text": q})
+    names = ", ".join(display_name(d) for d in docs)
+    system = (CONVERSATIONAL + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
+              + "\n\nDOCUMENT-VERIFICATION MODE — the user has selected SPECIFIC document(s) ("
+              + names + ") to CHECK their exact content. Answer ONLY from the passages of those "
+              "document(s) provided above; do NOT draw on other course materials, other "
+              "instruments, or memory. Quote the exact wording where it matters, with the page. If "
+              "the answer is NOT in the selected document(s), say so plainly ('that is not stated "
+              "in " + names + "') rather than inferring it — the whole point is to confirm what "
+              "THIS document actually says. Be direct and concise.")
+    try:
+        resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=1600,
+                                 system=cached_system(system),
+                                 messages=[{"role": "user", "content": content}])
+        answer = (_text_of(resp) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"answer": answer or "(no answer)",
+                    "sources": [{"title": display_name(d)} for d in docs]})
+
+
 @app.route("/api/ask", methods=["POST"])
 def api_ask():
     body = request.json or {}

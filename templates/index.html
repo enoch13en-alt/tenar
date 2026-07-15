@@ -256,6 +256,7 @@
   <h2>Documents in this course</h2>
   <button class="btn gold" id="docHealth" title="Check which documents the bot can actually read, which it can only see partially (and why), and which are only summary/short versions.">🩺 What can the bot see?</button>
   <button class="btn gold" id="cleanHouse" title="Scan this course for DUPLICATE documents (same file under two names, or heavy verbatim overlap) and errors that hurt retrieval (unindexed / near-empty docs). Offers one-click delete/re-index to tidy up.">🧹 Clean house (duplicates & errors)</button>
+  <button class="btn gold" id="askDoc" title="Query SPECIFIC document(s) to confirm exactly what they say. It reads the FULL selected document(s) and answers only from them — with an honest 'not stated in this document' when the point isn't there. Use it to verify a provision before you rely on it.">💬 Ask a document (verify its content)</button>
   <div id="mix"></div>
   <div id="healthOut" style="margin:8px 0"></div>
   <div id="hygieneOut" style="margin:8px 0"></div>
@@ -400,6 +401,25 @@
       <button class="btn gold" id="lawplanIngest" style="width:auto;display:none">⬇ Fetch &amp; index ticked laws</button>
       <button class="btn alt" id="lawplanClose" style="width:auto">Close</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="docChatModal">
+  <div class="card" style="width:760px">
+    <h3>💬 Ask a document</h3>
+    <p>Pick one or more documents and ask about them. It reads the <b>full</b> selected
+       document(s) and answers <b>only</b> from them — quoting the exact wording with the page,
+       and saying plainly when something is <b>not stated</b> in the document. Use it to confirm a
+       provision before you rely on it.</p>
+    <div style="font-size:12px;color:#aab4c6;margin-bottom:4px">Documents to query (tick one or more):</div>
+    <div id="docChatDocs" style="max-height:180px;overflow:auto;border:1px solid #2a3344;border-radius:8px;padding:8px;font-size:12.5px">loading…</div>
+    <div class="rowbtn" style="margin-top:10px;gap:8px;align-items:center">
+      <input id="docChatQ" placeholder="e.g. What exactly does section 74 say about heads of compensation?"
+             style="flex:1;padding:11px;border:1px solid #2a3344;background:#11151d;color:#e6e9ef;border-radius:8px;font-size:14px">
+      <button class="btn gold" id="docChatAsk" style="width:auto">Ask</button>
+    </div>
+    <div id="docChatLog" style="margin-top:12px;max-height:360px;overflow:auto"></div>
+    <div class="rowbtn" style="margin-top:10px"><button class="btn alt" id="docChatClose" style="width:auto">Close</button></div>
   </div>
 </div>
 
@@ -1281,6 +1301,46 @@ async function runDocHealth() {
 }
 // 🧹 Clean house — scan for duplicate documents and source errors, with one-click fixes.
 $("#cleanHouse").onclick = runHygiene;
+
+// --- Ask a document (verify its exact content) ---
+$("#askDoc").onclick = openDocChat;
+$("#docChatClose").onclick = () => { $("#docChatModal").style.display = "none"; };
+async function openDocChat() {
+  $("#docChatLog").innerHTML = "";
+  $("#docChatDocs").innerHTML = "loading…";
+  $("#docChatModal").style.display = "flex";
+  try {
+    const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
+    const docs = r.docs || [];
+    if (!docs.length) { $("#docChatDocs").innerHTML = "No documents in this course yet."; return; }
+    $("#docChatDocs").innerHTML = docs.map(d =>
+      '<label style="display:block;cursor:pointer;margin:2px 0"><input type="checkbox" class="dcDoc" value="' + esc(d.file) + '"> '
+      + esc(d.name || d.file) + ' <span style="color:#7a8296;font-size:11px">[' + esc(d.type || "") + ']</span></label>').join("");
+  } catch (e) { $("#docChatDocs").innerHTML = "Couldn't load documents — try again."; }
+}
+$("#docChatAsk").onclick = askDocChat;
+$("#docChatQ").addEventListener("keydown", e => { if (e.key === "Enter") askDocChat(); });
+async function askDocChat() {
+  const q = $("#docChatQ").value.trim();
+  const docs = [...document.querySelectorAll(".dcDoc:checked")].map(x => x.value);
+  const log = $("#docChatLog");
+  if (!docs.length) { log.innerHTML = '<div style="color:#e0a05a;font-size:12px;margin-bottom:6px">Tick at least one document first.</div>' + log.innerHTML; return; }
+  if (!q) return;
+  const btn = $("#docChatAsk"); btn.disabled = true; btn.textContent = "…";
+  log.innerHTML = '<div style="margin:8px 0;border-left:3px solid #2a3344;padding-left:9px">'
+    + '<div style="color:#8fb4ff;font-weight:600;font-size:13px">You: ' + esc(q) + '</div>'
+    + '<div class="dcAns" style="color:#dbe2ee;font-size:13px;margin-top:4px;line-height:1.5">reading the document(s)…</div></div>' + log.innerHTML;
+  const ansEl = log.querySelector(".dcAns");
+  $("#docChatQ").value = "";
+  try {
+    const r = await (await fetch("/api/doc/chat", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, docs, question: q})})).json();
+    if (r.error) ansEl.innerHTML = "⚠️ " + esc(r.error);
+    else ansEl.innerHTML = mdToHtml(r.answer || "(no answer)");
+  } catch (e) { ansEl.textContent = "Error — try again."; }
+  btn.disabled = false; btn.textContent = "Ask";
+}
+
 async function runHygiene() {
   const btn = $("#cleanHouse"), out = $("#hygieneOut");
   const label = "🧹 Clean house (duplicates & errors)";
