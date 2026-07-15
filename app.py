@@ -8903,6 +8903,99 @@ def api_exam_extract():
         return jsonify({"error": f"Could not read file: {e}"}), 400
 
 
+@app.route("/api/exam/consistency", methods=["POST"])
+def api_exam_consistency():
+    """Cross-issue consistency sweep: treat each issue's CONCLUSION as an established premise and
+    reconcile any LATER issue that contradicts it (e.g. Issue 1 concludes the Charter is not
+    established as binding, yet a later issue says 'both bind concurrently'). One screening pass finds
+    the contradictions; each affected later issue is rewritten to conform, propagated through its
+    Application + Conclusion. Earlier-decided points govern later assumptions. Metered one question
+    per issue actually changed. Returns updated answers + a summary of what was reconciled."""
+    body = request.json or {}
+    issues = body.get("issues") or []          # ordered [{issue, answer}]
+    if not isinstance(issues, list) or len(issues) < 2:
+        return jsonify({"error": "Need at least two answered issues to check consistency."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    idx = [(i, it) for i, it in enumerate(issues)
+           if str(it.get("answer") or "").strip() and not str(it.get("answer") or "").startswith("Error")]
+    if len(idx) < 2:
+        return jsonify({"results": [], "conflicts": []})
+    screen_in = [{"i": i, "issue": it.get("issue", ""), "answer": str(it.get("answer", ""))[:1600]}
+                 for i, it in idx]
+    try:
+        s, _sm = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1600,
+            system=("You audit a multi-issue legal answer for INTERNAL CONTRADICTIONS across issues. "
+                    "The issues are in order and build on each other. Treat each issue's CONCLUSION as "
+                    "an ESTABLISHED PREMISE for later issues. Flag every place a LATER issue asserts, "
+                    "assumes or relies on something an EARLIER issue's conclusion DENIES or leaves "
+                    "unestablished (classic case: Issue 1 concludes an instrument's binding status is "
+                    "NOT established, but a later issue treats it as binding — 'both bind "
+                    "concurrently'). The EARLIER issue that DECIDES the point governs; the later issue "
+                    "must conform. Flag only GENUINE contradictions, not differences of emphasis. "
+                    "STRICT JSON: {\"conflicts\":[{\"fix\":<index of the later issue to correct>, "
+                    "\"governing\":<index of the earlier issue whose conclusion governs>, "
+                    "\"established\":<the earlier conclusion, short>, \"inconsistent\":<the "
+                    "contradicting text/idea in the later issue, short>, \"direction\":<one line: how "
+                    "to reframe the later issue to conform>}]}. Empty list if already consistent. No "
+                    "prose, no fences."),
+            messages=[{"role": "user", "content":
+                       "ISSUES (in order):\n" + json.dumps(screen_in)[:8000]}])
+        d = _first_json_obj(_text_of(s)) or {}
+        conflicts = d.get("conflicts", []) if isinstance(d, dict) else []
+    except Exception:
+        conflicts = []
+    valid = {i for i, _ in idx}
+    fixes = {}                                 # a later issue may conflict with >1 earlier conclusion
+    for cf in conflicts:
+        if not isinstance(cf, dict):
+            continue
+        fi = cf.get("fix")
+        if isinstance(fi, int) and fi in valid:
+            fixes.setdefault(fi, []).append(cf)
+    recon_sys = (
+        "You RECONCILE one issue's analysis with CONCLUSIONS ALREADY ESTABLISHED in earlier issues of "
+        "the SAME legal answer, so the whole piece is internally consistent — and change NOTHING else. "
+        "The earlier conclusions are FIXED and GOVERN: rewrite every statement, assumption and "
+        "conclusion in THIS issue that contradicts them so it conforms, and PROPAGATE the change "
+        "through the Application AND Conclusion (a reframed premise must flow to the outcome). Keep the "
+        "earlier conclusion's exact register (binding / not binding / source-relative / conditional). "
+        "Do NOT re-open or re-argue the earlier conclusion; do NOT weaken this issue's own valid "
+        "analysis beyond what consistency requires; introduce no new law or facts. Where an instrument "
+        "was held NOT established as binding earlier, treat it here as persuasive / operational / "
+        "evidence of regional standards, not as an independent source of binding obligation. Return "
+        "ONLY the corrected issue answer — no preamble, no notes.")
+    results = []
+    for fi, cfs in fixes.items():
+        ok, _msg = can_consume("questions")
+        if not ok:
+            results.append({"i": fi, "changed": False, "note": "query limit reached — stopped here"})
+            break
+        consume("questions")
+        it = issues[fi]
+        prior = str(it.get("answer", ""))
+        instr = "\n".join(
+            "- " + str(cf.get("direction", "reconcile with the earlier conclusion"))
+            + " (established earlier: " + str(cf.get("established", "")) + "; inconsistent here: "
+            + str(cf.get("inconsistent", "")) + ")" for cf in cfs)
+        try:
+            r, _wm = _create_final(
+                c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(recon_sys),
+                messages=[{"role": "user", "content":
+                           "ISSUE: " + str(it.get("issue", "")) + "\n\nCURRENT ANSWER:\n" + prior
+                           + "\n\nEARLIER-ESTABLISHED CONCLUSIONS THIS ISSUE MUST CONFORM TO:\n" + instr}])
+            updated = (_text_of(r) or "").strip()
+        except Exception as e:
+            results.append({"i": fi, "changed": False, "note": str(e)[:120]})
+            continue
+        changed = bool(updated) and updated != prior
+        results.append({"i": fi, "changed": changed, "answer": updated if changed else prior,
+                        "why": "; ".join(str(cf.get("direction", "")) for cf in cfs)[:200]})
+    return jsonify({"results": results, "conflicts": conflicts})
+
+
 @app.route("/api/exam/assemble", methods=["POST"])
 def api_exam_assemble():
     """Synthesise the gathered per-issue answers into one coherent document
@@ -8999,7 +9092,19 @@ def api_exam_assemble():
         "feeding remedy, one party's right constraining another's — make the "
         "dependency explicit and reason ACROSS it, carrying earlier conclusions "
         "into later ones. The answer must read as a connected chain, never parallel "
-        "mini-essays that ignore each other. PRESERVE "
+        "mini-essays that ignore each other. "
+        "ENFORCE INTERNAL CONSISTENCY — THIS IS MANDATORY. Treat each issue's CONCLUSION as an "
+        "ESTABLISHED PREMISE for every later issue: no later passage may assert, assume or rely on "
+        "something an earlier issue's conclusion has DENIED or left unestablished. Before writing, "
+        "note each conclusion; as you write later sections, RECONCILE any statement that contradicts "
+        "one. Example of the exact error to catch: if an earlier issue concludes an instrument's "
+        "binding status is NOT established, a later section must NOT say the two instruments 'both "
+        "bind concurrently' — reframe it to match the earlier conclusion (e.g. 'the Convention "
+        "supplies the binding framework; the Charter is relied on as a persuasive regional "
+        "articulation of those principles, its binding status not being established on the record'). "
+        "Carry the earlier conclusion's exact register (binding / not binding / source-relative / "
+        "conditional) into every later use. A single sentence that contradicts an earlier holding is "
+        "a defect, not a stylistic choice — do not leave one standing. PRESERVE "
         "the opposing views, alternative approaches, and their attribution (who "
         "holds each — author, institution, court, jurisdiction) that appear in "
         "the analyses; do not flatten a genuine debate into one view. If an "

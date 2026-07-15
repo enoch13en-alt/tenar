@@ -2298,8 +2298,9 @@ function renderExam() {
         + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
+      + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Make issues consistent</button>'
       + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button></div>';
-    h += '<div id="examDocWrap"></div>';
+    h += '<div id="examConsistencyOut" style="margin-top:6px"></div><div id="examDocWrap"></div>';
   }
   $("#examOut").innerHTML = h;
   $("#examOut").querySelectorAll(".verifyBtn").forEach(b =>
@@ -2349,6 +2350,7 @@ function renderExam() {
     });
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
   const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
+  const cs = $("#examConsistency"); if (cs) cs.onclick = runConsistency;
   scheduleSave();                 // persist the run after every render (debounced)
 }
 
@@ -3107,6 +3109,42 @@ async function gatherAll() {
   for (let i = 0; i < EXAM.issues.length; i++)
     if (!EXAM.issues[i].done) await gatherIssue(i);
   $("#examStatus").textContent = "All issues gathered. Ready to compile.";
+}
+// Cross-issue consistency sweep: reconcile any later issue that contradicts an earlier issue's
+// conclusion (the earlier-decided point governs). Fixes the issue answers themselves — best run
+// before Synthesise. One credit per issue actually corrected.
+async function runConsistency() {
+  const done = EXAM.issues.filter(it => it.done && it.answer);
+  if (done.length < 2) { $("#examStatus").textContent = "Need at least two gathered issues to check consistency."; return; }
+  const btn = $("#examConsistency"), out = $("#examConsistencyOut");
+  if (btn) { btn.disabled = true; btn.textContent = "🧩 Checking all issues…"; }
+  if (out) out.innerHTML = '<span style="font-size:12px;color:#8b93a7">reading every issue and checking each later conclusion against the earlier ones…</span>';
+  try {
+    const payload = EXAM.issues.map(it => ({ issue: it.issue || "", answer: it.answer || "" }));
+    const r = await (await fetch("/api/exam/consistency", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ issues: payload })})).json();
+    if (r.error) { if (out) out.innerHTML = "⚠️ " + esc(r.error); return; }
+    const changed = (r.results || []).filter(x => x.changed && EXAM.issues[x.i]);
+    changed.forEach(x => {
+      const it = EXAM.issues[x.i];
+      it.answer = x.answer; it.answer_annotated = "";
+      it._audited = false;                 // corrected — re-audit for a verified copy
+    });
+    if (changed.length) { renderExam(); if (typeof saveExam === "function") saveExam(); }
+    if (out) {
+      const conflicts = r.conflicts || [];
+      out.innerHTML = changed.length
+        ? '<div style="border-left:3px solid #7fd18b;background:#0f1a12;border-radius:4px;padding:7px 10px;font-size:12px">'
+          + '<b style="color:#7fd18b">🧩 Reconciled ' + changed.length + ' issue(s)</b> so they follow from the earlier conclusions:<br>'
+          + changed.map(x => '• <b>' + esc((EXAM.issues[x.i].issue || ("Issue " + (x.i + 1))).slice(0, 60)) + '</b>'
+              + (x.why ? ' — <span style="color:#9fb0c6">' + esc(x.why.slice(0, 140)) + '</span>' : '')).join("<br>")
+          + '<br><span style="color:#c9a86a">Re-audit each corrected issue, then Synthesise.</span></div>'
+        : (conflicts.length
+            ? '<span style="font-size:12px;color:#e0c07a">Found tensions but could not auto-correct them — review manually: ' + esc(JSON.stringify(conflicts).slice(0, 200)) + '</span>'
+            : '<span style="font-size:12px;color:#7fd18b">✅ No cross-issue contradictions — every later issue is consistent with the earlier conclusions.</span>');
+    }
+  } catch (e) { if (out) out.innerHTML = "Error — try again."; }
+  if (btn) { btn.disabled = false; btn.textContent = "🧩 Make issues consistent"; }
 }
 async function compileExam() {
   const done = EXAM.issues.filter(it => it.done && it.answer);
