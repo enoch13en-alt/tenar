@@ -223,9 +223,13 @@ LEGISLATION
 - PINPOINT RANGES: consecutive 'ss 5-7'; specific 's 5(1)(a)'; non-consecutive
   'ss 5 and 9'; paragraphs '[12]-[15]'.
 
-GHANAIAN SOURCES (THIS CORPUS IS GHANAIAN LAW — the most error-prone area, and OSCOLA
-is England/Wales-focused, so apply these local adaptations while KEEPING OSCOLA's
-minimal-punctuation footnote style):
+GHANAIAN SOURCES — governed by OSCOLA'S OWN rule for foreign materials (OSCOLA 4th edn
+rr 1.4 and 2.8): cite Ghanaian PRIMARY sources exactly as they are cited IN GHANA, with
+one change — DROP the full stops in abbreviations — and give the jurisdiction if it is
+not obvious from context. Cite Ghanaian SECONDARY sources (academic writing) by the
+ordinary OSCOLA secondary-source rules above. Drop-stops examples: 'LI 2175' not
+'L.I. 2175'; 'PNDCL 153' not 'P.N.D.C.L. 153'; report series 'SCGLR'/'GLR' unpunctuated.
+So:
 - STATUTES: Short Title Year (Act No), pinpoint — e.g. Minerals and Mining Act 2006
   (Act 703), s 5(1); Companies Act 2019 (Act 992), s 26. Give the Act number in round
   brackets after the year. Pre-1992 instruments keep their own series abbreviation:
