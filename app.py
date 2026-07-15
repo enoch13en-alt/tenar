@@ -7308,16 +7308,28 @@ def api_issue_chat_add():
         "- Integrate at the logically correct point in THIS issue's analysis, as flowing prose that "
         "connects to the proposition it bears on — never a bare drop-in, a quote-dump, a 'see also', "
         "or a heading of its own. If part of the material does not fit this issue, leave it out.\n"
-        "- PRESERVE the existing analysis, authorities, structure and CONCLUSION verbatim except for "
-        "the woven-in sentence(s); do NOT re-argue and do NOT change any conclusion. Return ONLY the "
-        "updated issue answer — no preamble, no notes.")
+        "- RESOLVE THE CAVEATS THIS FACT ANSWERS — RECALIBRATE, don't just append. If the current "
+        "answer carries an open caveat, assumption, or 'this needs to be confirmed / to be verified "
+        "/ subject to confirmation' flag that the verified fact (with its source) DIRECTLY answers, "
+        "UPDATE that passage: remove the now-satisfied caveat and restate the point with the "
+        "confirmed position (source cited, and any 'as of [date]' currency kept). Do NOT leave a "
+        "'still to be verified' note sitting next to the very fact that verifies it — that reads as "
+        "a contradiction. But resolve ONLY what the fact actually establishes: keep any part of the "
+        "caveat the fact does not reach (e.g. if entry-into-force is now confirmed but the staged "
+        "commencement of a specific duty is still unverified, resolve the first and expressly keep "
+        "the second). Never manufacture certainty the source does not give.\n"
+        "- OTHERWISE PRESERVE the existing analysis, authorities and structure; change a CONCLUSION "
+        "only where the verified fact bears on it, and then only as far as the fact supports — firm "
+        "up a tentative conclusion the fact resolves, leave untouched every conclusion the fact does "
+        "not reach. Return ONLY the updated issue answer — no preamble, no notes.")
     try:
         r, _m = _create_final(
             c, model=ANSWER_MODEL, max_tokens=9000, system=cached_system(sys),
             messages=[{"role": "user", "content":
                        "ISSUE: " + issue + "\n\nCURRENT ANSWER:\n" + answer
                        + ("\n\nCHAT QUESTION: " + question if question else "")
-                       + "\n\nCURATED CHAT MATERIAL TO WEAVE IN (transfer only what it supports):\n"
+                       + "\n\nCURATED CHAT MATERIAL TO WEAVE IN (transfer only what it supports; and "
+                       "RESOLVE any caveat in the current answer that this fact now answers):\n"
                        + material[:8000] + src_line + _stance_note(stances)}])
         updated = (_text_of(r) or "").strip()
     except Exception as e:
