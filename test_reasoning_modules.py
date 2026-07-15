@@ -109,6 +109,14 @@ check(const("REASONING_MODULES_VERSION") is not None,
 check("def reasoning_delta_log" in SRC, "reasoning_delta_log monitor missing (Safeguard 3)")
 check("/api/admin/reasoning" in SRC, "/api/admin/reasoning readout missing (Safeguard 3)")
 
+# 9) Course-agnostic legal-reasoning charter, appended to LEGAL_METHOD.
+CHARTER = const("LEGAL_REASONING_CHARTER") or ""
+check(len(CHARTER) > 1000, "LEGAL_REASONING_CHARTER missing or too short")
+check(append_present("LEGAL_METHOD", "LEGAL_REASONING_CHARTER"),
+      "LEGAL_REASONING_CHARTER not appended to LEGAL_METHOD")
+check("COURSE-AGNOSTIC" in CHARTER and "SELF-AUDIT" in CHARTER,
+      "charter lost its course-agnostic backbone / self-audit rail")
+
 if fails:
     print("❌ REGRESSION — reasoning modules:")
     for f in fails:
