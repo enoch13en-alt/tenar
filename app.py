@@ -214,16 +214,52 @@ CASES (UK)
 
 LEGISLATION
 - Statute: Short Title Year, section. e.g. Human Rights Act 1998, s 6(1).
-- No comma between title and year; 's' for section, 'sch' schedule, 'art' article.
+- No comma between title and year; 's' for section, 'ss' sections, 'sch' schedule,
+  'art' article, 'reg' regulation, 'para' paragraph.
+- PINPOINT RANGES: consecutive 'ss 5-7'; specific 's 5(1)(a)'; non-consecutive
+  'ss 5 and 9'; paragraphs '[12]-[15]'.
+
+GHANAIAN SOURCES (THIS CORPUS IS GHANAIAN LAW — the most error-prone area, and OSCOLA
+is England/Wales-focused, so apply these local adaptations while KEEPING OSCOLA's
+minimal-punctuation footnote style):
+- STATUTES: Short Title Year (Act No), pinpoint — e.g. Minerals and Mining Act 2006
+  (Act 703), s 5(1); Companies Act 2019 (Act 992), s 26. Give the Act number in round
+  brackets after the year. Pre-1992 instruments keep their own series abbreviation:
+  Minerals and Mining Law 1986 (PNDCL 153); NRCD 132; SMCD; NLCD.
+- CONSTITUTION: Constitution of the Republic of Ghana 1992, art 257(6) — cite articles
+  with 'art' and clauses in round brackets.
+- SUBSIDIARY LEGISLATION: Legislative Instruments — Title Year (LI No), regulation —
+  e.g. Minerals and Mining (Compensation and Resettlement) Regulations 2012 (LI 2175),
+  reg 20. Likewise Constitutional Instruments (CI) and Executive Instruments (EI).
+- CASES: Party v Party [year] Report Page (court). Ghana reports: SCGLR (Supreme Court
+  of Ghana Law Reports), GLR (Ghana Law Reports), GLRD. Confident example:
+  Tuffuor v Attorney-General [1980] GLR 637. Judicial-review matters take the form
+  'Republic v High Court, [place]; Ex parte [Applicant] [year] SCGLR [page]'. Where a
+  modern GhaLII NEUTRAL citation exists, use it: [year] GHASC No (Supreme Court),
+  GHACA (Court of Appeal), GHAHC (High Court) — e.g. [2019] GHASC 12. Pinpoint a report
+  by page; a neutral citation by paragraph as [45].
+- NEVER INVENT a Ghanaian report abbreviation, Act number, LI/CI/EI number, court or
+  year. Cite EXACTLY what your materials show; if a component is missing, cite without
+  it rather than guessing (the grounded-only and no-invented-number rules bind here).
 
 BOOKS
 - Author, Title (edition, Publisher Year) pinpoint.
   e.g. Timothy Endicott, Administrative Law (4th edn, OUP 2018) 55.
-- Edited book chapter: Author, 'Chapter' in Editor (ed), Title (Publisher Year).
+- Forename (or initials) as on the source, THEN surname, in footnotes (Timothy Endicott).
+  A first/only edition carries NO edition note: Author, Title (Publisher Year).
+- MULTIPLE AUTHORS/EDITORS: two -> 'A and B'; three -> 'A, B and C'; FOUR or more ->
+  the first author only + 'and others' (e.g. 'Andrew Ashworth and others'). One editor
+  '(ed)', more than one '(eds)'.
+- Edited book chapter: Author, 'Chapter Title' in Editor (ed), Book Title (Publisher
+  Year) pinpoint.
 
 JOURNAL ARTICLES
-- Author, 'Title' (Year) Volume Journal FirstPage.
-  e.g. Paul Craig, 'Theory and Values in Public Law' [2005] PL 440.
+- Author, 'Title' (Year) Volume Journal FirstPage, pinpoint.
+- YEAR BRACKETS matter: use SQUARE [year] when the year locates the volume and there is
+  NO separate volume number (e.g. Paul Craig, 'Theory and Values in Public Law' [2005]
+  PL 440); use ROUND (year) when the journal has its OWN volume number (e.g. Alison
+  Young, 'In Defence of Due Deference' (2009) 72 MLR 554). Journal abbreviations take NO
+  full stops (MLR, CLJ, OJLS, LQR, PL).
 
 REPORTS / INSTITUTIONAL / IGO
 - Institution, Title (Publisher/Series Year) pinpoint.
@@ -1778,27 +1814,32 @@ def _save_meter():
 # `matters` caps private workspaces.
 _STU = {"drafts": 0, "matters": 0}       # students: no advisory/matters
 PLAN_LIMITS = {
+    # Limits REDUCED 2026-07-15 to protect margin. Real COGS anchors: a full "Do it all"
+    # exam ~$50 (Fable deep-effort gather ~$1/issue is the driver); a plain research Q&A
+    # ~$0.30; an Advisory draft ~$1.2. exam_sessions are now set to what the QUESTION cap
+    # actually permits (no more phantom credits). Worst-case max-utilisation gross margin
+    # now ~51-58% across tiers (was 16-32%).
     # ---- student tiers ----
     "free":         {"label": "Free", "questions": 10, "comparative": 0,
                      "exam_sessions": 0, "fable_compiles": 0, "deepens": 0, "oscola": 3,
                      "courses": 1, "web": False, "exam": "preview", "pdf": False, **_STU},
-    "semester":     {"label": "Semester Bundle", "questions": 250, "comparative": 30,
-                     "exam_sessions": 6, "fable_compiles": 2, "deepens": 5, "oscola": 999999,
+    "semester":     {"label": "Semester Bundle", "questions": 160, "comparative": 15,
+                     "exam_sessions": 2, "fable_compiles": 1, "deepens": 3, "oscola": 999999,
                      "courses": 5, "web": True, "exam": "full", "pdf": True, **_STU},
-    "dissertation": {"label": "Dissertation", "questions": 350, "comparative": 50,
-                     "exam_sessions": 10, "fable_compiles": 4, "deepens": 10, "oscola": 999999,
+    "dissertation": {"label": "Dissertation", "questions": 240, "comparative": 25,
+                     "exam_sessions": 2, "fable_compiles": 2, "deepens": 5, "oscola": 999999,
                      "courses": 99, "web": True, "exam": "full", "pdf": True, **_STU},
-    "full_llm":     {"label": "Full LLM", "questions": 700, "comparative": 100,
-                     "exam_sessions": 20, "fable_compiles": 8, "deepens": 20, "oscola": 999999,
+    "full_llm":     {"label": "Full LLM", "questions": 420, "comparative": 50,
+                     "exam_sessions": 4, "fable_compiles": 4, "deepens": 10, "oscola": 999999,
                      "courses": 99, "web": True, "exam": "full", "pdf": True,
-                     "drafts": 999999, "matters": 99},   # top/owner plan: everything
-    # ---- consultant tier: a yearly RESEARCH plan. FULL access to every document
-    #      across ALL courses + heavy Q&A/web research; writing kept light (they use
-    #      other tools to draft). $599/YEAR (~$50/mo). Verification is uncapped but
-    #      cost-reflectively METERED (a strict valid-only audit spends 3 questions + 1 per
-    #      full-instrument recheck), so worst-case COGS ~$185-280 -> ~58-70% gross margin. ----
-    "consultant":   {"label": "Consultant", "questions": 850, "comparative": 150,
-                     "fable_compiles": 5, "deepens": 12, "drafts": 10, "matters": 999999,
+                     "drafts": 15, "matters": 20},   # advisory capped (was unlimited)
+    # ---- consultant tier: a yearly RESEARCH plan (no exams). FULL access to every document
+    #      across ALL courses + heavy Q&A/web research; writing kept light. $599/YEAR.
+    #      Verification uncapped but cost-reflectively METERED (strict audit = 3 questions +
+    #      1 per full-instrument recheck). At ~$0.30/research-question worst-case COGS ~$290
+    #      -> ~52% gross. ----
+    "consultant":   {"label": "Consultant", "questions": 700, "comparative": 100,
+                     "fable_compiles": 3, "deepens": 8, "drafts": 6, "matters": 30,
                      "courses": 99, "exam_sessions": 0, "oscola": 999999,
                      "web": True, "pdf": True, "exam": "none"},
 }
