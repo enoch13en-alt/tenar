@@ -1089,6 +1089,48 @@ ADDITIONAL_FACTS_INSTRUCTION = (
 
 FACT_DISCIPLINE = FACT_DISCIPLINE + "\n\n" + ADDITIONAL_FACTS_INSTRUCTION
 
+EXAM_FIRMNESS = (
+    "EXAM FIRMNESS — ANSWER AS AN EXAMINER FROM ASSUMED FACTS, NOT AS AN ADVISER UNDER REAL-WORLD "
+    "UNCERTAINTY. This governs register and OVERRIDES any reflex to hedge. The examiner has "
+    "SUPPLIED the facts; you analyse their legal consequences — you are NOT investigating whether "
+    "the events happened.\n"
+    "- TREAT SUPPLIED FACTS AS ESTABLISHED unless the question ITSELF asks you to weigh alternative "
+    "factual possibilities. A stated fact ('on 29 June 2026 it was reported that…', 'the flooding "
+    "entered Ghana from Togo', 'residents were displaced') is PROVED for the answer — reason to "
+    "its consequences; do not reconfirm, verify, or treat it as tentative.\n"
+    "- DO NOT QUALIFY a conclusion with 'appears', 'arguably', 'may', 'likely', 'seems', 'on the "
+    "assumed facts', 'on the available materials', 'on the record before me', 'should be "
+    "reconfirmed' WHERE the applicable law is clear AND the assumed facts satisfy the legal rule. "
+    "State it: 'The threshold IS met' (not 'appears met'); 'Article 4 MAKES notification of "
+    "emergency situations one of the governing principles of the Convention' (not 'appears to be "
+    "an operative obligation'); 'The displacement of residents, destruction of farms and "
+    "infrastructure, and disruption of livelihoods CONSTITUTE significant harm' (not 'appears to "
+    "clear the significant-harm threshold' — that is obvious on the facts).\n"
+    "- RESERVE conditional/qualified language ONLY for what is genuinely open: a genuinely DISPUTED "
+    "legal proposition, an UNCERTAIN legal STATUS (e.g. a treaty whose entry into force is "
+    "unconfirmed), or a fact the question EXPRESSLY leaves unresolved. There, qualify precisely. "
+    "This does NOT loosen accuracy-over-confidence — it removes only the REFLEXIVE hedging of "
+    "settled law and established facts.\n"
+    "- BINDING INSTRUMENT FIRST, ALTERNATIVES IN ONE LINE. Where one instrument clearly binds and "
+    "another's status is uncertain, state the binding one FIRMLY ('the Convention is binding') and "
+    "invoke the uncertain one IN THE ALTERNATIVE in a single line — do NOT spend a section hedging "
+    "('maybe binding / confirm with the depositary / should be confirmed'). Make the point, move on.\n"
+    "- DO NOT NARRATE YOUR SOURCES OR YOURSELF. Never write 'the materials reviewed', 'the text "
+    "before me', 'the record before me', 'on the available materials', 'provide that and I will…', "
+    "or 'I cannot confirm…'. The reader is an examiner, not your search log — state the law and "
+    "apply it.\n"
+    "- FINDING-TOOLS ARE NOT AUTHORITY. A database or aggregator (FAOLEX, GhaLII, a repository) "
+    "LOCATES the law; it is not the authority and is not part of the legal reasoning. Cite the "
+    "CONVENTION / ARTICLE / statute itself ('Article 2 declares the Volta, including its "
+    "tributaries and sub-tributaries, an international river; the Oti is such a tributary, so the "
+    "Convention applies directly'), never 'FAOLEX confirms…'.\n"
+    "- KEEP EVIDENCE / POLICY IN ITS PLACE. Factual reports (a World Bank report, an official "
+    "study) are policy/evidence, not legal principle; do not fold them into a pure legal-principle "
+    "issue ('the World Bank report illustrates…') unless the question asks about policy — the legal "
+    "issue turns on the RULE applied to the facts."
+)
+FACT_DISCIPLINE = FACT_DISCIPLINE + "\n\n" + EXAM_FIRMNESS
+
 # Doctrinal register — how legal propositions must be PHRASED. Even where the substance
 # is right, a precision-minded marker deducts for loose paraphrase, overstated absolutes
 # and collapsed concepts. Codifies the wording discipline that separates a strong answer
@@ -6682,7 +6724,11 @@ def api_issue_calibrate():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
-    sys = (CALIBRATION + "\n\n" + PROPOSITION_VALIDATION + "\n\nOUTPUT FORMAT — return the FULL calibrated answer text first "
+    sys = (CALIBRATION + "\n\n" + PROPOSITION_VALIDATION + "\n\n" + EXAM_FIRMNESS
+           + "\n\nCALIBRATION IS ANTI-OVERSTATEMENT, NOT PRO-HEDGING — do NOT add 'appears', 'may', "
+           "'arguably', 'on the assumed facts' or any qualifier to an ESTABLISHED fact or a CLEAR "
+           "application of settled law; firm those up. Qualify ONLY genuinely disputed law, "
+           "uncertain legal status, or expressly-unresolved facts.\n\nOUTPUT FORMAT — return the FULL calibrated answer text first "
            "(preserving structure, headers, authorities and facts, changing only what "
            "calibration requires), then a line containing exactly '===CHANGES===', then up to 6 "
            "one-line bullets naming the calibrations made (e.g. \"'cannot save through JV' -> "

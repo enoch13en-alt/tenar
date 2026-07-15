@@ -117,6 +117,16 @@ check(append_present("LEGAL_METHOD", "LEGAL_REASONING_CHARTER"),
 check("COURSE-AGNOSTIC" in CHARTER and "SELF-AUDIT" in CHARTER,
       "charter lost its course-agnostic backbone / self-audit rail")
 
+# 10) Exam-firmness (anti-hedging) — wired into FACT_DISCIPLINE and the calibrator.
+EF = const("EXAM_FIRMNESS") or ""
+check(len(EF) > 800, "EXAM_FIRMNESS missing or too short")
+check(append_present("FACT_DISCIPLINE", "EXAM_FIRMNESS"),
+      "EXAM_FIRMNESS not appended to FACT_DISCIPLINE")
+check('PROPOSITION_VALIDATION + "\\n\\n" + EXAM_FIRMNESS' in SRC,
+      "EXAM_FIRMNESS not wired into the calibrator (which inserts the hedges)")
+check("ADVISER UNDER REAL-WORLD" in EF and "FINDING-TOOLS ARE NOT AUTHORITY" in EF,
+      "EXAM_FIRMNESS lost its core rails (exam-vs-adviser / finding-tools-not-authority)")
+
 if fails:
     print("❌ REGRESSION — reasoning modules:")
     for f in fails:
