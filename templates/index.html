@@ -1988,7 +1988,7 @@ function renderExam() {
         + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
-      + '<button class="btn gold" id="examCompile" style="width:auto">Compile final document</button></div>';
+      + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button></div>';
     h += '<div id="examDocWrap"></div>';
   }
   $("#examOut").innerHTML = h;
@@ -2284,6 +2284,9 @@ async function addCasesToIssue(i, out) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, cases: chosen})})).json();
     if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } return; }
     it.answer = r.answer; it.answer_annotated = "";
+    // carry the woven cases into the issue's sources so they reach the OSCOLA Table of Cases on synthesis
+    it.sources = (it.sources || []).concat(chosen.map(x => ({
+      title: (x.name || "") + (x.citation ? " " + x.citation : ""), url: x.url || "" })));
     renderExam();                                  // re-render with the cases woven into the answer
   } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked cases to the answer"; } }
 }
@@ -2348,6 +2351,10 @@ async function addScholarshipToIssue(i, out) {
       body: JSON.stringify({issue: it.issue, answer: it.answer, scholarship: chosen})})).json();
     if (r.error) { if (note) note.textContent = "⚠️ " + r.error; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } return; }
     it.answer = r.answer; it.answer_annotated = "";
+    // carry the woven academic writings into the issue's sources so they reach the OSCOLA Bibliography
+    it.sources = (it.sources || []).concat(chosen.map(x => ({
+      title: (x.author ? x.author + ", " : "") + (x.title || "") + (x.page ? " — p." + x.page : ""),
+      quote: x.point || "" })));
     renderExam();
   } catch (e) { if (note) note.textContent = "Error — try again."; if (add){ add.disabled=false; add.textContent="✓ Add ticked writings to the answer"; } }
 }
