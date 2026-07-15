@@ -431,7 +431,7 @@
     <div style="padding:9px 12px;background:#141a24;display:flex;align-items:center;justify-content:space-between">
       <div style="font-size:13px;font-weight:600;color:#e6e9ef">💬 Ask <span id="chatDockCourse" style="color:#c9a86a;font-weight:400;font-size:12px"></span></div>
       <div>
-        <button id="chatDockPin" title="Restrict to specific documents to verify their exact content" style="background:none;border:none;color:#8fb4ff;cursor:pointer;font-size:12px">🎯 pin docs</button>
+        <button id="chatDockPin" title="Pick specific documents so the chat reads their FULL text (not just snippets) and quotes them exactly" style="background:#22314a;border:1px solid #3a4a66;color:#9fc0ff;cursor:pointer;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px">🎯 Pin a doc</button>
         <button id="chatDockMin" title="Minimise" style="background:none;border:none;color:#aab4c6;cursor:pointer;font-size:20px;line-height:1;margin-left:8px">×</button>
       </div>
     </div>
@@ -1367,6 +1367,10 @@ $("#chatDockBubble").onclick = () => {
   $("#chatDockPanel").style.display = "flex";
   $("#chatDockBubble").style.display = "none";
   $("#chatDockCourse").textContent = (typeof COURSE !== "undefined" && COURSE) ? ("· " + COURSE) : "";
+  const log = $("#chatDockLog");
+  if (log && !log.innerHTML.trim())
+    log.innerHTML = '<div id="dockHint" style="font-size:12px;color:#8b93a7;line-height:1.5">Ask anything about this course\'s materials.<br><br>'
+      + '💡 To read one document in full and quote it exactly, tap <b style="color:#9fc0ff">🎯 Pin a doc</b> at the top, tick it, then ask.</div>';
   $("#chatDockQ").focus();
 };
 $("#chatDockMin").onclick = () => { $("#chatDockPanel").style.display = "none"; $("#chatDockBubble").style.display = "block"; };
@@ -1374,8 +1378,8 @@ let _dockPinned = false;
 $("#chatDockPin").onclick = async () => {
   _dockPinned = !_dockPinned;
   const box = $("#chatDockDocs"), pin = $("#chatDockPin");
-  if (!_dockPinned) { box.style.display = "none"; pin.style.color = "#8fb4ff"; pin.textContent = "🎯 pin docs"; return; }
-  pin.style.color = "#c9a86a"; pin.textContent = "🎯 docs pinned";
+  if (!_dockPinned) { box.style.display = "none"; pin.style.color = "#9fc0ff"; pin.style.background = "#22314a"; pin.textContent = "🎯 Pin a doc"; return; }
+  pin.style.color = "#1c2330"; pin.style.background = "#c9a86a"; pin.textContent = "🎯 Docs pinned — pick below";
   box.style.display = "block"; box.innerHTML = "loading…";
   try {
     const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
@@ -1403,6 +1407,7 @@ async function sendDock() {
   const q = $("#chatDockQ").value.trim(); if (!q) return;
   if (typeof COURSE === "undefined" || !COURSE) { alert("Open a course first."); return; }
   const log = $("#chatDockLog");
+  const hint = $("#dockHint"); if (hint) hint.remove();
   const docs = _dockPinned ? [...document.querySelectorAll(".dockDoc:checked")].map(x => x.value) : [];
   log.insertAdjacentHTML("beforeend",
     '<div style="margin:8px 0"><div style="color:#8fb4ff;font-weight:600">You: ' + esc(q) + '</div>'
