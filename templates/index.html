@@ -470,6 +470,13 @@
               <option value="14">14</option>
             </select>
           </label>
+          <label title="Line spacing for the exported document.">Spacing:
+            <select id="docSpacing" style="width:auto;display:inline-block">
+              <option value="1">Single</option>
+              <option value="1.5" selected>1.5</option>
+              <option value="2">Double</option>
+            </select>
+          </label>
         </div>
       </details>
       <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
@@ -750,8 +757,9 @@ window.fetch = function(...args) {
 const esc = s => (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function downloadDocx(text, title) {
   const font = (($("#docFont")||{}).value) || "", fontSize = parseInt(($("#docFontSize")||{}).value) || 0;
+  const spacing = parseFloat(($("#docSpacing")||{}).value) || 0;
   const res = await fetch("/api/export", {method:"POST",
-    headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title, font, font_size: fontSize})});
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, title, font, font_size: fontSize, line_spacing: spacing})});
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2809,6 +2817,7 @@ async function compileExam() {
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
         word_limit: parseInt(($("#wordLimit")||{}).value) || 0,
         page_limit: parseInt(($("#pageLimit")||{}).value) || 0,
+        line_spacing: parseFloat(($("#docSpacing")||{}).value) || 0,
         footnotes_inclusive: (($("#fnCount")||{}).value === "count"),
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
@@ -2945,7 +2954,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       const res = await fetch("/api/exam/pdf", {method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({document: doc, meta,
-          font: (($("#docFont")||{}).value) || "", font_size: parseInt(($("#docFontSize")||{}).value) || 0})});
+          font: (($("#docFont")||{}).value) || "", font_size: parseInt(($("#docFontSize")||{}).value) || 0,
+          line_spacing: parseFloat(($("#docSpacing")||{}).value) || 0})});
       if (!res.ok) { const er = await res.json().catch(()=>({})); alert(er.error || "PDF build failed"); }
       else {
         const blob = await res.blob(); const url = URL.createObjectURL(blob);

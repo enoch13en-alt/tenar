@@ -8295,9 +8295,14 @@ def api_exam_assemble():
     word_limit = int(body.get("word_limit") or 0)
     page_limit = int(body.get("page_limit") or 0)
     footnotes_inclusive = bool(body.get("footnotes_inclusive"))
-    # a page ~ 300 words of typical 12pt prose; convert a page target to a word target
+    line_spacing = float(body.get("line_spacing") or 0)
+    # convert a page target to a word target — words/page depend on 12pt line spacing
     if not word_limit and page_limit:
-        word_limit = page_limit * 300
+        if line_spacing >= 2:      wpp = 280
+        elif line_spacing >= 1.5:  wpp = 350
+        elif line_spacing:         wpp = 500
+        else:                      wpp = 300
+        word_limit = page_limit * wpp
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
@@ -8651,19 +8656,21 @@ def _md_runs(line):
             yield part, False, False
 
 
-def _md_to_docx(text, title, font="", font_size=0):
+def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     import io
     import docx
     from docx.shared import Pt
     d = docx.Document()
-    # Apply the requested font/size to the Normal (body) style so all body prose inherits it.
-    if font or font_size:
+    # Apply the requested font/size/spacing to the Normal (body) style so body prose inherits it.
+    if font or font_size or line_spacing:
         try:
             st = d.styles["Normal"]
             if font:
                 st.font.name = font
             if font_size:
                 st.font.size = Pt(int(font_size))
+            if line_spacing:
+                st.paragraph_format.line_spacing = float(line_spacing)
         except Exception:
             pass
     if title:
@@ -8694,9 +8701,10 @@ def api_export():
     title = (body.get("title", "Answer") or "Answer").strip()
     font = (body.get("font") or "").strip()
     font_size = int(body.get("font_size") or 0)
+    line_spacing = float(body.get("line_spacing") or 0)
     if not text.strip():
         return jsonify({"error": "nothing to export"}), 400
-    bio = _md_to_docx(text, title, font=font, font_size=font_size)
+    bio = _md_to_docx(text, title, font=font, font_size=font_size, line_spacing=line_spacing)
     fname = (re.sub(r"[^\w -]", "", title)[:40].strip() or "answer") + ".docx"
     return send_file(bio, as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument"
