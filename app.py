@@ -403,6 +403,34 @@ WRITING_STYLE = (
 # the report writer's pyramid). Appended to the system prompt when selected.
 FORMATS = {
     "essay": "",
+    "notes": (
+        "OUTPUT FORMAT — INTERNAL LEGAL RESEARCH NOTES (a lawyer's research file, NOT a client "
+        "deliverable). This is the ONE mode where surfacing the research PROCESS is DESIRABLE: "
+        "flag genuine uncertainties in treaty status or factual assumptions, separate CONFIRMED "
+        "facts from assumptions, give competing interpretations and say which is stronger and WHY, "
+        "highlight research gaps and where an official source (e.g. a treaty depositary) should be "
+        "checked, and record WHY particular authorities were preferred over others. Tell the lawyer "
+        "WHAT TO THINK ABOUT, not merely what to write. For EACH issue use this structure:\n"
+        "  1. ISSUE — the precise legal question.\n"
+        "  2. BLACK-LETTER LAW — the BINDING authorities only (the governing rule), stated firmly.\n"
+        "  3. SUPPORTING AUTHORITIES — persuasive cases, academic commentary, reports (labelled by "
+        "weight), noting why preferred over alternatives.\n"
+        "  4. APPLICATION — the rule applied to the (assumed) facts.\n"
+        "  5. POTENTIAL WEAKNESSES / COUNTERARGUMENTS — the strongest opposing argument and the "
+        "stronger response ('the opposing side may argue X; the stronger response is Y because …').\n"
+        "  6. RESEARCH POINTS STILL TO VERIFY — genuine open items only ('Verify the Charter's "
+        "entry into force against the depositary; if it cannot be confirmed, frame the Charter as "
+        "the agreed basin standard that operationalises the Convention rather than an independently "
+        "binding treaty').\n"
+        "  7. DRAFTING RECOMMENDATION — how this should ultimately be PRESENTED in the final "
+        "memo/answer (the firm line to take).\n"
+        "STILL NO ARTIFICIAL UNCERTAINTY (the crucial caution): do NOT hedge what you have VERIFIED "
+        "— 'Confirmed: the Convention entered into force in August 2009; Ghana and Togo are State "
+        "Parties', NOT 'the Convention appears to bind Ghana and Togo'. A verify-note is for what is "
+        "genuinely unresolved, NEVER for a matter already established. Be the research file of a top "
+        "appellate chambers: decisive where the law is settled, explicit about the genuinely "
+        "unresolved, always separating confirmed propositions from matters needing verification."
+    ),
     "memo": (
         "OUTPUT FORMAT — LEGAL MEMORANDUM. Structure the answer as a memo with "
         "these headed parts: 'Question Presented' (the issue as a precise "
@@ -1127,7 +1155,16 @@ EXAM_FIRMNESS = (
     "- KEEP EVIDENCE / POLICY IN ITS PLACE. Factual reports (a World Bank report, an official "
     "study) are policy/evidence, not legal principle; do not fold them into a pure legal-principle "
     "issue ('the World Bank report illustrates…') unless the question asks about policy — the legal "
-    "issue turns on the RULE applied to the facts."
+    "issue turns on the RULE applied to the facts.\n"
+    "- REGISTER IS DELIVERABLE-DEPENDENT. The no-source-narration and no-verify-notes rules above "
+    "govern FINAL deliverables — an exam answer, memorandum, report or opinion. They do NOT apply "
+    "to an explicit INTERNAL RESEARCH NOTES deliverable, where flagging genuine uncertainties, "
+    "research gaps, competing readings, verification points (e.g. checking a depositary) and "
+    "why-authorities-were-preferred is DESIRABLE — the notes tell the lawyer what to think about, "
+    "not merely what to write. What binds BOTH registers is the ban on ARTIFICIAL uncertainty: "
+    "never hedge a fact or rule you have already established ('Confirmed: the Convention entered "
+    "into force in August 2009'), and reserve qualifiers and verify-notes strictly for the "
+    "genuinely unresolved."
 )
 FACT_DISCIPLINE = FACT_DISCIPLINE + "\n\n" + EXAM_FIRMNESS
 
@@ -8559,7 +8596,8 @@ def api_exam_assemble():
         "\n\nOSCOLA RULES:\n" + OSCOLA_GUIDE)
     kind_map = {"exam": "a concise, well-structured exam answer",
                 "essay": "a full coursework essay with fuller analysis",
-                "memo": "a legal memorandum", "report": "a formal report"}
+                "memo": "a legal memorandum", "report": "a formal report",
+                "notes": "an internal legal research-notes file (research process, not a client deliverable)"}
     kind = kind_map.get(length, kind_map["exam"])
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]
