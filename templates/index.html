@@ -1462,6 +1462,8 @@ function mountDockWeave(ansEl, question, answer, sources) {
       + '</select>'
       + '<div style="color:#8b93a7;margin-bottom:2px">Trim to exactly what you verified (this exact text is woven in — nothing added):</div>'
       + '<textarea class="dockWeaveTxt" style="width:100%;height:110px;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px;resize:vertical"></textarea>'
+      + '<div style="color:#e0c07a;margin:5px 0 2px;font-weight:600">Source you verified this against (required) — it is cited with the fact:</div>'
+      + '<input class="dockWeaveSrc" placeholder="e.g. Volta Basin Authority, Communiqué of 30 June 2026 — vpenda.int/…" style="width:100%;font-size:11px;padding:5px;background:#0d1017;color:#dbe2ee;border:1px solid #3a4a66;border-radius:4px">'
       + '<div style="margin-top:5px"><button class="btn gold mini dockWeaveGo" style="width:auto">✓ Weave in</button>'
       + '<button class="btn alt mini dockWeaveCancel" style="width:auto;margin-left:6px">cancel</button>'
       + '<span class="dockWeaveNote" style="font-size:11px;color:#8b93a7;margin-left:8px"></span></div></div>';
@@ -1471,18 +1473,21 @@ function mountDockWeave(ansEl, question, answer, sources) {
     bar.querySelector(".dockWeaveGo").onclick = () => {
       const i = +bar.querySelector(".dockWeaveSel").value;
       const material = bar.querySelector(".dockWeaveTxt").value.trim();
+      const userSource = bar.querySelector(".dockWeaveSrc").value.trim();
       const it = EXAM.issues[i];
       if (!it) { noteEl.textContent = "That issue is gone — re-run it."; return; }
       if (!material) { noteEl.textContent = "Trim in the text to weave first."; return; }
+      if (!userSource) { noteEl.textContent = "Add the source you verified this against — it is cited with the fact."; bar.querySelector(".dockWeaveSrc").focus(); return; }
       async function doWeave(stances) {
         bar.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
         try {
           const r = await (await fetch("/api/issue/chat/add", {method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({issue: it.issue, answer: it.answer, material, question, sources, stances})})).json();
+            body: JSON.stringify({issue: it.issue, answer: it.answer, material, question, sources, user_source: userSource, stances})})).json();
           if (!stances && r.contradictions && r.contradictions.length) { renderWeaveConflicts(bar, r.contradictions, doWeave); return; }
           if (r.error) { bar.innerHTML = "⚠️ " + esc(r.error); return; }
           it.answer = r.answer; it.answer_annotated = "";
           it._chatAdded = (it._chatAdded || 0) + 1;
+          it.sources = (it.sources || []).concat([{ title: userSource, quote: material.slice(0, 160) }]);
           it._audited = false;                 // answer changed — re-audit for a verified copy
           if (typeof renderExam === "function") renderExam();
           if (typeof saveExam === "function") saveExam();

@@ -7264,6 +7264,7 @@ def api_issue_chat_add():
     material = (body.get("material") or "").strip()
     question = (body.get("question") or "").strip()
     sources = body.get("sources") or []
+    user_source = (body.get("user_source") or "").strip()   # source the STUDENT verified against
     if not answer or not material:
         return jsonify({"error": "Need the issue answer and the chat text to weave in."}), 400
     c = _client()
@@ -7281,6 +7282,13 @@ def api_issue_chat_add():
     titles = [s.get("title", "") for s in sources if isinstance(s, dict) and s.get("title")]
     src_line = ("\n\nSOURCES THE CHAT CITED (attribute to these; do not go beyond them): "
                 + json.dumps(titles)[:1500]) if titles else ""
+    if user_source:
+        src_line += ("\n\nSTUDENT-VERIFIED SOURCE — the student independently verified this material "
+                     "against the following source and REQUIRES it to be cited with the fact: \""
+                     + user_source[:400] + "\". You MUST attribute the woven-in fact to this source "
+                     "in-text (e.g. '… (per " + user_source[:120] + ")') so it is never stated "
+                     "unattributed. Reproduce the source reference EXACTLY as given — do not alter, "
+                     "shorten misleadingly, or invent any part of it (URL, date, body, title).")
     sys = (
         "You STRENGTHEN a legal issue analysis by weaving in MATERIAL the student pulled from the "
         "corpus chat and curated — and NOTHING else. The material is grounded in the course "
@@ -7289,6 +7297,10 @@ def api_issue_chat_add():
         "or upgrade a tentative/qualified point into a firm one. If the material hedges, or says "
         "something is NOT in the materials / must be obtained elsewhere, CARRY THAT LIMITATION OVER "
         "— never launder a stated gap into an assertion.\n"
+        "- CITE THE SOURCE: if a STUDENT-VERIFIED SOURCE is given below, you MUST attribute the "
+        "woven-in fact to it in-text; treat an externally-verified fact as CONTEXT/evidence, not as "
+        "a proposition of law, unless the source itself is a statute or case. Reproduce the "
+        "reference exactly as given.\n"
         "- KEEP EXACT WORDING for any quoted statutory or case text, and preserve pinpoint "
         "references (section, clause, page) EXACTLY as the material gives them — do not renumber, "
         "round, or paraphrase a citation. Attribute to the source document the chat named (see "
