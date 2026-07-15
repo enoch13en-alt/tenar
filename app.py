@@ -210,7 +210,11 @@ CASES (UK)
   e.g. R (Miller) v The Prime Minister [2019] UKSC 41, [2020] AC 373.
 - Without neutral citation: Party v Party [year] OR (year) vol Report page (Court).
   e.g. Donoghue v Stevenson [1932] AC 562 (HL).
-- Party names italic; 'v' not 'vs'. Pinpoint to a paragraph as [45] or page as 'page'.
+- Party names italic; unpunctuated italic 'v' (not 'vs'); the rest is roman.
+- A neutral citation OMITS the court in end-brackets (the citation identifies it) — BUT
+  High Court neutral citations DO add the division in brackets after the judgment number,
+  e.g. R (X) v Secretary of State [2004] EWHC 1234 (Admin).
+- Pinpoint to a paragraph as [45] for a neutral citation, or to a page for a report.
 
 LEGISLATION
 - Statute: Short Title Year, section. e.g. Human Rights Act 1998, s 6(1).
@@ -274,7 +278,9 @@ SUBSEQUENT CITATIONS
 
 QUOTATIONS & PINPOINTS
 - Short quotations (up to three lines) run in the text within single quotation
-  marks. Longer quotations are indented as a block, no quotation marks.
+  marks; a quotation WITHIN a short quotation takes DOUBLE quotation marks. Longer
+  quotations (over three lines) are indented as a block with NO quotation marks,
+  usually introduced by a colon.
 - Pinpoint to the exact page, or for judgments with numbered paragraphs to the
   paragraph in square brackets, e.g. R (Miller) v The Prime Minister [2019] UKSC 41 [12].
 - PINPOINT SOURCING (critical): the page for a pinpoint comes ONLY from the
@@ -297,8 +303,14 @@ EU & INTERNATIONAL MATERIALS
   into force 12 November 1977) 1063 UNTS 265.
 
 BIBLIOGRAPHY & TABLES (for essays/dissertations)
-- Bibliography lists secondary sources only, author surname first (Surname
-  Initial, Title...), no pinpoints, ordered alphabetically by surname.
+- Bibliography lists SECONDARY sources only. Same form as a footnote citation with
+  THREE changes (OSCOLA 4th edn): (1) the author's SURNAME precedes the initial(s)
+  with NO comma between them — 'Fisher E, Risk Regulation and Administrative
+  Constitutionalism (Hart Publishing 2007)', NOT 'Fisher, E.'; (2) give initials, not
+  the full forename; (3) NO pinpoint page.
+- Order alphabetically by author surname; list UNATTRIBUTED works FIRST, alphabetically
+  by the first major word of the title. For several works by the same author, replace
+  the repeated name with a long dash (—) after the first entry.
 - Cases go in a separate Table of Cases; legislation in a Table of Legislation —
   NOT in the bibliography.
 """
