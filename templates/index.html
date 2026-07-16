@@ -840,8 +840,13 @@ function deJam(t){
 }
 function mdToHtml(raw){
   const lines = deJam(raw||"").split("\n");
-  let html = "", inList = false;
+  let html = "", inList = false, inNotes = false;
   const closeList = () => { if(inList){ html += "</ul>"; inList = false; } };
+  // Notes / back-matter (Footnotes or Endnotes, Bibliography, Tables) render SMALLER than the body;
+  // in-text reference markers [n] (1–3 digits, attached to text — not a [2010] case year) SUPERSCRIPT.
+  const noteHead = /^(foot ?notes|end ?notes|bibliography|table of )/i;
+  const supMark = (h) => inNotes ? h : h.replace(/([^\s\[])\[(\d{1,3})\]/g, '$1<sup>$2</sup>');
+  const nStyle = () => inNotes ? " style='font-size:.85em;color:#aab4c6'" : "";
   for (const ln of lines){
     const t = ln.trim();
     if (!t){ closeList(); continue; }
@@ -849,16 +854,18 @@ function mdToHtml(raw){
     let m;
     if (m = t.match(/^(#{1,6})\s+(.*)/)){
       closeList();
+      const htext = m[2].replace(/[*#]+$/,'').trim();
+      if (noteHead.test(htext)) inNotes = true;
       const lvl = m[1].length, tag = lvl<=1?"h3":(lvl===2?"h4":"h5");
-      html += "<"+tag+" class='ans-h'>" + mdInline(m[2].replace(/[*#]+$/,'').trim()) + "</"+tag+">";
+      html += "<"+tag+" class='ans-h'>" + mdInline(htext) + "</"+tag+">";
       continue;
     }
     if (m = t.match(/^[-*•]\s+(.*)/)){
       if(!inList){ html += "<ul class='ans-ul'>"; inList = true; }
-      html += "<li>" + mdInline(m[1]) + "</li>"; continue;
+      html += "<li"+nStyle()+">" + supMark(mdInline(m[1])) + "</li>"; continue;
     }
     closeList();
-    html += "<p class='ans-p'>" + mdInline(t) + "</p>";
+    html += "<p class='ans-p'"+nStyle()+">" + supMark(mdInline(t)) + "</p>";
   }
   closeList();
   // Rule dropdowns: the gather wraps each provision's verbatim text + gloss in ⟦LAW⟧…⟦/LAW⟧ so the

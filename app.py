@@ -201,7 +201,11 @@ COMPARATIVE_SUFFIX = (
 OSCOLA_GUIDE = """OSCOLA (4th edn) quick rules — apply these to every reference.
 
 GENERAL
-- Citations go in footnotes (superscript numbers). Minimal punctuation; no full
+- Citations go in footnotes/endnotes, keyed by a SUPERSCRIPT number. In the text, place the
+  reference marker immediately AFTER the relevant word or the closing punctuation, written as [n]
+  (it renders as a superscript numeral). Collect the full citations, numbered to match and in
+  order of first appearance, under a 'Footnotes' (or 'Endnotes') heading at the END — this notes
+  block is set in a SMALLER font than the body. Minimal punctuation; no full
   stops in abbreviations (eg 'ed', 'edn', 'UKSC'). End each footnote with a full stop.
 - Multiple sources in one footnote: separate with semicolons.
 
@@ -9812,18 +9816,38 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
             pass
     if title:
         d.add_heading(title, level=0)
+    # In-text reference markers render as SUPERSCRIPT; the notes / back-matter (Footnotes or
+    # Endnotes, Bibliography, Tables) render a couple of points SMALLER than the body — OSCOLA look.
+    base_pt = int(font_size) if font_size else 11
+    notes_pt = max(8, base_pt - 2)
+    in_notes = False
+    _note_head = re.compile(r"^(foot ?notes|end ?notes|bibliography|table of )", re.I)
+    _mark = re.compile(r"(?<=\S)(\[\d{1,3}\])")
     for raw in text.split("\n"):
         line = raw.rstrip()
         if not line.strip():
             continue
         m = re.match(r"^(#{1,4})\s+(.*)", line)
         if m:
-            d.add_heading(m.group(2), level=min(len(m.group(1)), 4))
+            head = m.group(2).strip()
+            if _note_head.match(head):
+                in_notes = True
+            d.add_heading(head, level=min(len(m.group(1)), 4))
             continue
         p = d.add_paragraph()
         for seg, bold, ital in _md_runs(line):
-            r = p.add_run(seg)
-            r.bold, r.italic = bold, ital
+            # split each segment on attached footnote markers [n] so they become superscript runs
+            parts = [seg] if in_notes else _mark.split(seg)
+            for part in parts:
+                if not part:
+                    continue
+                mk = None if in_notes else re.fullmatch(r"\[(\d{1,3})\]", part)
+                r = p.add_run(mk.group(1) if mk else part)
+                r.bold, r.italic = bold, ital
+                if mk:
+                    r.font.superscript = True
+                elif in_notes:
+                    r.font.size = Pt(notes_pt)
     bio = io.BytesIO()
     d.save(bio)
     bio.seek(0)
@@ -9866,7 +9890,7 @@ def _exam_pdf_parse(doc):
     doc = re.sub(r'[ \t]*(?<!#)(#{2,6})[ \t]+', r'\n\n\1 ', doc)
     # Back-matter sections we split out of the body, in the order they should
     # print. Headings may be prefixed by '#'/'**' or appear inline after '---'.
-    SECTIONS = ['Footnotes', 'Table of Cases', 'Table of Legislation and Treaties',
+    SECTIONS = ['Footnotes', 'Endnotes', 'Table of Cases', 'Table of Legislation and Treaties',
                 'Table of Legislation', 'Table of Treaties', 'Bibliography']
     markers = []
     for name in SECTIONS:
@@ -9890,7 +9914,7 @@ def _exam_pdf_parse(doc):
     for i, (start, hend, name) in enumerate(markers):
         seg_end = markers[i + 1][0] if i + 1 < len(markers) else len(doc)
         content = doc[hend:seg_end].strip()
-        if name == 'Footnotes':
+        if name in ('Footnotes', 'Endnotes'):
             # a footnote entry is 'N. text'; text may wrap but must not swallow
             # a later '---'/'##'/heading line
             for fm in re.finditer(r'(?m)^\s*(\d+)[.)]\s+(.*(?:\n(?!\s*(?:\d+[.)]\s|#|-{3})).*)*)', content):
