@@ -3420,34 +3420,42 @@ let _barSeq = 0;
 // Full-screen focus mode for the document: lift it to a centred, full-height reading column.
 // z-index 11000 sits UNDER the floating chat dock (12000), so the 💬 pop-up still floats over it
 // and you can engage with the document critically while it fills the screen.
+// Space reserved on the right for the (maximised) pop-up chat.
+const _DOCK_RESERVE = 470;
 function toggleDocFullscreen(el) {
   if (el.classList.contains("docFS")) {
     el.classList.remove("docFS");
     el.style.cssText = el._prevCss || "";
     const x = document.getElementById("docFSbar"); if (x) x.remove();
+    const bg = document.getElementById("docFSbg"); if (bg) bg.remove();
     return;
   }
   el._prevCss = el.style.cssText;
   let fs = parseFloat(localStorage.getItem("docFontPx")) || 0;
   if (!fs || fs < 18) fs = 18;                       // comfortable, legible full-screen default
+  // Dark backdrop fills the screen so the area beside the reading column — where the chat sits —
+  // stays DARK (matching the chat), not white document extending behind it.
+  const bg = document.createElement("div"); bg.id = "docFSbg";
+  bg.style.cssText = "position:fixed;inset:0;z-index:10998;background:#0f1319";
+  document.body.appendChild(bg);
   el.classList.add("docFS");
-  // The reading column sits on the LEFT and keeps the RIGHT clear for the floating chat, so the
-  // pop-up never covers the text. (Right gap ~ the chat's width.)
-  el.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:11000;height:100vh;"
-    + "max-height:100vh;overflow:auto;margin:0;border:0;border-radius:0;background:#fff;color:#1a2230;"
-    + "font-family:Georgia,'Times New Roman',serif;line-height:1.8;"
-    + "padding:58px clamp(24px,34vw,520px) 64px max(28px,7vw);";
+  // The white reading column occupies only the LEFT — it STOPS at the chat's edge (right:_DOCK_RESERVE),
+  // so it does not take the whole screen and there is no white behind the chat. Darker, bolder text.
+  el.style.cssText = "position:fixed;top:0;left:0;bottom:0;right:" + _DOCK_RESERVE + "px;z-index:11000;"
+    + "overflow:auto;margin:0;border:0;border-right:1px solid #d7dbe2;border-radius:0;"
+    + "background:#fff;color:#0c1016;font-family:Georgia,'Times New Roman',serif;line-height:1.85;"
+    + "font-weight:500;padding:54px clamp(28px,5vw,90px) 64px clamp(28px,5vw,90px);";
   el.style.fontSize = fs + "px";
   localStorage.setItem("docFontPx", fs);
-  // Font-size + exit controls INSIDE full screen (the toolbar A-/A+ are hidden here). Top-left, so
-  // they never clash with the chat on the right.
+  // Font-size + exit controls INSIDE full screen (the toolbar A-/A+ are hidden here). Top-left,
+  // over the white column, clear of the chat on the right.
   const bar = document.createElement("div"); bar.id = "docFSbar";
   bar.style.cssText = "position:fixed;top:12px;left:16px;z-index:11002;display:flex;gap:6px;align-items:center";
   const mk = (t, ti) => { const b = document.createElement("button"); b.textContent = t; b.title = ti;
     b.style.cssText = "background:#1c2330;color:#fff;border:none;border-radius:8px;padding:7px 11px;cursor:pointer;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.4)"; return b; };
   const dn = mk("A−", "Smaller text"), up = mk("A+", "Larger text"), ex = mk("✕ Exit", "Exit full screen (Esc)");
   const step = (delta) => { let c = parseFloat(el.style.fontSize) || 18;
-    let n = Math.max(13, Math.min(38, Math.round((c + delta) * 10) / 10));
+    let n = Math.max(13, Math.min(40, Math.round((c + delta) * 10) / 10));
     el.style.fontSize = n + "px"; localStorage.setItem("docFontPx", n); };
   dn.onclick = () => step(-1); up.onclick = () => step(1); ex.onclick = () => toggleDocFullscreen(el);
   bar.append(dn, up, ex); document.body.appendChild(bar);
