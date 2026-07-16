@@ -256,7 +256,6 @@
   <h2>Documents in this course</h2>
   <button class="btn gold" id="docHealth" title="Check which documents the bot can actually read, which it can only see partially (and why), and which are only summary/short versions.">🩺 What can the bot see?</button>
   <button class="btn gold" id="cleanHouse" title="Scan this course for DUPLICATE documents (same file under two names, or heavy verbatim overlap) and errors that hurt retrieval (unindexed / near-empty docs). Offers one-click delete/re-index to tidy up.">🧹 Clean house (duplicates & errors)</button>
-  <button class="btn gold" id="askDoc" title="Query SPECIFIC document(s) to confirm exactly what they say. It reads the FULL selected document(s) and answers only from them — with an honest 'not stated in this document' when the point isn't there. Use it to verify a provision before you rely on it.">💬 Ask a document (verify its content)</button>
   <div id="mix"></div>
   <div id="healthOut" style="margin:8px 0"></div>
   <div id="hygieneOut" style="margin:8px 0"></div>
@@ -265,9 +264,7 @@
   <h2>Study tools</h2>
   <button class="btn gold" id="openExam">📝 Exam Coach</button>
   <button class="btn gold" id="openLawplan">🎯 Provision the law (facts → statutes)</button>
-  <button class="btn gold" id="openWeekly">📅 Weekly Update</button>
   <button class="btn gold" id="openUpdates">🔄 Legal updates (web)</button>
-  <button class="btn gold" id="openMap">🧭 Decode a question</button>
   <button class="btn gold" id="openPolish">✍️ Polish my draft</button>
   <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
   <button class="btn gold" id="openResearch" style="display:none">🔎 Research (facts → advice)</button>
@@ -528,11 +525,12 @@
       <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
         <input type="checkbox" id="examWeb"> Comparative (web)
       </label>
-      <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
-        <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
-      </label>
       <label style="color:#aab4c6;font-size:12px" title="After auditing, find leading / locus classicus cases for each issue and PAUSE so you can verify each (open the link) before it is woven in and the document is compiled.">
         <input type="checkbox" id="autoCases"> ⚖️ Include cases (verify before compile)
+      </label>
+      <details style="margin:3px 0"><summary style="cursor:pointer;color:#8b93a7;font-size:12px">⚙ Advanced options</summary>
+      <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
+        <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
       </label>
       <label style="color:#aab4c6;font-size:12px" title="Draw on the course's separate Context store (official reports, government statements, institutional responses) as clearly-attributed BACKGROUND — never as law or as the problem's facts.">
         <input type="checkbox" id="examUseContext"> 🗂 Use context (background)
@@ -540,7 +538,8 @@
       <label style="color:#aab4c6;font-size:12px" title="Turn ON only when the question expressly asks you to identify additional facts / assumptions. OFF (default) = pure IRAC with firm conclusions and NO assumptions/additional-facts section. When ON, a single disciplined 'Additional Facts Material to the Advice' section is produced (genuine, outcome-changing omissions only).">
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → Deepen → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">🚀 Do it all → Deepen</button>
+      </details>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → Deepen → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">⚡ Auto-run (skips your review)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1338,8 +1337,7 @@ async function runDocHealth() {
 // 🧹 Clean house — scan for duplicate documents and source errors, with one-click fixes.
 $("#cleanHouse").onclick = runHygiene;
 
-// --- Ask a document (verify its exact content) ---
-$("#askDoc").onclick = openDocChat;
+// --- Ask a document: entry-point retired (the floating dock's 🎯 Pin a doc covers this). ---
 $("#docChatClose").onclick = () => { $("#docChatModal").style.display = "none"; };
 async function openDocChat() {
   $("#docChatLog").innerHTML = "";
@@ -2101,7 +2099,7 @@ async function runFullPipeline() {
   } catch (e) {
     $("#examStatus").textContent = "Auto-run stopped: " + e;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🚀 Do it all → Deepen"; }
+    if (btn) { btn.disabled = false; btn.textContent = "⚡ Auto-run (skips your review)"; }
   }
 }
 $("#examAuto").onclick = runFullPipeline;
@@ -2129,7 +2127,7 @@ async function finishPipeline() {
       } else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
     }
   } finally {
-    if (b) { b.disabled = false; b.textContent = "🚀 Do it all → Deepen"; }
+    if (b) { b.disabled = false; b.textContent = "⚡ Auto-run (skips your review)"; }
   }
 }
 
@@ -2294,14 +2292,12 @@ function renderExam() {
           + '<button class="btn mini casesIssueBtn'+(it._casesAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">'+(it._casesAdded?('✅ Cases added ('+it._casesAdded+') — re-find'):'⚖️ Cases &amp; incidents')+'</button>'
           + '<button class="btn mini scholarIssueBtn'+(it._scholarAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">'+(it._scholarAdded?('✅ Writers added ('+it._scholarAdded+') — re-find'):'📚 Writers &amp; scholarship')+'</button>'
           + '<button class="btn mini reportsIssueBtn'+(it._reportsAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Search the web for VERIFIED official/government reports, reputable news, and current/trending developments on this issue — each with a link. They are woven in as CONTEXT (evidence of policy/practice/fact), never as legal authority. You verify each before it is added. Uses one web credit.">'+(it._reportsAdded?('✅ Reports added ('+it._reportsAdded+') — re-search'):'🏛️ Reports, news &amp; trends')+'</button>'
-          + '<button class="btn mini calibrateIssueBtn'+(it._calibrated?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Calibrate the legal language: strip unjustified absolutes (clearly/automatically/cannot/entirely), qualify genuinely uncertain points (likely/arguably/on the assumed facts), keep conclusions no broader than the facts, and name what could change the result — without softening what the law and facts justify. Best after Audit &amp; fix.">'+(it._calibrated?'✅ Calibrated — re-run':'🎚 Calibrate language')+'</button>'
-          + (idx>0 ? '<button class="btn mini checkConsistBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Read along: see what the EARLIER issues concluded (free), then check whether THIS issue contradicts any of them (e.g. an earlier issue holds the Charter not binding, but this one treats it as binding). You decide whether to apply each fix or edit it yourself.">🧩 Check vs earlier conclusions</button>' : '')
+          + (idx>0 ? '<button class="btn mini checkConsistBtn" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Read along: see what the EARLIER issues concluded (free), then check whether THIS issue contradicts any of them. You decide whether to apply each fix or edit it yourself.">🔎 Check this issue</button>' : '')
           + '<div class="auditIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="consistIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="casesIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="scholarIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + '<div class="reportsIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
-          + '<div class="calibrateIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
@@ -2312,7 +2308,7 @@ function renderExam() {
         + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
-      + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Make issues consistent</button>'
+      + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Reconcile all issues</button>'
       + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button></div>';
     h += '<div id="examConsistencyOut" style="margin-top:6px"></div><div id="examDocWrap"></div>';
   }
@@ -2329,8 +2325,6 @@ function renderExam() {
     b.onclick = () => findScholarshipForIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".reportsIssueBtn").forEach(b =>
     b.onclick = () => findReportsForIssue(+b.dataset.i));
-  $("#examOut").querySelectorAll(".calibrateIssueBtn").forEach(b =>
-    b.onclick = () => calibrateIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".checkConsistBtn").forEach(b =>
     b.onclick = () => checkIssueConsistency(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
@@ -3754,12 +3748,7 @@ $("#resetUsage").onclick = async () => {
   renderPlanUsage(p); applyPlan(p);
 };
 
-// ---- Question Decoder (mind map) ----
-$("#openMap").onclick = () => {
-  $("#mapCourse").textContent = "📚 Using course: " + COURSE;
-  $("#mapOut").innerHTML = ""; $("#mapStatus").textContent = "";
-  $("#mapModal").style.display = "flex";
-};
+// ---- Question Decoder: entry-point folded into Exam Coach's 'Break it down'. ----
 $("#mapClose").onclick = () => $("#mapModal").style.display = "none";
 $("#mapGo").onclick = async () => {
   const q = $("#mapQ").value.trim(); if (!q) return;
@@ -4338,12 +4327,7 @@ $("#lawplanIngest").onclick = async () => {
   } finally { btn.disabled = false; btn.textContent = "⬇ Fetch & index ticked laws"; }
 };
 
-$("#openWeekly").onclick = () => {
-  $("#weeklyCourse").textContent = "📚 Course: " + COURSE;
-  $("#weeklyList").innerHTML = ""; $("#weeklyOut").innerHTML = ""; $("#weeklyStatus").textContent = "";
-  $("#weeklyModal").style.display = "flex";
-  loadWeekly(false);
-};
+// Weekly Update entry-point merged into 🔄 Legal updates (web).
 $("#weeklyClose").onclick = () => { $("#weeklyModal").style.display = "none"; };
 $("#weeklyFind").onclick = () => loadWeekly(false, $("#weeklyDoc").value);
 $("#weeklyRefresh").onclick = () => loadWeekly(true, $("#weeklyDoc").value);
