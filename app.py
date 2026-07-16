@@ -3664,7 +3664,8 @@ KEEP_LAW_MARKERS = (
 
 
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
-                    mode="answer", use_context=False, max_quality=False, prior=""):
+                    mode="answer", use_context=False, max_quality=False, prior="",
+                    extract_model=None):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -3916,12 +3917,15 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     + ("NEW-to-this-issue Rule" if prior else "Rule")
                     + " for this issue: " + question}]
         try:
-            r1, m1 = _create_final(client, model=FABLE_MODEL, max_tokens=max_out,
+            # rule-extraction model is Fable by default; overridable (A/B: Opus is far cheaper and
+            # extraction is a faithful-reproduction task, so it may match Fable at ~half the cost).
+            _xm = ANSWER_MODEL if extract_model == "opus" else FABLE_MODEL
+            r1, m1 = _create_final(client, model=_xm, max_tokens=max_out,
                                    output_config={"effort": "high"},
                                    system=rule_sys,
                                    messages=[{"role": "user", "content": rule_msg}])
             rule_text = (_text_of(r1) or "").strip()
-            c1, i1, o1 = _usage_cost(r1.usage, m1 or FABLE_MODEL)
+            c1, i1, o1 = _usage_cost(r1.usage, m1 or _xm)
             pre_cost += c1
             CONFIG["total_input_tokens"] += i1
             CONFIG["total_output_tokens"] += o1
@@ -5002,7 +5006,8 @@ def api_ask():
     return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
                                    use_context=bool(body.get("use_context")),
                                    max_quality=max_quality,
-                                   prior=(body.get("prior") or "").strip()))
+                                   prior=(body.get("prior") or "").strip(),
+                                   extract_model=(body.get("extract_model") or None)))
 
 
 @app.route("/api/cases", methods=["POST"])
