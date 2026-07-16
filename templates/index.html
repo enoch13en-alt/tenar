@@ -432,7 +432,7 @@
   <button id="chatDockBubble" title="Ask about your materials while you work — a quick grounded chat. Pin specific documents to verify their exact content. Floats over Exam Coach."
     style="width:54px;height:54px;border-radius:50%;border:none;background:#c9a86a;color:#1c2330;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.45)">💬</button>
   <div id="chatDockPanel" style="display:none;flex-direction:column;width:370px;max-width:92vw;height:470px;max-height:80vh;background:#1c2330;border:1px solid #2a3344;border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.55);overflow:hidden">
-    <div style="padding:9px 12px;background:#141a24;display:flex;align-items:center;gap:8px">
+    <div id="chatDockHead" title="Drag to move the chat" style="padding:9px 12px;background:#141a24;display:flex;align-items:center;gap:8px;cursor:move">
       <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#e6e9ef">💬 Ask <span id="chatDockCourse" style="color:#c9a86a;font-weight:400;font-size:12px"></span></div>
       <div style="flex-shrink:0;white-space:nowrap;display:flex;align-items:center">
         <button id="chatDockPin" title="Pick specific documents so the chat reads their FULL text (not just snippets) and quotes them exactly" style="background:#22314a;border:1px solid #3a4a66;color:#9fc0ff;cursor:pointer;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px">🎯 Pin a doc</button>
@@ -1407,6 +1407,33 @@ $("#chatDockBubble").onclick = () => {
   $("#chatDockQ").focus();
 };
 $("#chatDockMin").onclick = () => { $("#chatDockPanel").style.display = "none"; $("#chatDockBubble").style.display = "block"; };
+// Drag the pop-up anywhere by its header, so it never has to cover the text you're reading.
+(function(){
+  const head = $("#chatDockHead"), dock = $("#chatDock");
+  if (!head || !dock) return;
+  let drag = null;
+  const start = (cx, cy, e) => {
+    if (e && e.target && e.target.closest("button")) return;   // let header buttons work
+    const r = dock.getBoundingClientRect();
+    drag = { dx: cx - r.left, dy: cy - r.top };
+    dock.style.right = "auto"; dock.style.bottom = "auto";
+    dock.style.left = r.left + "px"; dock.style.top = r.top + "px";
+    document.body.style.userSelect = "none";
+  };
+  const move = (cx, cy) => {
+    if (!drag) return;
+    const x = Math.max(0, Math.min(window.innerWidth - 70, cx - drag.dx));
+    const y = Math.max(0, Math.min(window.innerHeight - 44, cy - drag.dy));
+    dock.style.left = x + "px"; dock.style.top = y + "px";
+  };
+  const end = () => { drag = null; document.body.style.userSelect = ""; };
+  head.addEventListener("mousedown", e => { start(e.clientX, e.clientY, e); });
+  document.addEventListener("mousemove", e => { if (drag) { move(e.clientX, e.clientY); e.preventDefault(); } });
+  document.addEventListener("mouseup", end);
+  head.addEventListener("touchstart", e => { const t = e.touches[0]; start(t.clientX, t.clientY, e); }, {passive:true});
+  document.addEventListener("touchmove", e => { if (drag) { const t = e.touches[0]; move(t.clientX, t.clientY); } }, {passive:true});
+  document.addEventListener("touchend", end);
+})();
 let _dockBig = false;
 $("#chatDockMax").onclick = () => {
   _dockBig = !_dockBig;
