@@ -3632,6 +3632,14 @@ CONTEXT_USAGE = (
     "discussion; it never decides the law.")
 
 
+# Keeps the Rule's expandable-law dropdowns alive when an answer is reprocessed (audit / calibrate),
+# so the direct-rule + '⌄ show the law' structure persists rather than collapsing back to inline text.
+KEEP_LAW_MARKERS = (
+    "PRESERVE THE RULE DROPDOWN MARKERS: if the answer's Rule contains ⟦LAW⟧…⟦/LAW⟧ markers (they "
+    "render the collapsible verbatim provision), keep EVERY such marker exactly where it is, with the "
+    "verbatim text inside it unchanged — do not remove, relocate, alter or add them.")
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior=""):
     # `course` may be a single course name OR a list (consultant multi-course
@@ -5597,7 +5605,7 @@ def api_audit():
                        "grounded part and cut only the ungrounded clause.\n"
                        "Touch NOTHING else: keep every other sentence, authority, figure, argument, "
                        "conclusion and the style verbatim. Do NOT add new authorities. Return ONLY "
-                       "the corrected answer text — no preamble, no notes.")
+                       "the corrected answer text — no preamble, no notes.\n\n" + KEEP_LAW_MARKERS)
             try:
                 cor, _ = _create_final(
                     c, model=ANSWER_MODEL, max_tokens=8000,
@@ -7249,7 +7257,8 @@ def api_issue_calibrate():
            "(preserving structure, headers, authorities and facts, changing only what "
            "calibration requires), then a line containing exactly '===CHANGES===', then up to 6 "
            "one-line bullets naming the calibrations made (e.g. \"'cannot save through JV' -> "
-           "'the stronger view is that the JV is not the only route'\"). No preamble, no fences.")
+           "'the stronger view is that the JV is not the only route'\"). No preamble, no fences.\n\n"
+           + KEEP_LAW_MARKERS)
     try:
         # calibration is a careful proposition-by-proposition review, where deeper reasoning
         # genuinely helps — run at high effort with generous room so the full calibrated answer
