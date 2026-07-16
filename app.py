@@ -3911,7 +3911,15 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             "facts. If a governing provision's text is not reproduced in the passages at all (only "
             "referred to), say 'not in the materials — provision it' for that point. NEVER reconstruct "
             "or complete wording from memory. Output tight markdown bullets, each a quoted provision "
-            "with its pinpoint and its verbatim flag — this is the Rule the writer will apply." + new_only)
+            "with its pinpoint and its verbatim flag — this is the Rule the writer will apply."
+            + ("\n\nEXHAUSTIVE COVERAGE (do NOT prune): include EVERY governing provision that bears "
+               "on the issue, however peripheral — the default rule, each qualifying/related provision, "
+               "and any adjacent obligation. NEVER omit a provision merely because the retrieved passage "
+               "is partial, truncated or mid-sentence: include what is shown and flag it — a provision "
+               "left out is a provision the writer cannot apply. When unsure whether a provision belongs, "
+               "INCLUDE it (flagged), never drop it. Prefer over-inclusion to omission."
+               if extract_model == "opus_x" else "")
+            + new_only)
         rule_msg = list(content) + [{"type": "text",
                     "text": "Extract ONLY the "
                     + ("NEW-to-this-issue Rule" if prior else "Rule")
@@ -3919,7 +3927,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         try:
             # rule-extraction model is Fable by default; overridable (A/B: Opus is far cheaper and
             # extraction is a faithful-reproduction task, so it may match Fable at ~half the cost).
-            _xm = ANSWER_MODEL if extract_model == "opus" else FABLE_MODEL
+            _xm = ANSWER_MODEL if extract_model in ("opus", "opus_x") else FABLE_MODEL
             r1, m1 = _create_final(client, model=_xm, max_tokens=max_out,
                                    output_config={"effort": "high"},
                                    system=rule_sys,
