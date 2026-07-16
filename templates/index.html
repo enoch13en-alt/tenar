@@ -159,9 +159,9 @@
   .issue.done { border-left: 3px solid #6fcf97; }
   .issue h5 { margin: 0 0 5px; font-size: 14px; line-height: 1.4; }
   .issue .why { font-size: 12.5px; color: #aab4c6; line-height: 1.5; }
-  .issue .ans { font-size: 13.5px; color: #d6dced; margin-top: 11px; line-height: 1.64;
+  .issue .ans { font-size: 15px; color: #e2e8f4; margin-top: 11px; line-height: 1.72;
                 border-top: 1px solid #2a3344; padding-top: 11px; }
-  .issue .ans .ans-h { font-weight: 700; color: #eaf0fb; margin: 14px 0 5px; font-size: 13.5px; }
+  .issue .ans .ans-h { font-weight: 700; color: #f2f6ff; margin: 15px 0 5px; font-size: 15.5px; }
   .issue .ans strong, .issue .ans b { color: #eaf0fb; }
   .issue .ans .ans-ul { margin: 8px 0 8px 18px; } .issue .ans .ans-ul li { margin: 6px 0; }
   .fact { font-size: 12px; margin: 3px 0; }
@@ -186,16 +186,19 @@
   .cue { color: #cdd5e6; margin: 5px 0; }
   .cue b { color: #8fb4ff; }
   .cueEmpty { color: #6b7488; font-style: italic; }
+  /* font-size lives on the #examDoc container; EVERYTHING inside is em-relative, so the A-/A+
+     control (which sets the container size) scales the whole document — body AND headings. */
   #examDoc { background: #fff; border: 1px solid #e3e6ec; color: #1a2230;
-             border-radius: 8px; padding: 28px 34px; font-size: 15.5px; line-height: 1.78;
+             border-radius: 8px; padding: 30px 38px; font-size: 16.5px; line-height: 1.8;
              font-family: Georgia, "Times New Roman", "Iowan Old Style", serif;
              max-height: 64vh; overflow: auto; }
-  #examDoc .ans-h { font-weight: 700; margin: 20px 0 7px; letter-spacing: -.01em; color: #12171f;
+  #examDoc .ans-p, #examDoc .ans-ul li { font-size: 1em; }
+  #examDoc .ans-h { font-weight: 700; margin: 1.1em 0 .4em; letter-spacing: -.01em; color: #12171f;
                     font-family: inherit; }
-  #examDoc h3.ans-h { font-size: 20px; } #examDoc h4.ans-h { font-size: 17px; }
-  #examDoc h5.ans-h { font-size: 15.5px; }
-  #examDoc .ans-p { margin: 12px 0; }
-  #examDoc .ans-ul { margin: 10px 0 10px 24px; } #examDoc .ans-ul li { margin: 7px 0; line-height: 1.72; }
+  #examDoc h3.ans-h { font-size: 1.32em; } #examDoc h4.ans-h { font-size: 1.12em; }
+  #examDoc h5.ans-h { font-size: 1em; }
+  #examDoc .ans-p { margin: .75em 0; }
+  #examDoc .ans-ul { margin: .6em 0 .6em 1.4em; } #examDoc .ans-ul li { margin: .45em 0; line-height: 1.72; }
   #examDoc sup { font-size: .72em; }
   .btn.mini { width: auto; padding: 5px 10px; margin-top: 6px; font-size: 12px; }
   .mm-skel { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
