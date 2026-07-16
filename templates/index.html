@@ -3426,11 +3426,17 @@ function toggleDocFullscreen(el) {
   if (el.classList.contains("docFS")) {
     el.classList.remove("docFS");
     el.style.cssText = el._prevCss || "";
+    // move the document back to where it lives in the Exam modal
+    if (el._origParent) { el._origParent.insertBefore(el, el._origNext || null); el._origParent = null; }
     const x = document.getElementById("docFSbar"); if (x) x.remove();
     const bg = document.getElementById("docFSbg"); if (bg) bg.remove();
     return;
   }
   el._prevCss = el.style.cssText;
+  // Lift the document OUT of the Exam modal (z-index 5 stacking context) up to <body>, so it sits
+  // ABOVE the dark backdrop; otherwise the backdrop paints over the whole modal and hides the text.
+  el._origParent = el.parentNode; el._origNext = el.nextSibling;
+  document.body.appendChild(el);
   let fs = parseFloat(localStorage.getItem("docFontPx")) || 0;
   if (!fs || fs < 18) fs = 18;                       // comfortable, legible full-screen default
   // Dark backdrop fills the screen so the area beside the reading column — where the chat sits —
