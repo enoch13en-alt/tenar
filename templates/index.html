@@ -436,6 +436,7 @@
       <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#e6e9ef">💬 Ask <span id="chatDockCourse" style="color:#c9a86a;font-weight:400;font-size:12px"></span></div>
       <div style="flex-shrink:0;white-space:nowrap;display:flex;align-items:center">
         <button id="chatDockPin" title="Pick specific documents so the chat reads their FULL text (not just snippets) and quotes them exactly" style="background:#22314a;border:1px solid #3a4a66;color:#9fc0ff;cursor:pointer;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px">🎯 Pin a doc</button>
+        <button id="chatDockMax" title="Expand the chat to full height" style="background:none;border:none;color:#aab4c6;cursor:pointer;font-size:16px;line-height:1;margin-left:8px">⤢</button>
         <button id="chatDockMin" title="Minimise" style="background:none;border:none;color:#aab4c6;cursor:pointer;font-size:20px;line-height:1;margin-left:8px">×</button>
       </div>
     </div>
@@ -1406,6 +1407,13 @@ $("#chatDockBubble").onclick = () => {
   $("#chatDockQ").focus();
 };
 $("#chatDockMin").onclick = () => { $("#chatDockPanel").style.display = "none"; $("#chatDockBubble").style.display = "block"; };
+let _dockBig = false;
+$("#chatDockMax").onclick = () => {
+  _dockBig = !_dockBig;
+  const pn = $("#chatDockPanel"), b = $("#chatDockMax");
+  if (_dockBig) { pn.style.width = "440px"; pn.style.height = "calc(100vh - 34px)"; pn.style.maxHeight = "100vh"; b.textContent = "⤡"; b.title = "Shrink the chat"; }
+  else { pn.style.width = "370px"; pn.style.height = "470px"; pn.style.maxHeight = "80vh"; b.textContent = "⤢"; b.title = "Expand the chat to full height"; }
+};
 let _dockPinned = false;
 $("#chatDockPin").onclick = async () => {
   _dockPinned = !_dockPinned;
@@ -3372,6 +3380,33 @@ function coverDefaults() {
 // insert a cover-details form + Copy / Word / PDF buttons after `afterEl`,
 // scoped to one container so the Exam and Polish exports don't collide
 let _barSeq = 0;
+// Full-screen focus mode for the document: lift it to a centred, full-height reading column.
+// z-index 11000 sits UNDER the floating chat dock (12000), so the 💬 pop-up still floats over it
+// and you can engage with the document critically while it fills the screen.
+function toggleDocFullscreen(el) {
+  if (el.classList.contains("docFS")) {
+    el.classList.remove("docFS");
+    el.style.cssText = el._prevCss || "";
+    const x = document.getElementById("docFSExit"); if (x) x.remove();
+  } else {
+    el._prevCss = el.style.cssText;
+    const fs = parseFloat(localStorage.getItem("docFontPx"));
+    el.classList.add("docFS");
+    el.style.cssText = "position:fixed;inset:0;z-index:11000;height:100vh;max-height:100vh;overflow:auto;"
+      + "margin:0;border:0;border-radius:0;background:#fff;color:#1a2230;"
+      + "padding:46px max(24px,calc(50vw - 430px));";
+    if (fs) el.style.fontSize = fs + "px";
+    const exit = document.createElement("button");
+    exit.id = "docFSExit"; exit.textContent = "✕ Exit full screen (Esc)";
+    exit.style.cssText = "position:fixed;top:14px;right:20px;z-index:11001;background:#1c2330;color:#fff;"
+      + "border:none;border-radius:8px;padding:8px 13px;cursor:pointer;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.4)";
+    exit.onclick = () => toggleDocFullscreen(el);
+    document.body.appendChild(exit);
+    document.addEventListener("keydown", function esc(ev){
+      if (ev.key === "Escape" && el.classList.contains("docFS")) { toggleDocFullscreen(el); document.removeEventListener("keydown", esc); }
+    });
+  }
+}
 function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const cv = coverDefaults();
   const box = document.createElement("div");
@@ -3413,11 +3448,27 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const finalBtn = "<button class='btn mini bFinalChk' style='margin-left:6px' "
       + "title='Final check on the WHOLE document: re-audit authorities against the corpus, "
       + "verbatim-quote check, and calibrate the language — catches anything Deepen re-introduced.'>🔒 Final check</button>";
-  box.innerHTML = coverBlock
+  const readCtl = "<div style='margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap'>"
+    + "<span style='font-size:11px;color:#8b93a7'>Reading:</span>"
+    + "<button class='btn mini alt bFontDn' title='Smaller text'>A−</button>"
+    + "<button class='btn mini alt bFontUp' title='Larger text'>A+</button>"
+    + "<button class='btn mini alt bFull' title='Full-screen focus — read the document large and centred; the 💬 pop-up chat still floats so you can engage with it critically'>⛶ Full screen</button>"
+    + "</div>";
+  box.innerHTML = coverBlock + readCtl
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
     + pdfBtn + deepBtn + fitBtn + casesBtn + finalBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
+  // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
+  const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
+  const fontStep = (delta) => {
+    const cur = parseFloat(afterEl.style.fontSize) || parseFloat(getComputedStyle(afterEl).fontSize) || 15.5;
+    const nv = Math.max(12, Math.min(30, Math.round((cur + delta) * 10) / 10));
+    afterEl.style.fontSize = nv + "px"; localStorage.setItem("docFontPx", nv);
+  };
+  box.querySelector(".bFontDn").onclick = () => fontStep(-1);
+  box.querySelector(".bFontUp").onclick = () => fontStep(1);
+  box.querySelector(".bFull").onclick = () => toggleDocFullscreen(afterEl);
   const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
   box.querySelector(".bCopy").onclick = e => {
     navigator.clipboard.writeText(doc);
