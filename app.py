@@ -898,6 +898,34 @@ CALIBRATION = (
     "[conduct]': the former answers the s.X question and leaves open that another provision or "
     "subsidiary instrument could alter it.")
 
+# First-pass calibration — the write-it-already-calibrated twin of CALIBRATION (which rewrites a
+# finished draft). Baked into the gather so an issue comes out calibrated the first time, WITHOUT
+# drifting into hedging: it is paired everywhere with EXAM_FIRMNESS, and carries the anti-hedging
+# guard inline. Keep it short — the full CALIBRATION list stays available on the explicit re-pass.
+GATHER_CALIBRATION = (
+    "WRITE IT ALREADY CALIBRATED — as you write, make the CONFIDENCE of every proposition match the "
+    "support the law, authority and facts actually give: no stronger, no weaker. Produce calibrated "
+    "prose the FIRST time; this is not a later pass.\n"
+    "- DISTINGUISH REGISTER as you state each point — what the instrument EXPRESSLY provides, vs a "
+    "reasonable interpretation, vs what is genuinely uncertain or fact-dependent.\n"
+    "- NO UNJUSTIFIED ABSOLUTES: avoid 'clearly', 'automatically', 'necessarily', 'cannot', "
+    "'always', 'entirely', and flat categorical negatives ('is not caught', 'requires no X') where "
+    "the instrument has not squarely addressed the precise arrangement — scope them ('does not, on "
+    "the available materials, appear to ...'). Where an express provision and a given fact DO "
+    "justify certainty, keep the firm statement.\n"
+    "- CONCLUSIONS NO BROADER THAN THE FACTS analysed; do not declare something 'lawful/valid/"
+    "enforceable' when you have only shown it is not caught by the specific provision.\n"
+    "- NAME THE PIVOT only where the outcome GENUINELY turns on a specific fact, term or "
+    "interpretation — never a given or presumed-away point.\n"
+    "- MIRROR THE BODY'S CALIBRATION IN THE CONCLUSION — the Conclusion carries the SAME degree of "
+    "qualification as the body that produced it; a confident conclusion on a carefully-qualified "
+    "body is a failure.\n"
+    "- CALIBRATION IS ANTI-OVERSTATEMENT, NOT PRO-HEDGING: do NOT add 'appears / may / arguably / "
+    "on the assumed facts' to an ESTABLISHED fact or a CLEAR application of settled law — state "
+    "those firmly and directly. Qualify ONLY genuinely disputed law, uncertain status, or "
+    "expressly-unresolved facts. Never manufacture doubt about something settled or given "
+    "(fact-discipline and the presumption of regularity still hold).")
+
 # Examiner discipline: apply law to the GIVEN facts, stay inside the issues the
 # problem actually raises, and stand behind every authority. This is the counterweight
 # to COVERAGE — cover everything the facts raise, but nothing they don't.
@@ -3533,7 +3561,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
                   + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
-                  + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
+                  + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + GATHER_CALIBRATION + "\n\n"
                   "FOCUSED ISSUE ANSWER — IRAC, DIRECT AND LAW-BACKED, never an essay. Answer "
                   "this ONE issue in the four IRAC moves, each under its own bold header, in the "
                   "fewest words that fully carry the point. A student should read it and know the "
