@@ -131,6 +131,8 @@ check("WHO OWES IT" in LAM and "NECESSARY vs SUFFICIENT" in LAM and "COMPETENCE 
       "LEGAL_AUTHORITY_METHOD lost a rail-E distinction (obligor / necessary-vs-sufficient / competence / interpret-vs-supplement)")
 check("SELF-AUDIT" in LAM and "BINDING, PERSUASIVE or merely EVIDENTIAL" in LAM,
       "LEGAL_AUTHORITY_METHOD lost the six-question self-audit")
+check("EXPRESS THE REGISTER IN THE PROSE" in LAM and "visible tags" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost the proved/inferred/conditional/recommended prose-register rule")
 check("CUSTOM IS PROVISION-BY-PROVISION" in LAM,
       "LEGAL_AUTHORITY_METHOD lost the custom-is-provision-by-provision nuance")
 
