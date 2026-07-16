@@ -264,6 +264,7 @@
   <h2>Study tools</h2>
   <button class="btn gold" id="openExam">📝 Exam Coach</button>
   <button class="btn gold" id="openLawplan">🎯 Provision the law (facts → statutes)</button>
+  <button class="btn gold" id="openWeekly" title="Reads your course OUTLINE and breaks it down week by week — what you should know by the end of each week and which stated materials to engage. A study plan, not web news.">📅 Weekly study guide (by outline)</button>
   <button class="btn gold" id="openUpdates">🔄 Legal updates (web)</button>
   <button class="btn gold" id="openPolish">✍️ Polish my draft</button>
   <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
@@ -4327,7 +4328,12 @@ $("#lawplanIngest").onclick = async () => {
   } finally { btn.disabled = false; btn.textContent = "⬇ Fetch & index ticked laws"; }
 };
 
-// Weekly Update entry-point merged into 🔄 Legal updates (web).
+$("#openWeekly").onclick = () => {
+  $("#weeklyCourse").textContent = "📚 Course: " + COURSE;
+  $("#weeklyList").innerHTML = ""; $("#weeklyOut").innerHTML = ""; $("#weeklyStatus").textContent = "";
+  $("#weeklyModal").style.display = "flex";
+  loadWeekly(false);
+};
 $("#weeklyClose").onclick = () => { $("#weeklyModal").style.display = "none"; };
 $("#weeklyFind").onclick = () => loadWeekly(false, $("#weeklyDoc").value);
 $("#weeklyRefresh").onclick = () => loadWeekly(true, $("#weeklyDoc").value);
