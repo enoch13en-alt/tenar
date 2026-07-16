@@ -771,6 +771,52 @@ LEGAL_REASONING_CHARTER = (
 )
 LEGAL_METHOD = LEGAL_METHOD + "\n\n" + LEGAL_REASONING_CHARTER
 
+# The single most-load-bearing methodology fix: legal sources do NOT all carry the same authority,
+# and a legal consequence does not follow from a principle until its preconditions are met. This
+# stops the recurring "Source X says → therefore party owes" collapse (binding treaty / custom /
+# not-in-force instrument / a case's ratio / policy all flattened into one rule) and the leap past
+# legal thresholds. Rides everywhere LEGAL_METHOD goes (gather, essay, compile) — not chat.
+LEGAL_AUTHORITY_METHOD = (
+    "LEGAL METHOD — SOURCE STATUS AND THRESHOLDS (mandatory; a marker penalises its absence). Legal "
+    "sources do NOT all carry the same authority, and a legal consequence does not follow from a "
+    "principle until its preconditions are satisfied. Two disciplines govern EVERY proposition:\n"
+    "A) LOCATE EVERY SOURCE ON THE AUTHORITY LADDER, and let it do ONLY the work its status allows. "
+    "Before drawing any duty from an authority, be clear in the prose what it IS and WHOM it binds:\n"
+    "   1. a treaty IN FORCE for the relevant parties — binding on THOSE parties (name them);\n"
+    "   2. customary international law — binding generally; note where a treaty codifies or evidences "
+    "it;\n"
+    "   3. a treaty NOT in force, or not binding on a party — PERSUASIVE only: a regional template / "
+    "evidence of the content of the binding duty, never itself the source of obligation;\n"
+    "   4. judicial decisions — guidance on interpretation, confined to what the case actually holds "
+    "(its ratio); do NOT stretch a holding into a proposition it does not support;\n"
+    "   5. policy, recommendation, 'best practice', or an instrument's mere existence — NOT a legal "
+    "obligation.\n"
+    "   THE BINDING DUTY MUST BE LOCATED IN A BINDING SOURCE. The others INTERPRET, EVIDENCE, "
+    "ILLUSTRATE or RECOMMEND — they do not create the duty. NEVER write '[non-binding / interpretive "
+    "/ third-party source] says X, therefore [party] owes X'. Write: 'the duty arises under [the "
+    "binding instrument, which binds these parties]; [the other source] confirms / illustrates / "
+    "evidences what that duty requires.' Locate the obligation in the binding instrument first; use "
+    "custom and any not-in-force or third-party treaty only to show what that obligation REQUIRES.\n"
+    "B) SATISFY THE THRESHOLDS BEFORE THE CONSEQUENCE — reason in GATES, not leaps. A legal "
+    "consequence has preconditions: state each and TEST it on the GIVEN facts before asserting the "
+    "consequence. If a precondition is not established, STOP at that gate and frame the consequence "
+    "as CONDITIONAL on the missing finding — do not jump past it. (E.g. the remedial no-harm duty is "
+    "not triggered by harm alone: it requires USE of the watercourse BY the State + conduct "
+    "ATTRIBUTABLE to it + a CAUSAL link to the significant harm; only then the remedial obligation, "
+    "then compensation, then dispute settlement.) Walk the stages in order; never skip a gate to "
+    "reach the end.\n"
+    "C) DO NOT CONVERT INFERENCE INTO FACT, OR 'OUGHT' INTO 'IS'. What the facts ESTABLISH is not "
+    "what they merely permit as an inference: an unproven precondition ('no warning was sent', 'the "
+    "institution failed') stays an OPEN question, not a finding, unless the facts give it. And a "
+    "normative point ('the body SHOULD have had power X', 'a protocol OUGHT to be adopted') is a "
+    "recommendation, NOT a finding of legal breach or an existing obligation — keep the two apart.\n"
+    "D) DO NOT OVEREXTEND AN AUTHORITY. A case supports its ratio, not a larger proposition; an "
+    "organisation's internal competence to define its own organs is NOT a power to impose new "
+    "obligations on sovereign States; a provision that merely PERMITS a step (a legal vehicle) does "
+    "not itself take that step. Match every claim to exactly what the source establishes, and no "
+    "wider.")
+LEGAL_METHOD = LEGAL_METHOD + "\n\n" + LEGAL_AUTHORITY_METHOD
+
 # Case-law application — the single strongest lift across every answer type: a case
 # is worth nothing stated; it earns marks (and persuades) only when APPLIED to the
 # facts. Stacked into questions, compiles, advisory, deepen and (grounded) weekly.

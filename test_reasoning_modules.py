@@ -117,6 +117,16 @@ check(append_present("LEGAL_METHOD", "LEGAL_REASONING_CHARTER"),
 check("COURSE-AGNOSTIC" in CHARTER and "SELF-AUDIT" in CHARTER,
       "charter lost its course-agnostic backbone / self-audit rail")
 
+# 9b) Source-status + thresholds methodology (the authority-hierarchy / gateway fix) — appended
+#     to LEGAL_METHOD so it rides gather, essay and compile.
+LAM = const("LEGAL_AUTHORITY_METHOD") or ""
+check(len(LAM) > 1200, "LEGAL_AUTHORITY_METHOD missing or too short")
+check(append_present("LEGAL_METHOD", "LEGAL_AUTHORITY_METHOD"),
+      "LEGAL_AUTHORITY_METHOD not appended to LEGAL_METHOD")
+check("AUTHORITY LADDER" in LAM and "SATISFY THE THRESHOLDS" in LAM
+      and "OUGHT" in LAM and "OVEREXTEND" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost a core rail (ladder / thresholds / ought-vs-is / overextension)")
+
 # 10) Exam-firmness (anti-hedging) — wired into FACT_DISCIPLINE and the calibrator.
 EF = const("EXAM_FIRMNESS") or ""
 check(len(EF) > 800, "EXAM_FIRMNESS missing or too short")
