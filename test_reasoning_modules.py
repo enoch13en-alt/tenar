@@ -178,8 +178,9 @@ RGE = const("RESEARCH_GUIDE_ETHOS") or ""
 check(len(RGE) > 800, "RESEARCH_GUIDE_ETHOS missing or too short")
 check(append_present("CITATION_INTEGRITY", "RESEARCH_GUIDE_ETHOS"),
       "RESEARCH_GUIDE_ETHOS not appended to CITATION_INTEGRITY")
-check("WHERE TO LOOK" in RGE and "NEVER invent" in RGE,
-      "research-guide ethos lost its where-to-look / no-invention rails")
+check("MARK GENUINE GAPS INLINE" in RGE and "【FILL:" in RGE
+      and "GAPS TO CLOSE" in RGE and "NEVER invent" in RGE,
+      "research-guide ethos lost its inline-gaps / where-to-look / no-invention rails")
 
 if fails:
     print("❌ REGRESSION — reasoning modules:")

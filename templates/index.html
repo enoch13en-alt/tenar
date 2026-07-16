@@ -877,6 +877,11 @@ function mdToHtml(raw){
     return '<details class="lawdrop" style="margin:2px 0 5px"><summary style="cursor:pointer;color:#8fb4ff;font-size:11px">⌄ show the law · ' + badge + '</summary>'
       + '<div style="font-size:12px;color:#c4cdda;background:#0f131c;border-left:2px solid #2a3344;padding:5px 9px;margin:3px 0 0;line-height:1.5">' + inner + '</div></details>';
   });
+  // Inline fill-in gaps: the guide drops 【FILL: what — where】 exactly where a missing item is
+  // needed, so it stands out and you complete it in place as you read. No-op when absent.
+  html = html.replace(/【\s*FILL:\s*([\s\S]*?)】/g, function(_, inner){
+    return '<mark class="fillgap" style="background:#4a3410;color:#f4cf8a;padding:0 5px;border-radius:3px;font-size:.9em;font-weight:600">🔎 FILL: ' + inner.trim() + '</mark>';
+  });
   return html;
 }
 // Remove the ⟦LAW⟧ markers but KEEP the law inline — for copy, compile and export, so the verbatim
