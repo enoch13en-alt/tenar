@@ -1456,10 +1456,11 @@ async function sendDock() {
 function mountDockWeave(ansEl, question, answer, sources, isFact) {
   const issues = (typeof EXAM !== "undefined" && EXAM.issues) ? EXAM.issues : [];
   const targets = issues.map((it, i) => ({ it, i })).filter(x => x.it.answer && x.it.done);
+  const hasDoc = !!(typeof EXAM !== "undefined" && EXAM.doc && EXAM.doc.trim());
   const bar = document.createElement("div");
   bar.style.cssText = "margin-top:5px";
-  if (!targets.length) {
-    bar.innerHTML = '<span style="font-size:11px;color:#e0a05a">⚠ First build & answer an issue in Exam Coach — then you can weave a fact into it.</span>';
+  if (!targets.length && !hasDoc) {
+    bar.innerHTML = '<span style="font-size:11px;color:#e0a05a">⚠ First build & answer an issue — or Synthesise a document — in Exam Coach; then you can weave a fact in.</span>';
     ansEl.appendChild(bar); return;
   }
   ansEl.appendChild(bar);
@@ -1472,6 +1473,7 @@ function mountDockWeave(ansEl, question, answer, sources, isFact) {
       '<div style="border-left:3px solid #7ad0c0;padding:6px 8px;background:#101a1a;border-radius:4px;font-size:12px">'
       + '<div style="color:#7ad0c0;font-weight:600;margin-bottom:3px">' + (isFact ? '➕ Weave a fact you verified elsewhere' : '⤵ Weave accurate data into an issue') + '</div>'
       + '<select class="dockWeaveSel" style="width:100%;margin-bottom:4px;font-size:11px;padding:3px;background:#0d1017;color:#dbe2ee;border:1px solid #2a3344;border-radius:4px">'
+      + (hasDoc ? '<option value="doc">📄 The final synthesised document</option>' : '')
       + targets.map(t => '<option value="' + t.i + '">' + esc((t.it.issue || ("Issue " + (t.i + 1))).slice(0, 80)) + '</option>').join("")
       + '</select>'
       + '<div style="color:#8b93a7;margin-bottom:2px">' + (isFact ? 'Type or paste the fact you verified (exactly — this text is woven in as-is, nothing added):' : 'Trim to exactly what you verified (this exact text is woven in — nothing added):') + '</div>'
@@ -1485,13 +1487,36 @@ function mountDockWeave(ansEl, question, answer, sources, isFact) {
     bar.querySelector(".dockWeaveCancel").onclick = collapse;
     const noteEl = bar.querySelector(".dockWeaveNote");
     bar.querySelector(".dockWeaveGo").onclick = () => {
-      const i = +bar.querySelector(".dockWeaveSel").value;
+      const sel = bar.querySelector(".dockWeaveSel").value;
       const material = bar.querySelector(".dockWeaveTxt").value.trim();
       const userSource = bar.querySelector(".dockWeaveSrc").value.trim();
-      const it = EXAM.issues[i];
-      if (!it) { noteEl.textContent = "That issue is gone — re-run it."; return; }
       if (!material) { noteEl.textContent = "Trim in the text to weave first."; return; }
       if (!userSource) { noteEl.textContent = "Add the source you verified this against — it is cited with the fact."; bar.querySelector(".dockWeaveSrc").focus(); return; }
+      // Inject directly into the final synthesised document
+      if (sel === "doc") {
+        bar.innerHTML = '<span style="font-size:11px;color:#8b93a7">injecting into the final document &amp; citing your source…</span>';
+        (async () => {
+          try {
+            const r = await (await fetch("/api/document/chat/add", {method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({document: EXAM.doc, material, user_source: userSource, question})})).json();
+            if (r.error) { bar.innerHTML = "⚠️ " + esc(r.error); return; }
+            EXAM.doc = r.document || EXAM.doc;
+            if (typeof saveExam === "function") saveExam();
+            const wrap = document.getElementById("examDocWrap");
+            if (wrap) {
+              wrap.innerHTML = "<h4 style='margin:14px 0 4px'>Final document</h4><div id='examDoc' style='white-space:normal'></div>";
+              const de = document.getElementById("examDoc");
+              de.innerHTML = mdToHtml(EXAM.doc);
+              renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question || "").split('\n')[0].slice(0, 90));
+            }
+            bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Injected into the final document — cited in its own style. Review it in Exam Coach (re-audit / re-Deepen if it was a material claim).</span>';
+          } catch (e) { bar.innerHTML = "Error — try again."; }
+        })();
+        return;
+      }
+      const i = +sel;
+      const it = EXAM.issues[i];
+      if (!it) { noteEl.textContent = "That issue is gone — re-run it."; return; }
       async function doWeave(stances) {
         bar.innerHTML = '<span style="font-size:11px;color:#8b93a7">' + (stances ? "weaving with your choices…" : "checking for conflicts with your text &amp; weaving…") + '</span>';
         try {

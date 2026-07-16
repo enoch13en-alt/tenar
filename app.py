@@ -7327,6 +7327,63 @@ def api_document_cases_add():
     return jsonify({"document": updated or document, "added": len(cases)})
 
 
+@app.route("/api/document/chat/add", methods=["POST"])
+def api_document_chat_add():
+    """Inject a student-CURATED claim or piece of information (from the corner chat) DIRECTLY into
+    the FINAL compiled document — attributed and cited in the document's own style (OSCOLA footnote
+    renumbering where used), preserving everything else. The document twin of /api/issue/chat/add.
+    One question."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    material = (body.get("material") or "").strip()
+    user_source = (body.get("user_source") or "").strip()
+    question = (body.get("question") or "").strip()
+    if not document or not material:
+        return jsonify({"error": "Need the document and the text to inject."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    src_line = _fact_src_line(user_source, [])
+    sys = (
+        "You inject a student-CURATED claim or piece of information into a FINISHED, compiled legal "
+        "document (an OSCOLA-referenced memorandum/essay) — and change NOTHING else. Integrate it "
+        "ACCURATELY at the logically correct point (the passage dealing with the point it bears on):\n"
+        "- TRANSFER ONLY WHAT THE MATERIAL SUPPORTS: never overstate, extrapolate, or upgrade a "
+        "tentative point into a firm one; carry over any hedge or 'not established' limitation.\n"
+        "- CITE THE SOURCE the student gives, IN THE DOCUMENT'S OWN REFERENCING STYLE: if the "
+        "document uses OSCOLA FOOTNOTES, add the source as a NEW footnote at the inserted sentence "
+        "and RENUMBER the following footnotes consistently (and add it to the Bibliography / Table of "
+        "Cases or Table of Legislation if it is an authority of that kind); if the document cites "
+        "in-text, cite in-text. Reproduce the source reference EXACTLY as given — do not alter, "
+        "shorten misleadingly, or invent any part of it. Treat an externally-verified fact as "
+        "CONTEXT / evidence, not a proposition of law, unless the source is itself a statute or case.\n"
+        "- KEEP IT SOURCE-RELATIVE where the source only shows something on a record ('on the "
+        "official record, as of [date], X …'); never convert silence into a bald negative.\n"
+        "- If the claim is MATERIAL (it changes whether a conclusion holds), follow the consequence "
+        "through the affected passage AND its conclusion so the document stays internally consistent; "
+        "if it is merely contextual, place it without disturbing the conclusions. If it has no "
+        "natural home in the document, say so plainly rather than force it in.\n"
+        "- PRESERVE everything else — the analysis, authorities, headings, structure, tables and the "
+        "CONCLUSION — VERBATIM except for the inserted sentence(s) and the footnote renumbering. "
+        "Return ONLY the updated document text — no preamble, no notes.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "FINAL DOCUMENT:\n" + document
+                       + (("\n\nCONTEXT (the chat question this came from): " + question) if question else "")
+                       + "\n\nCLAIM / INFORMATION TO INJECT (transfer only what it supports; place and "
+                       "cite it in the document's own style):\n" + material[:6000] + src_line}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"document": updated or document})
+
+
 @app.route("/api/document/scholarship/add", methods=["POST"])
 def api_document_scholarship_add():
     """Weave PRE-WORKED, student-verified academic writings into the FINAL compiled document —
