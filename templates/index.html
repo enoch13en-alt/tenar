@@ -200,6 +200,11 @@
   #examDoc .ans-p { margin: .75em 0; }
   #examDoc .ans-ul { margin: .6em 0 .6em 1.4em; } #examDoc .ans-ul li { margin: .45em 0; line-height: 1.72; }
   #examDoc sup { font-size: .72em; }
+  /* Night reading mode for the document (day = the white default above). */
+  #examDoc.night { background: #12161d; color: #dce3ef; border-color: #2a3344; }
+  #examDoc.night .ans-h { color: #f1f5fc; }
+  #examDoc.night .ans-hr { border-top-color: #2a3344; }
+  #examDoc.night a { color: #8fb4ff; }
   .btn.mini { width: auto; padding: 5px 10px; margin-top: 6px; font-size: 12px; }
   .mm-skel { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
   .mm-skel span { background:#2a3344; color:#cdd5e6; font-size:11px; padding:3px 8px;
@@ -3445,11 +3450,14 @@ function toggleDocFullscreen(el) {
   bg.style.cssText = "position:fixed;inset:0;z-index:10998;background:#0f1319";
   document.body.appendChild(bg);
   el.classList.add("docFS");
-  // The white reading column occupies only the LEFT — it STOPS at the chat's edge (right:_DOCK_RESERVE),
-  // so it does not take the whole screen and there is no white behind the chat. Darker, bolder text.
+  const night = localStorage.getItem("docTheme") === "night";
+  el.classList.toggle("night", night);
+  const bgc = night ? "#12161d" : "#fff", txt = night ? "#dce3ef" : "#0c1016", brd = night ? "#2a3344" : "#d7dbe2";
+  // The reading column occupies only the LEFT — it STOPS at the chat's edge (right:_DOCK_RESERVE),
+  // so it does not take the whole screen and there is no bright panel behind the chat. Bolder text.
   el.style.cssText = "position:fixed;top:0;left:0;bottom:0;right:" + _DOCK_RESERVE + "px;z-index:11000;"
-    + "height:100vh;max-height:100vh;overflow:auto;margin:0;border:0;border-right:1px solid #d7dbe2;border-radius:0;"
-    + "background:#fff;color:#0c1016;font-family:Georgia,'Times New Roman',serif;line-height:1.85;"
+    + "height:100vh;max-height:100vh;overflow:auto;margin:0;border:0;border-right:1px solid " + brd + ";border-radius:0;"
+    + "background:" + bgc + ";color:" + txt + ";font-family:Georgia,'Times New Roman',serif;line-height:1.85;"
     + "font-weight:500;padding:54px clamp(28px,5vw,90px) 64px clamp(28px,5vw,90px);";
   el.style.fontSize = fs + "px";
   localStorage.setItem("docFontPx", fs);
@@ -3459,12 +3467,22 @@ function toggleDocFullscreen(el) {
   bar.style.cssText = "position:fixed;top:12px;left:16px;z-index:11002;display:flex;gap:6px;align-items:center";
   const mk = (t, ti) => { const b = document.createElement("button"); b.textContent = t; b.title = ti;
     b.style.cssText = "background:#1c2330;color:#fff;border:none;border-radius:8px;padding:7px 11px;cursor:pointer;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.4)"; return b; };
-  const dn = mk("A−", "Smaller text"), up = mk("A+", "Larger text"), ex = mk("✕ Exit", "Exit full screen (Esc)");
+  const dn = mk("A−", "Smaller text"), up = mk("A+", "Larger text"),
+        th = mk(night ? "☀️ Day" : "🌙 Night", "Day / night reading"), ex = mk("✕ Exit", "Exit full screen (Esc)");
   const step = (delta) => { let c = parseFloat(el.style.fontSize) || 18;
     let n = Math.max(13, Math.min(40, Math.round((c + delta) * 10) / 10));
     el.style.fontSize = n + "px"; localStorage.setItem("docFontPx", n); };
   dn.onclick = () => step(-1); up.onclick = () => step(1); ex.onclick = () => toggleDocFullscreen(el);
-  bar.append(dn, up, ex); document.body.appendChild(bar);
+  th.onclick = () => {
+    const nn = localStorage.getItem("docTheme") !== "night";
+    localStorage.setItem("docTheme", nn ? "night" : "day");
+    el.classList.toggle("night", nn);
+    el.style.background = nn ? "#12161d" : "#fff";
+    el.style.color = nn ? "#dce3ef" : "#0c1016";
+    el.style.borderRight = "1px solid " + (nn ? "#2a3344" : "#d7dbe2");
+    th.textContent = nn ? "☀️ Day" : "🌙 Night";
+  };
+  bar.append(dn, up, th, ex); document.body.appendChild(bar);
   document.addEventListener("keydown", function esc(ev){
     if (ev.key === "Escape" && el.classList.contains("docFS")) { toggleDocFullscreen(el); document.removeEventListener("keydown", esc); }
   });
@@ -3514,6 +3532,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     + "<span style='font-size:11px;color:#8b93a7'>Reading:</span>"
     + "<button class='btn mini alt bFontDn' title='Smaller text'>A−</button>"
     + "<button class='btn mini alt bFontUp' title='Larger text'>A+</button>"
+    + "<button class='btn mini alt bTheme' title='Switch the document between day (white) and night (dark) reading'>🌙 Night</button>"
     + "<button class='btn mini alt bFull' title='Full-screen focus — read the document large and centred; the 💬 pop-up chat still floats so you can engage with it critically'>⛶ Full screen</button>"
     + "</div>";
   box.innerHTML = coverBlock + readCtl
@@ -3530,6 +3549,17 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   };
   box.querySelector(".bFontDn").onclick = () => fontStep(-1);
   box.querySelector(".bFontUp").onclick = () => fontStep(1);
+  // day / night reading theme for the document (persisted)
+  const applyDocTheme = () => {
+    const night = localStorage.getItem("docTheme") === "night";
+    afterEl.classList.toggle("night", night);
+    const tb = box.querySelector(".bTheme"); if (tb) tb.textContent = night ? "☀️ Day" : "🌙 Night";
+  };
+  box.querySelector(".bTheme").onclick = () => {
+    localStorage.setItem("docTheme", localStorage.getItem("docTheme") === "night" ? "day" : "night");
+    applyDocTheme();
+  };
+  applyDocTheme();
   box.querySelector(".bFull").onclick = () => toggleDocFullscreen(afterEl);
   const val = k => (box.querySelector("[data-k='"+k+"']") || {value:""}).value.trim();
   box.querySelector(".bCopy").onclick = e => {
