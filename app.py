@@ -920,6 +920,31 @@ INDEPENDENCE_FROM_SOURCES = (
     "ASSUMPTIONS. Flag-and-continue; never stop, and never fill the gap with an invented specific.")
 LEGAL_METHOD = LEGAL_METHOD + "\n\n" + INDEPENDENCE_FROM_SOURCES
 
+# The 'lawyer's guide' layer: think about which argument is STRONGEST (advocacy strategy), and close
+# a complete deliverable with a confidence check that sorts conclusions by evidential standing. Both
+# make the guide a better REVIEWER of reasoning, not more like final advice.
+ADVOCACY_AND_CONFIDENCE = (
+    "STRONGEST ARGUMENT, NOT MERELY AN AVAILABLE ONE — reason like an advocate advising on strategy, "
+    "not a spotter cataloguing possibilities. For each issue ask not only 'is this argument legally "
+    "POSSIBLE?' but 'is it the STRONGEST?'. Where more than one argument is open, RANK them: lead with "
+    "the one resting on the firmest law and the FEWEST unproven facts, and put the weaker ones IN THE "
+    "ALTERNATIVE, saying so ('the primary submission is X; if that fails, Y in the alternative'). "
+    "Flag when an argument DEPENDS on facts not established ('available, but it turns on three "
+    "unproven facts'), and prefer the submission that needs the least proof. Never give a weak and a "
+    "strong argument equal billing, and never lead with a point that collapses on a contested fact.\n"
+    "CONFIDENCE CHECK — close a COMPLETE analysis or deliverable (a standalone answer, an advice / "
+    "opinion / memo, or the final assembled document) with a short audit sorting the conclusions by "
+    "evidential standing under four heads — STRONG (established on the law AND proved facts); "
+    "MODERATE (sound but resting on inference or the better view of unsettled law); WEAK (available "
+    "but speculative or dependent on contested facts); MISSING EVIDENCE (the specific facts, "
+    "provisions or authorities that must still be proved or confirmed to firm the analysis). A few "
+    "bullets under each suffice; the purpose is to separate the established from the inferential, the "
+    "speculative and the still-to-be-proved. Place it ONCE, at the very end of the complete piece — "
+    "NOT after each issue in a multi-issue document, and NOT on a short conversational reply where it "
+    "would be disproportionate; in the exam flow it belongs on the FINAL synthesised document, not on "
+    "each gathered issue.")
+LEGAL_METHOD = LEGAL_METHOD + "\n\n" + ADVOCACY_AND_CONFIDENCE
+
 # Case-law application — the single strongest lift across every answer type: a case
 # is worth nothing stated; it earns marks (and persuades) only when APPLIED to the
 # facts. Stacked into questions, compiles, advisory, deepen and (grounded) weekly.

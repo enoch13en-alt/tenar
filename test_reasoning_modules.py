@@ -146,6 +146,15 @@ check(append_present("LEGAL_METHOD", "INDEPENDENCE_FROM_SOURCES"),
 check("RETRIEVAL vs REASONING" in IFS and "ANTI-FABRICATION LINE" in IFS
       and "Flag-and-continue" in IFS,
       "INDEPENDENCE_FROM_SOURCES lost a core rail (retrieval-vs-reasoning / anti-fabrication / flag-and-continue)")
+
+# Advocacy strength + confidence check (the 'lawyer's guide' reviewer layer).
+AC = const("ADVOCACY_AND_CONFIDENCE") or ""
+check(len(AC) > 700, "ADVOCACY_AND_CONFIDENCE missing or too short")
+check(append_present("LEGAL_METHOD", "ADVOCACY_AND_CONFIDENCE"),
+      "ADVOCACY_AND_CONFIDENCE not appended to LEGAL_METHOD")
+check("STRONGEST ARGUMENT" in AC and "CONFIDENCE CHECK" in AC
+      and "MISSING EVIDENCE" in AC and "IN THE" in AC,
+      "ADVOCACY_AND_CONFIDENCE lost a rail (strongest-argument ranking / confidence-check heads)")
 check("CONDUCT vs RESULT" in LAM and "HARM is not LIABILITY" in LAM
       and "KEEP THE INSTRUMENTS SEPARATE" in LAM and "BURDEN OF PROOF" in LAM,
       "LEGAL_AUTHORITY_METHOD lost a rail-E delta (conduct-vs-result / harm-not-liability / instrument-separation / burden)")
