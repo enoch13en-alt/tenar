@@ -896,6 +896,30 @@ LEGAL_AUTHORITY_METHOD = (
     "arguing a point already won (over-arguing manufactures error).")
 LEGAL_METHOD = LEGAL_METHOD + "\n\n" + LEGAL_AUTHORITY_METHOD
 
+# Reconciles grounded-only with the duty to actually REASON: retrieval is evidence, not permission
+# to think. Begin the analysis from governing principles immediately; use sources to verify/refine;
+# never defer or refuse for want of a document; and never fabricate the specifics. Fixes the failure
+# mode where the model punts the whole analysis to 'run it through the corpus'.
+INDEPENDENCE_FROM_SOURCES = (
+    "INDEPENDENCE FROM SOURCES — retrieval is NOT a prerequisite to reasoning. Treat retrieved "
+    "documents, uploaded materials and external sources as EVIDENCE, not as permission to think. "
+    "Begin the legal analysis IMMEDIATELY from the governing principles and your own knowledge of the "
+    "field; use retrieved sources to VERIFY, REFINE or CORRECT that analysis — never as a "
+    "precondition to producing one. NEVER refuse, defer, or materially weaken the analysis solely "
+    "because supporting documents have not been retrieved.\n"
+    "RETRIEVAL vs REASONING — retrieval answers WHAT the law says; reasoning answers HOW it applies. "
+    "Complete the reasoning (issue-frame, thresholds, application, conclusion) independently; "
+    "retrieved authorities support or modify it, they do not replace it. The absence of a source is "
+    "NOT the absence of analysis.\n"
+    "THE ANTI-FABRICATION LINE (this PRESERVES grounded-only, it does not weaken it): you MAY reason "
+    "from general legal PRINCIPLES from your own knowledge; you may NOT invent the SPECIFICS — never "
+    "fabricate a quotation, statutory or contractual WORDING, a section / article NUMBER, a case "
+    "HOLDING, or a factual FINDING. Where an exact quotation, provision, clause or fact is needed but "
+    "unavailable, SAY the precise wording / number / fact cannot be confirmed on the materials, then "
+    "CONTINUE on the governing principle — clearly distinguishing CONFIRMED facts and provisions from "
+    "ASSUMPTIONS. Flag-and-continue; never stop, and never fill the gap with an invented specific.")
+LEGAL_METHOD = LEGAL_METHOD + "\n\n" + INDEPENDENCE_FROM_SOURCES
+
 # Case-law application — the single strongest lift across every answer type: a case
 # is worth nothing stated; it earns marks (and persuades) only when APPLIED to the
 # facts. Stacked into questions, compiles, advisory, deepen and (grounded) weekly.
@@ -3724,8 +3748,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "23' with no instrument attached. If a cited provision points to a repealed "
                   "enactment, name its current successor in full (see the succession rule). State "
                   "the default rule first, then any exception. Never assert a proposition without "
-                  "its authority. (If the provision's text is NOT in the retrieved materials, say so "
-                  "and stop — do not reproduce it from memory.)\n"
+                  "its authority. (If a provision's exact TEXT is not in the retrieved materials, do "
+                  "NOT reproduce its wording or section number from memory — say the precise wording "
+                  "is unconfirmed on the materials, then CONTINUE the analysis on the governing "
+                  "PRINCIPLE; do not stop, do not defer, and do not invent the wording.)\n"
                   "**Application** — apply the reproduced words of each rule to THIS problem's facts, "
                   "directly: take the actual parties and events and run them through the rule's "
                   "operative terms, step by step, to the result. USE THE LAW'S OWN WORDS — carry the "

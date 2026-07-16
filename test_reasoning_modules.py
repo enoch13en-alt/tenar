@@ -137,6 +137,15 @@ check("DISCIPLINE-AGNOSTIC" in LAM and "CONSTITUTION" in LAM and "STATUTE" in LA
       "LEGAL_AUTHORITY_METHOD lost the discipline-agnostic broadened authority ladder")
 check("IDENTIFY THE PRECISE LEGAL QUESTION FIRST" in LAM and "adjacent" in LAM,
       "LEGAL_AUTHORITY_METHOD lost Rail 0 (identify the precise legal question before anything)")
+
+# Independence-from-sources: reason immediately, don't defer for want of a document, don't fabricate.
+IFS = const("INDEPENDENCE_FROM_SOURCES") or ""
+check(len(IFS) > 800, "INDEPENDENCE_FROM_SOURCES missing or too short")
+check(append_present("LEGAL_METHOD", "INDEPENDENCE_FROM_SOURCES"),
+      "INDEPENDENCE_FROM_SOURCES not appended to LEGAL_METHOD")
+check("RETRIEVAL vs REASONING" in IFS and "ANTI-FABRICATION LINE" in IFS
+      and "Flag-and-continue" in IFS,
+      "INDEPENDENCE_FROM_SOURCES lost a core rail (retrieval-vs-reasoning / anti-fabrication / flag-and-continue)")
 check("CONDUCT vs RESULT" in LAM and "HARM is not LIABILITY" in LAM
       and "KEEP THE INSTRUMENTS SEPARATE" in LAM and "BURDEN OF PROOF" in LAM,
       "LEGAL_AUTHORITY_METHOD lost a rail-E delta (conduct-vs-result / harm-not-liability / instrument-separation / burden)")
