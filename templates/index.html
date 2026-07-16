@@ -861,8 +861,20 @@ function mdToHtml(raw){
     html += "<p class='ans-p'>" + mdInline(t) + "</p>";
   }
   closeList();
+  // Rule dropdowns: the gather wraps each provision's verbatim text + gloss in ⟦LAW⟧…⟦/LAW⟧ so the
+  // Rule reads DIRECT by default and expands the exact law on demand. No-op when the markers absent.
+  html = html.replace(/⟦LAW⟧([\s\S]*?)⟦\/LAW⟧/g, function(_, inner){
+    var flagged = /NOT VERBATIM|⚠/.test(inner);
+    var badge = flagged ? '<span style="color:#e0a05a">⚠ check</span>'
+                        : '<span style="color:#7fd18b">✅ verbatim</span>';
+    return '<details class="lawdrop" style="margin:2px 0 5px"><summary style="cursor:pointer;color:#8fb4ff;font-size:11px">⌄ show the law · ' + badge + '</summary>'
+      + '<div style="font-size:12px;color:#c4cdda;background:#0f131c;border-left:2px solid #2a3344;padding:5px 9px;margin:3px 0 0;line-height:1.5">' + inner + '</div></details>';
+  });
   return html;
 }
+// Remove the ⟦LAW⟧ markers but KEEP the law inline — for copy, compile and export, so the verbatim
+// provision flows into the formal document rather than a literal marker.
+function stripLawTags(t){ return (t || "").replace(/⟦LAW⟧|⟦\/LAW⟧/g, ""); }
 function citeHTML(c) {
   const head = c.url
     ? '🌐 <a href="' + esc(c.url) + '" target="_blank" rel="noopener" class="srclink">'
@@ -2322,7 +2334,7 @@ function renderExam() {
   $("#examOut").querySelectorAll(".checkConsistBtn").forEach(b =>
     b.onclick = () => checkIssueConsistency(+b.dataset.i));
   $("#examOut").querySelectorAll(".copyIssueBtn").forEach(b =>
-    b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(it.answer || "", b); });
+    b.onclick = () => { const it = EXAM.issues[+b.dataset.i]; if (it) copyText(stripLawTags(it.answer || ""), b); });
   $("#examOut").querySelectorAll(".showOrigAuto").forEach(b => b.onclick = () => {
     const box = $("#examOut").querySelector('.origAutoBox[data-i="' + b.dataset.i + '"]');
     if (!box) return; const sh = box.style.display === "none";
@@ -3261,9 +3273,9 @@ async function compileExam() {
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         answers: done.map(it => ({
           issue: it.issue,
-          answer: it.answer + (it.followups || []).map(f =>
+          answer: stripLawTags(it.answer) + (it.followups || []).map(f =>
             "\n\nFurther point (" + f.q + "):\n" + f.answer).join(""),
-          answer_annotated: (it.answer_annotated || it.answer)
+          answer_annotated: stripLawTags(it.answer_annotated || it.answer)
             + (it.followups || []).map(f =>
             "\n\nFurther point (" + f.q + "):\n" + (f.answer_annotated || f.answer)).join(""),
           sources: (it.followups || []).reduce((a, f) =>
