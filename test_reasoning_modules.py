@@ -133,6 +133,11 @@ check("SELF-AUDIT" in LAM and "BINDING, PERSUASIVE or merely EVIDENTIAL" in LAM,
       "LEGAL_AUTHORITY_METHOD lost the six-question self-audit")
 check("EXPRESS THE REGISTER IN THE PROSE" in LAM and "visible tags" in LAM,
       "LEGAL_AUTHORITY_METHOD lost the proved/inferred/conditional/recommended prose-register rule")
+check("DISCIPLINE-AGNOSTIC" in LAM and "CONSTITUTION" in LAM and "STATUTE" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost the discipline-agnostic broadened authority ladder")
+check("CONDUCT vs RESULT" in LAM and "HARM is not LIABILITY" in LAM
+      and "KEEP THE INSTRUMENTS SEPARATE" in LAM and "BURDEN OF PROOF" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost a rail-E delta (conduct-vs-result / harm-not-liability / instrument-separation / burden)")
 check("CUSTOM IS PROVISION-BY-PROVISION" in LAM,
       "LEGAL_AUTHORITY_METHOD lost the custom-is-provision-by-provision nuance")
 
