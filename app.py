@@ -9797,10 +9797,101 @@ def _md_runs(line):
             yield part, False, False
 
 
+def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spacing):
+    """Build a .docx with REAL page-bottom Word footnotes (OOXML footnotes part). `body` is the
+    document text with [n] markers; `fmap` maps n -> citation; `sections` are the remaining
+    back-matter (Bibliography, Tables). Raises on any error so the caller can fall back."""
+    import io
+    import docx
+    from docx.shared import Pt
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+    d = docx.Document()
+    base_pt = int(font_size) if font_size else 11
+    notes_pt = max(8, base_pt - 2)
+    if font or font_size or line_spacing:
+        try:
+            st = d.styles["Normal"]
+            if font: st.font.name = font
+            if font_size: st.font.size = Pt(int(font_size))
+            if line_spacing: st.paragraph_format.line_spacing = float(line_spacing)
+        except Exception:
+            pass
+    if title:
+        d.add_heading(title, level=0)
+    used = []
+    mark_re = re.compile(r"(?<=\S)(\[\d{1,3}\])")
+
+    def add_fn_ref(p, fid):
+        run = p.add_run()
+        rpr = run._r.get_or_add_rPr()
+        va = OxmlElement('w:vertAlign'); va.set(qn('w:val'), 'superscript'); rpr.append(va)
+        ref = OxmlElement('w:footnoteReference'); ref.set(qn('w:id'), str(fid)); run._r.append(ref)
+        if fid not in used:
+            used.append(fid)
+
+    def render_block(txt, small=False):
+        for raw in (txt or "").split("\n"):
+            line = raw.rstrip()
+            if not line.strip():
+                continue
+            m = re.match(r"^(#{1,4})\s+(.*)", line)
+            if m:
+                d.add_heading(m.group(2).strip(), level=min(len(m.group(1)), 4)); continue
+            p = d.add_paragraph()
+            for seg, bold, ital in _md_runs(line):
+                for part in mark_re.split(seg):
+                    if not part:
+                        continue
+                    mk = re.fullmatch(r"\[(\d{1,3})\]", part)
+                    if mk and int(mk.group(1)) in fmap:
+                        add_fn_ref(p, int(mk.group(1)))
+                    else:
+                        r = p.add_run(part); r.bold, r.italic = bold, ital
+                        if small:
+                            r.font.size = Pt(notes_pt)
+
+    render_block(body)
+    for name, content in (sections or []):
+        d.add_heading(name, level=2)
+        render_block(content, small=name.lower().startswith(("bibliography", "table")))
+
+    # Build /word/footnotes.xml (two separators + one footnote per referenced marker) and attach it.
+    W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    def _esc(s): return (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    hp = str(notes_pt * 2)
+    fn = ['<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>',
+          '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>']
+    for fid in used:
+        txt = _esc(re.sub(r"\s+", " ", fmap[fid]).strip())
+        fn.append('<w:footnote w:id="%d"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>'
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr>'
+                  '<w:footnoteRef/></w:r><w:r><w:rPr><w:sz w:val="%s"/></w:rPr>'
+                  '<w:t xml:space="preserve"> %s</w:t></w:r></w:p></w:footnote>' % (fid, hp, txt))
+    xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           '<w:footnotes xmlns:w="%s">%s</w:footnotes>' % (W, ''.join(fn))).encode('utf-8')
+    part = Part(PackURI('/word/footnotes.xml'),
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
+                xml, d.part.package)
+    d.part.relate_to(part, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes')
+    bio = io.BytesIO(); d.save(bio); bio.seek(0)
+    return bio
+
+
 def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     import io
     import docx
     from docx.shared import Pt
+    # Prefer REAL page-bottom Word footnotes when the compiled doc carries a Footnotes/Endnotes
+    # section keyed by [n] markers; fall back to the superscript-endnote render on any error.
+    try:
+        body, fmap, sections = _exam_pdf_parse(text)
+        if fmap:
+            return _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spacing)
+    except Exception:
+        pass
     d = docx.Document()
     # Apply the requested font/size/spacing to the Normal (body) style so body prose inherits it.
     if font or font_size or line_spacing:
@@ -9915,9 +10006,10 @@ def _exam_pdf_parse(doc):
         seg_end = markers[i + 1][0] if i + 1 < len(markers) else len(doc)
         content = doc[hend:seg_end].strip()
         if name in ('Footnotes', 'Endnotes'):
-            # a footnote entry is 'N. text'; text may wrap but must not swallow
-            # a later '---'/'##'/heading line
-            for fm in re.finditer(r'(?m)^\s*(\d+)[.)]\s+(.*(?:\n(?!\s*(?:\d+[.)]\s|#|-{3})).*)*)', content):
+            # a footnote entry is 'N. text', 'N) text' or '[N] text'; text may wrap but must not
+            # swallow a later '---'/'##'/heading line or the next footnote (any of those formats)
+            for fm in re.finditer(
+                    r'(?m)^\s*\[?(\d+)[\].)]\s+(.*(?:\n(?!\s*(?:\[?\d+[\].)]\s|#|-{3})).*)*)', content):
                 fmap[int(fm.group(1))] = re.sub(r'\s+', ' ', fm.group(2)).strip()
         else:
             sections.append((name, content))
