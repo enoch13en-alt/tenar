@@ -126,6 +126,13 @@ check(append_present("LEGAL_METHOD", "LEGAL_AUTHORITY_METHOD"),
 check("AUTHORITY LADDER" in LAM and "SATISFY THE THRESHOLDS" in LAM
       and "OUGHT" in LAM and "OVEREXTEND" in LAM,
       "LEGAL_AUTHORITY_METHOD lost a core rail (ladder / thresholds / ought-vs-is / overextension)")
+check("WHO OWES IT" in LAM and "NECESSARY vs SUFFICIENT" in LAM and "COMPETENCE vs EXERCISE" in LAM
+      and "INTERPRET vs SUPPLEMENT" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost a rail-E distinction (obligor / necessary-vs-sufficient / competence / interpret-vs-supplement)")
+check("SELF-AUDIT" in LAM and "BINDING, PERSUASIVE or merely EVIDENTIAL" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost the six-question self-audit")
+check("CUSTOM IS PROVISION-BY-PROVISION" in LAM,
+      "LEGAL_AUTHORITY_METHOD lost the custom-is-provision-by-provision nuance")
 
 # 10) Exam-firmness (anti-hedging) — wired into FACT_DISCIPLINE and the calibrator.
 EF = const("EXAM_FIRMNESS") or ""
