@@ -3448,7 +3448,7 @@ function toggleDocFullscreen(el) {
   // The white reading column occupies only the LEFT — it STOPS at the chat's edge (right:_DOCK_RESERVE),
   // so it does not take the whole screen and there is no white behind the chat. Darker, bolder text.
   el.style.cssText = "position:fixed;top:0;left:0;bottom:0;right:" + _DOCK_RESERVE + "px;z-index:11000;"
-    + "overflow:auto;margin:0;border:0;border-right:1px solid #d7dbe2;border-radius:0;"
+    + "height:100vh;max-height:100vh;overflow:auto;margin:0;border:0;border-right:1px solid #d7dbe2;border-radius:0;"
     + "background:#fff;color:#0c1016;font-family:Georgia,'Times New Roman',serif;line-height:1.85;"
     + "font-weight:500;padding:54px clamp(28px,5vw,90px) 64px clamp(28px,5vw,90px);";
   el.style.fontSize = fs + "px";
