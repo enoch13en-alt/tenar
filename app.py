@@ -9861,15 +9861,20 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     # Build /word/footnotes.xml (two separators + one footnote per referenced marker) and attach it.
     W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
     def _esc(s): return (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    hp = str(notes_pt * 2)
+    fn_pt = max(8, base_pt - 3)          # footnotes distinctly smaller than the body
+    hp = str(fn_pt * 2)                   # font size in half-points
+    # single line spacing, no space before/after — overrides any body line-spacing so notes are tight
+    ppr = ('<w:pPr><w:pStyle w:val="FootnoteText"/>'
+           '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>')
     fn = ['<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>',
           '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>']
     for fid in used:
         txt = _esc(re.sub(r"\s+", " ", fmap[fid]).strip())
-        fn.append('<w:footnote w:id="%d"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>'
-                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr>'
-                  '<w:footnoteRef/></w:r><w:r><w:rPr><w:sz w:val="%s"/></w:rPr>'
-                  '<w:t xml:space="preserve"> %s</w:t></w:r></w:p></w:footnote>' % (fid, hp, txt))
+        fn.append('<w:footnote w:id="%d"><w:p>%s'
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/>'
+                  '<w:sz w:val="%s"/></w:rPr><w:footnoteRef/></w:r>'
+                  '<w:r><w:rPr><w:sz w:val="%s"/></w:rPr>'
+                  '<w:t xml:space="preserve"> %s</w:t></w:r></w:p></w:footnote>' % (fid, ppr, hp, hp, txt))
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            '<w:footnotes xmlns:w="%s">%s</w:footnotes>' % (W, ''.join(fn))).encode('utf-8')
     part = Part(PackURI('/word/footnotes.xml'),
