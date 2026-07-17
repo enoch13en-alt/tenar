@@ -3615,7 +3615,7 @@ function wireDocSettings(box, docEl, doc, wordName, defaultTitle) {
     if (target >= 50) {                                // 2) length → reshape to the word target, one click
       const instruction = "fit to " + target + " words";
       if (msg) { msg.style.color = "#8b93a7"; msg.textContent = "reshaping to ~" + target + " words" + note + "…"; }
-      reshapeDoc(box, docEl, doc, wordName, defaultTitle, instruction);
+      reshapeDoc(box, docEl, doc, wordName, defaultTitle, instruction, true);   // replace THE document in place
     } else if (msg) {
       msg.style.color = "#7fdca0";
       msg.textContent = "✓ Font/size/spacing applied — they'll also appear in your Word/PDF export. (Set Words or Pages to resize length.)";
@@ -3762,7 +3762,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
 // "denser" / "tighten the intro") and the bot EXPANDS or CONDENSES the final document while
 // keeping the law verbatim, every citation and the conclusions. Streams the reshaped version
 // below (non-destructive — the original stays for comparison; the reshaped one gets its own bar).
-async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle, autoInstruction) {
+async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle, autoInstruction, replaceInPlace) {
   const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e", MARK = "=== WORDS ===";
   const prevP = barEl.parentNode.querySelector(".reshapePanel"); if (prevP) prevP.remove();
   const prevO = barEl.parentNode.querySelector(".fitOut"); if (prevO) prevO.remove();
@@ -3821,13 +3821,25 @@ async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle, autoInst
     if (meta.error) { rDoc.textContent = meta.error; go.disabled = false; go.textContent = "Reshape"; return; }
     const seg = (parts[0] || "").split(MARK);
     const reshaped = seg[0].trim(), wc = (seg[1] || "").trim();
+    go.disabled = false; go.textContent = "Reshape";
+    if (replaceInPlace) {
+      // Apply-from-settings: REPLACE the document in place so there's ONE document and any
+      // Word/PDF export gives the reshaped length — no exporting the original by mistake.
+      EXAM.doc = reshaped; try { saveExam(); } catch (e) {}
+      anchorEl.style.whiteSpace = "normal"; anchorEl.innerHTML = mdToHtml(reshaped);
+      panel.remove(); out.remove(); barEl.remove();
+      renderExportBar(anchorEl, reshaped, wordName, defaultTitle);
+      const nb = anchorEl.nextElementSibling;                     // put the count atop the rebuilt toolbar
+      if (wc && nb) nb.insertAdjacentHTML("afterbegin",
+        "<div style='font-size:12px;color:#6fcf97;margin-bottom:6px'>📏 " + esc(wc) + " — this is now THE document; ⬇ Word / PDF export exactly this.</div>");
+      return;
+    }
     rDoc.style.whiteSpace = "normal"; rDoc.innerHTML = mdToHtml(reshaped);
     // Put the word count in the HEADER, not as a separate element — the reading controls
     // (A−/A+, night, full screen, read aloud) must operate on the reshaped TEXT, so the export
     // bar is anchored on rDoc (same as the main document at the top), not on a count line.
     if (wc) { const h = out.querySelector("h4"); if (h) h.insertAdjacentHTML("beforeend",
       " <span style='font-size:12px;color:#6fcf97'>· 📏 " + esc(wc) + "</span>"); }
-    go.disabled = false; go.textContent = "Reshape";
     renderExportBar(rDoc, reshaped, wordName + " (reshaped)", defaultTitle);
   };
   go.onclick = run;
