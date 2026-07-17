@@ -3545,6 +3545,40 @@ function toggleDocFullscreen(el) {
     if (ev.key === "Escape" && el.classList.contains("docFS")) { stopRead(rd); toggleDocFullscreen(el); document.removeEventListener("keydown", esc); }
   });
 }
+// A copy of the top "📄 Document settings" panel for the FINAL-document toolbar, so Font / Size /
+// Spacing (→ Word/PDF export) and Words / footnotes (→ 🎚️ reshape target) can be set right here.
+// Uses CLASSES (not the top's IDs) and writes THROUGH to the top global inputs, which export and
+// reshape already read — one source of truth, no duplicate-ID clash across multiple toolbars.
+function docSettingsHTML() {
+  return "<details class='dsPanel' style='margin-top:8px;border:1px solid #2a3344;border-radius:6px;padding:6px 10px;color:#aab4c6;font-size:12px'>"
+    + "<summary style='cursor:pointer'>📄 Document settings <span style='color:#7a8296'>(font/size/spacing → export · words/footnotes → 🎚️ reshape)</span></summary>"
+    + "<div style='display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:center'>"
+    + "<label title='Essay, memorandum, report, or a concise exam answer.'>Type: <select class='dsType' style='width:auto;display:inline-block'>"
+    + "<option value='essay'>Essay</option><option value='memo'>Memorandum</option><option value='report'>Report</option>"
+    + "<option value='exam'>Exam answer (concise)</option><option value='notes'>Internal research notes</option>"
+    + "<option value='guide'>🧭 Research guide</option></select></label>"
+    + "<label title='Target word count for 🎚️ reshape.'>Words: <input type='number' class='dsWords' placeholder='none' min='100' step='50' style='width:74px;display:inline-block'></label>"
+    + "<label title='Whether footnotes count toward the limit.'><select class='dsFn' style='width:auto;display:inline-block'><option value='nocount'>footnotes NOT counted</option><option value='count'>footnotes counted</option></select></label>"
+    + "<label title='Approximate page limit.'>Pages: <input type='number' class='dsPages' placeholder='none' min='1' step='1' style='width:56px;display:inline-block'></label>"
+    + "<label title='Font for the exported Word/PDF document.'>Font: <select class='dsFont' style='width:auto;display:inline-block'>"
+    + "<option>Times New Roman</option><option>Arial</option><option>Calibri</option><option>Garamond</option><option>Georgia</option></select></label>"
+    + "<label title='Font size (points) for the exported document.'>Size: <select class='dsSize' style='width:auto;display:inline-block'>"
+    + "<option>11</option><option>12</option><option>13</option><option>14</option></select></label>"
+    + "<label title='Line spacing for the exported document.'>Spacing: <select class='dsSpacing' style='width:auto;display:inline-block'>"
+    + "<option value='1'>Single</option><option value='1.5'>1.5</option><option value='2'>Double</option></select></label>"
+    + "</div></details>";
+}
+function wireDocSettings(box) {
+  const panel = box.querySelector(".dsPanel"); if (!panel) return;
+  const map = [["dsType","examLen"],["dsWords","wordLimit"],["dsFn","fnCount"],["dsPages","pageLimit"],
+               ["dsFont","docFont"],["dsSize","docFontSize"],["dsSpacing","docSpacing"]];
+  map.forEach(([cls, gid]) => {
+    const el = panel.querySelector("." + cls), g = document.getElementById(gid);
+    if (!el || !g) return;
+    el.value = g.value;                               // init from the top panel (one source of truth)
+    el.onchange = () => { g.value = el.value; try { g.dispatchEvent(new Event("change")); } catch (e) {} };
+  });
+}
 function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const cv = coverDefaults();
   const box = document.createElement("div");
@@ -3602,11 +3636,12 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     + "<button class='btn mini alt bTheme' title='Switch the document between day (white) and night (dark) reading'>🌙 Night</button>"
     + "<button class='btn mini alt bFull' title='Full-screen focus — read the document large and centred; the 💬 pop-up chat still floats so you can engage with it critically'>⛶ Full screen</button>"
     + "</div>";
-  box.innerHTML = coverBlock + readCtl
+  box.innerHTML = coverBlock + readCtl + docSettingsHTML()
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
     + pdfBtn + fitBtn + casesBtn + finalBtn + evidenceBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
+  wireDocSettings(box);      // sync the duplicated 📄 Document settings to the top globals
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
   const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
   const fontStep = (delta) => {
