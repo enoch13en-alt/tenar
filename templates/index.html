@@ -3849,7 +3849,9 @@ async function findDocEvidence(bar, docEl, doc, wordName, defaultTitle, btn) {
 // link, confirm it's real & current, tick, and weave the chosen ones in.
 function mountEvidencePanel(host, items, onAdd) {
   if (!items || !items.length) {
-    host.innerHTML = "<span style='font-size:12px;color:#8b93a7'>No solid sourced evidence surfaced — better none than an unverified claim. Try a more specific search.</span>";
+    host.innerHTML = "<div style='font-size:12px;color:#8b93a7'>No sourced evidence surfaced for that search — better none than an unverified claim."
+      + "<div style='margin-top:4px'>If your scenario is a <b>hypothetical</b> (a made-up event), the web won't have it — search instead for the "
+      + "<b>real background</b>: the underlying science (e.g. <i>IPCC / WMO extreme-rainfall attribution</i>), comparable real events, or official data for the region.</div></div>";
     return;
   }
   host.innerHTML =
