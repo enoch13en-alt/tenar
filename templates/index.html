@@ -560,7 +560,7 @@
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
       </details>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → Deepen → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">⚡ Auto-run (skips your review)</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">⚡ Auto-run (skips your review)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -1590,7 +1590,7 @@ function mountDockWeave(ansEl, question, answer, sources, isFact) {
               de.innerHTML = mdToHtml(EXAM.doc);
               renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question || "").split('\n')[0].slice(0, 90));
             }
-            bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Injected into the final document — cited in its own style. Review it in Exam Coach (re-audit / re-Deepen if it was a material claim).</span>';
+            bar.innerHTML = '<span style="font-size:11px;color:#7ad0c0">✅ Injected into the final document — cited in its own style. Review it in Exam Coach (🔒 Final check if it was a material claim).</span>';
           } catch (e) { bar.innerHTML = "Error — try again."; }
         })();
         return;
@@ -2217,22 +2217,15 @@ async function finishPipeline() {
   if (b) { b.disabled = true; b.textContent = "④ Compiling…"; }
   try {
     await compileExam();
-    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before Deepen."; return; }
-    if (b) b.textContent = "⑤ Deepening…";
-    const deepBtn = $("#examDocWrap").querySelector(".bDeepen");
-    if (deepBtn) {
-      EXAM._autoFinalCheck = true;             // deepenDoc auto-runs the Final check when it finishes
-      deepBtn.click();
-      $("#examStatus").textContent = "🔬 Deepening, then auto-verifying the final document (audit + quote check + calibrate)…";
-    } else {
-      // no Deepen on this plan — run the Final check on the compiled document directly
-      const de = $("#examDoc"), bar = de && de.nextElementSibling;
-      const fBtn = bar && bar.querySelector(".bFinalChk");
-      if (bar && fBtn) {
-        $("#examStatus").textContent = "🔒 Auto-verifying the final document…";
-        try { await finalCheckDoc(bar, de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90), fBtn); } catch (e) {}
-      } else { $("#examStatus").textContent = "Compiled. (🔬 Deepen isn't included on your current plan.)"; }
-    }
+    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before the final check."; return; }
+    if (b) b.textContent = "⑤ Final check…";
+    // Deepen retired (works now carry their own counterarguments): compile → Final check directly.
+    const de = $("#examDoc"), bar = de && de.nextElementSibling;
+    const fBtn = bar && bar.querySelector(".bFinalChk");
+    if (bar && fBtn) {
+      $("#examStatus").textContent = "🔒 Auto-verifying the final document (audit + quote check + calibrate)…";
+      try { await finalCheckDoc(bar, de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90), fBtn); } catch (e) {}
+    } else { $("#examStatus").textContent = "Compiled."; }
   } finally {
     if (b) { b.disabled = false; b.textContent = "⚡ Auto-run (skips your review)"; }
   }
@@ -3576,14 +3569,15 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const pdfBtn = canPdf
     ? "<button class='btn mini gold bPdf' style='margin-left:6px'>⬇ PDF (with cover)</button>"
     : "<span style='margin-left:6px;font-size:11px;color:#8b93a7'>⬇ PDF (cover + footnotes) — <b style='color:#b9772a'>upgrade to unlock</b></span>";
-  const deepBtn = canPdf
-    ? "<button class='btn mini bDeepen' style='margin-left:6px' "
-      + "title='Steel-man the thesis, one comparator in depth, resolve the sharpest "
-      + "trade-offs — moves it toward the top band'>🔬 Deepen</button>"
-    : "";
   const fitBtn = "<button class='btn mini bFit' style='margin-left:6px' "
-      + "title='Condense this document to the word limit set in Exam Coach, "
-      + "preserving the argument and citations'>✂️ Fit to limit</button>";
+      + "title='Reshape the length / density: type a target — a word count (2000 words), "
+      + "a page count (3 pages), or a direction (denser, expand issue 2, tighten the intro) — "
+      + "and it expands or condenses while keeping the law verbatim, every citation, and the "
+      + "conclusions.'>🎚️ Fit / reshape</button>";
+  const injectBtn = "<button class='btn mini bInject' style='margin-left:6px' "
+      + "title='Inject a report / findings / verified facts into this final document — "
+      + "woven in at the right point and cited in the document&#39;s own style. Add a source "
+      + "if you have one.'>📥 Inject report</button>";
   const hasRunCases = EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length;
   const casesBtn = "<button class='btn mini bCases' style='margin-left:6px' title='"
       + (hasRunCases
@@ -3592,7 +3586,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       + "'>" + (hasRunCases ? "⚖️ Cases from run" : "⚖️ Include cases") + "</button>";
   const finalBtn = "<button class='btn mini bFinalChk' style='margin-left:6px' "
       + "title='Final check on the WHOLE document: re-audit authorities against the corpus, "
-      + "verbatim-quote check, and calibrate the language — catches anything Deepen re-introduced.'>🔒 Final check</button>";
+      + "verbatim-quote check, and calibrate the language — catches anything reshaping or an injection re-introduced.'>🔒 Final check</button>";
   const readCtl = "<div style='margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap'>"
     + "<span style='font-size:11px;color:#8b93a7'>Reading:</span>"
     + "<button class='btn mini bRead' style='background:#1f9d55;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(31,157,85,.35)' title='Read the essay aloud (body only — skips footnotes). Click again to pause / resume.'>🔊 Read aloud</button>"
@@ -3607,7 +3601,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   box.innerHTML = coverBlock + readCtl
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + deepBtn + fitBtn + casesBtn + finalBtn + "</div>";
+    + pdfBtn + fitBtn + casesBtn + finalBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
   const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
@@ -3668,10 +3662,10 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     } catch (err) { alert("PDF error: " + err); }
     e.target.textContent = "⬇ PDF (with cover)";
   };
-  const deepEl = box.querySelector(".bDeepen");
-  if (deepEl) deepEl.onclick = () => deepenDoc(box, doc, wordName, defaultTitle, deepEl);
   const fitEl = box.querySelector(".bFit");
-  if (fitEl) fitEl.onclick = () => fitDoc(box, doc, wordName, defaultTitle);
+  if (fitEl) fitEl.onclick = () => reshapeDoc(box, afterEl, doc, wordName, defaultTitle);
+  const injectEl = box.querySelector(".bInject");
+  if (injectEl) injectEl.onclick = () => injectReport(box, afterEl, doc, wordName, defaultTitle);
   const casesEl = box.querySelector(".bCases");
   if (casesEl) casesEl.onclick = () => (EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length)
     ? weaveRunCases(box, afterEl, doc, wordName, defaultTitle, casesEl)
@@ -3811,6 +3805,128 @@ async function fitDoc(anchorEl, doc, wordName, defaultTitle) {
     fDoc.insertAdjacentElement("afterend", cnt); tail = cnt;
   }
   renderExportBar(tail, fitted, wordName + " (fitted " + lim + "w)", defaultTitle);
+}
+
+// Re-enterable density control: type a target (2000 words / 3 pages / "expand issue 2" /
+// "denser" / "tighten the intro") and the bot EXPANDS or CONDENSES the final document while
+// keeping the law verbatim, every citation and the conclusions. Streams the reshaped version
+// below (non-destructive — the original stays for comparison; the reshaped one gets its own bar).
+async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle) {
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e", MARK = "=== WORDS ===";
+  const prevP = barEl.parentNode.querySelector(".reshapePanel"); if (prevP) prevP.remove();
+  const prevO = barEl.parentNode.querySelector(".fitOut"); if (prevO) prevO.remove();
+  const lim = parseInt(($("#wordLimit") || {}).value, 10) || 0;
+  const fnCount = (($("#fnCount") || {}).value === "count");
+  const panel = document.createElement("div");
+  panel.className = "reshapePanel";
+  panel.style.cssText = "margin-top:12px;border-top:1px solid #2a3344;padding-top:12px";
+  panel.innerHTML =
+    "<div style='font-size:12px;color:#aab4c6;margin-bottom:6px'>🎚️ <b>Fit / reshape</b> — how should it change? "
+    + "A length (<i>2000 words</i>, <i>3 pages</i>), or a direction (<i>denser</i>, <i>expand issue 2</i>, "
+    + "<i>tighten the intro</i>). Keeps the law verbatim, every citation and the conclusions.</div>"
+    + "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"
+    + "<input class='reshapeIn' placeholder='e.g. 2000 words · 3 pages · expand issue 2 · make it denser' "
+    + "value='" + (lim ? lim + " words" : "") + "' style='flex:1;min-width:220px;padding:6px;font-size:13px'>"
+    + "<button class='btn mini gold reshapeGo'>Reshape</button>"
+    + "<span style='font-size:11px;color:#8b93a7'>" + (fnCount ? "footnotes counted" : "footnotes not counted") + "</span>"
+    + "</div>";
+  barEl.insertAdjacentElement("afterend", panel);
+  const input = panel.querySelector(".reshapeIn"), go = panel.querySelector(".reshapeGo");
+  input.focus();
+  const run = async () => {
+    const instruction = input.value.trim();
+    if (!instruction) { input.focus(); return; }
+    const prevOut = panel.parentNode.querySelector(".fitOut"); if (prevOut) prevOut.remove();
+    go.disabled = true; go.textContent = "…";
+    const out = document.createElement("div");
+    out.className = "fitOut";
+    out.style.cssText = "margin-top:12px";
+    out.innerHTML = "<h4 style='margin:0 0 6px'>🎚️ Reshaped "
+      + "<span style='font-size:12px;color:#8b93a7'>(" + esc(instruction) + ")</span> "
+      + "<span class='rDot' style='color:#6fcf97;font-size:12px'>● reshaping…</span></h4>"
+      + "<div class='rDoc' style='white-space:pre-wrap'></div>";
+    panel.insertAdjacentElement("afterend", out);
+    const rDoc = out.querySelector(".rDoc"), rDot = out.querySelector(".rDot");
+    let buf = "", meta = {}, gotText = false; const t0 = Date.now();
+    const timer = setInterval(() => { if (!gotText) rDot.textContent = "● reshaping… " + Math.round((Date.now()-t0)/1000) + "s"; }, 1000);
+    try {
+      const resp = await fetch("/api/exam/reshape", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({text: doc, instruction, footnotes_count: fnCount})});
+      if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error || "request failed"); }
+      const reader = resp.body.getReader(), dec = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read(); if (done) break;
+        buf += dec.decode(value, {stream:true});
+        buf = buf.split(PING).join("");
+        const bodyTxt = buf.split(DELIM)[0].split(MARK)[0];
+        rDoc.textContent = bodyTxt;
+        if (!gotText && bodyTxt.trim()) { gotText = true; rDot.textContent = "● writing…"; }
+      }
+    } catch (e) { clearInterval(timer); if (rDot) rDot.remove(); rDoc.textContent = "Reshape error: " + e.message; go.disabled = false; go.textContent = "Reshape"; return; }
+    clearInterval(timer);
+    const parts = buf.split(DELIM);
+    try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
+    if (rDot) rDot.remove();
+    if (meta.error) { rDoc.textContent = meta.error; go.disabled = false; go.textContent = "Reshape"; return; }
+    const seg = (parts[0] || "").split(MARK);
+    const reshaped = seg[0].trim(), wc = (seg[1] || "").trim();
+    rDoc.style.whiteSpace = "normal"; rDoc.innerHTML = mdToHtml(reshaped);
+    let tail = rDoc;
+    if (wc) {
+      const cnt = document.createElement("div");
+      cnt.style.cssText = "margin-top:6px;font-size:12px;color:#6fcf97"; cnt.textContent = "📏 " + wc;
+      rDoc.insertAdjacentElement("afterend", cnt); tail = cnt;
+    }
+    go.disabled = false; go.textContent = "Reshape";
+    renderExportBar(tail, reshaped, wordName + " (reshaped)", defaultTitle);
+  };
+  go.onclick = run;
+  input.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
+}
+
+// Inject a report / findings / verified facts into the FINAL document at the final stage —
+// woven in at the logically correct point (or filling a 🔎 FILL gap it answers) and cited in
+// the document's own style. Reuses the document-inject endpoint; carries over only what the
+// text supports. Rebuilds the document in place with the injected report.
+async function injectReport(barEl, anchorEl, doc, wordName, defaultTitle) {
+  const prev = barEl.parentNode.querySelector(".injectPanel"); if (prev) prev.remove();
+  const panel = document.createElement("div");
+  panel.className = "injectPanel";
+  panel.style.cssText = "margin-top:12px;border-top:1px solid #2a3344;padding-top:12px";
+  panel.innerHTML =
+    "<div style='font-size:12px;color:#aab4c6;margin-bottom:6px'>📥 <b>Inject a report</b> into the final document — "
+    + "findings, verified facts, a note. It is woven in at the right point (or fills a 🔎 FILL gap it answers) and "
+    + "cited in the document&#39;s style; only what the text supports is carried over.</div>"
+    + "<textarea class='injIn' rows='4' placeholder='Paste the report / findings / verified fact here…' "
+    + "style='width:100%;padding:7px;font-size:13px;box-sizing:border-box'></textarea>"
+    + "<input class='injSrc' placeholder='Source (recommended) — e.g. reg 12, L.I. 2173; or a report title + date' "
+    + "style='width:100%;margin-top:5px;padding:6px;font-size:12px;box-sizing:border-box'>"
+    + "<div style='margin-top:6px;display:flex;gap:8px;align-items:center'>"
+    + "<button class='btn mini gold injGo'>Weave into document</button>"
+    + "<button class='btn mini alt injCancel'>Cancel</button>"
+    + "<span class='injMsg' style='font-size:11px;color:#8b93a7'></span></div>";
+  barEl.insertAdjacentElement("afterend", panel);
+  const ta = panel.querySelector(".injIn"), src = panel.querySelector(".injSrc"),
+        go = panel.querySelector(".injGo"), msg = panel.querySelector(".injMsg");
+  panel.querySelector(".injCancel").onclick = () => panel.remove();
+  ta.focus();
+  go.onclick = async () => {
+    const material = ta.value.trim();
+    if (!material) { ta.focus(); return; }
+    go.disabled = true; go.textContent = "Weaving…"; msg.style.color = "#8b93a7"; msg.textContent = "";
+    try {
+      const r = await (await fetch("/api/document/chat/add", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({document: doc, material, user_source: src.value.trim()})})).json();
+      if (r.error) { msg.style.color = "#e0a06f"; msg.textContent = r.error; go.disabled = false; go.textContent = "Weave into document"; return; }
+      const updated = r.document || doc;
+      EXAM.doc = updated; try { saveExam(); } catch (e) {}
+      anchorEl.style.whiteSpace = "normal";
+      anchorEl.innerHTML = mdToHtml(updated);
+      panel.remove();
+      barEl.remove();                                  // rebuild the toolbar against the injected doc
+      renderExportBar(anchorEl, updated, wordName, defaultTitle);
+    } catch (e) { msg.style.color = "#e0a06f"; msg.textContent = "Error: " + e; go.disabled = false; go.textContent = "Weave into document"; }
+  };
 }
 
 // ---- polish my draft ----

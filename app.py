@@ -6038,6 +6038,35 @@ FIT_INSTRUCTION = (
     "and total-including-footnotes words."
 )
 
+RESHAPE_INSTRUCTION = (
+    "RESHAPE THE DOCUMENT to the reader's instruction — EXPAND it for more depth, CONDENSE "
+    "it for less, or adjust the density of a NAMED part — WITHOUT changing the law, the "
+    "authorities, or the conclusions. Quality is fixed; only density moves.\n"
+    "- READ THE INSTRUCTION for the target: it may be a LENGTH ('2000 words', '3 pages', "
+    "'half as long'), a DIRECTION ('denser', 'expand the analysis', 'tighten the intro'), or "
+    "a NAMED part ('expand issue 2', 'shorten the background'). Apply it to the whole document "
+    "unless it names a part, in which case reshape THAT part and leave the rest untouched.\n"
+    "- WHEN EXPANDING, add depth, NOT new law from memory: draw out the reasoning, make the "
+    "implicit steps of the application explicit, develop the counterarguments and the response "
+    "to them, and spell out how each authority ALREADY CITED bears on the facts. NEVER "
+    "introduce a statute, case, section number, date or figure that is not already in the "
+    "document; if genuinely more law is needed, mark the exact spot with a '【FILL: what — where "
+    "to find it】' placeholder rather than inventing it.\n"
+    "- WHEN CONDENSING, cut redundancy, repetition, throat-clearing and padding — never a "
+    "distinct legal point, an authority, a counterargument, or a hedge. Tighten the prose; keep "
+    "the argument's force.\n"
+    "- KEEP THE LAW VERBATIM: every quoted provision stays word-for-word as given (with its "
+    "flags); every OSCOLA footnote is preserved and sequentially renumbered; every citation, "
+    "Table of Cases / Legislation and Bibliography entry stays accurate.\n"
+    "- PRESERVE the structure (Issue/Rule/Application/Conclusion, or the memo's headings), the "
+    "thesis, the counterarguments and the CONCLUSIONS. Reshaping density must not change any "
+    "result.\n"
+    "- If the instruction gives a WORD TARGET, land at or just under it (within ~2%); if it "
+    "gives no number, reshape by judgement to satisfy the direction. Output ONLY the reshaped "
+    "document (same format, headings, footnotes). Then on a new line output the marker "
+    "'=== WORDS ===' and a one-line count: body words, and total-including-footnotes words."
+)
+
 
 @app.route("/api/exam/fit", methods=["POST"])
 def api_exam_fit():
@@ -6109,6 +6138,93 @@ def api_exam_fit():
         except Exception as e:
             app.logger.exception("fit stream error")
             q.put(DELIM + json.dumps({"error": "The fit pass failed partway — please try again."}))
+        finally:
+            q.put(_DONE)
+
+    def generate():
+        threading.Thread(target=_worker, daemon=True).start()
+        while True:
+            try:
+                item = q.get(timeout=5)
+            except queue.Empty:
+                yield PING
+                continue
+            if item is _DONE:
+                break
+            yield item
+
+    return Response(stream_with_context(generate()), mimetype="text/plain",
+                    headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
+
+@app.route("/api/exam/reshape", methods=["POST"])
+def api_exam_reshape():
+    """Re-enterable density control: expand OR condense the final document per a free-form
+    instruction ('2000 words', '3 pages', 'expand issue 2', 'denser', 'tighten the intro')
+    while keeping the law verbatim, every authority, and the conclusions. Streams (heartbeated)."""
+    body = request.json or {}
+    text = (body.get("text") or "").strip()
+    instruction = (body.get("instruction") or "").strip()
+    fmt = body.get("format", "essay")
+    fn_count = bool(body.get("footnotes_count"))
+    if not text:
+        return jsonify({"error": "Nothing to reshape."}), 400
+    if not instruction:
+        return jsonify({"error": "Say how to reshape it — a length ('2000 words'), a direction "
+                                 "('denser', 'expand issue 2'), or a part to tighten."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+
+    fn_rule = ("If a word target is given, it INCLUDES footnotes — count body + footnote text "
+               "together toward it."
+               if fn_count else
+               "If a word target is given, it applies to the BODY TEXT ONLY — footnotes are not "
+               "counted; keep footnotes full.")
+    system = (WRITING_STYLE + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST
+              + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + KEEP_LAW_MARKERS + "\n\n" + RESHAPE_INSTRUCTION
+              + "\n\nFOOTNOTE RULE: " + fn_rule)
+    if FORMATS.get(fmt):
+        system = system + "\n\n" + FORMATS[fmt]
+    cached_sys = cached_system(system)
+    DELIM = "\x1e\x1eMETA\x1e\x1e"
+    PING = "\x1e\x1ePING\x1e\x1e"
+    messages = [{"role": "user", "content":
+                 "RESHAPE INSTRUCTION: " + instruction + "\n\nDOCUMENT TO RESHAPE:\n\n" + text}]
+
+    q = queue.Queue()
+    _DONE = object()
+
+    @copy_current_request_context
+    def _worker():
+        pieces, this_usd, total_usd = [], 0.0, None
+        try:
+            for _round in range(4):
+                with c.messages.stream(model=ANSWER_MODEL, max_tokens=16000,
+                                       thinking={"type": "adaptive"},
+                                       system=cached_sys, messages=messages) as s:
+                    for delta in s.text_stream:
+                        q.put(delta)
+                    resp = s.get_final_message()
+                cost = record_cost(resp, ANSWER_MODEL)
+                this_usd += cost.get("this_usd", 0) or 0
+                total_usd = cost.get("total_usd", total_usd)
+                pieces.append(_text_of(resp))
+                if getattr(resp, "stop_reason", None) != "max_tokens":
+                    break
+                messages.append({"role": "assistant", "content": resp.content})
+                messages.append({"role": "user", "content":
+                    "Continue EXACTLY where you stopped, mid-sentence if needed; "
+                    "do not repeat anything already written."})
+            q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd, 5),
+                                               "total_usd": total_usd}}))
+        except Exception as e:
+            app.logger.exception("reshape stream error")
+            q.put(DELIM + json.dumps({"error": "The reshape pass failed partway — please try again."}))
         finally:
             q.put(_DONE)
 
