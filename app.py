@@ -9862,7 +9862,10 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     if title:
         d.add_heading(title, level=0)
     used = []
-    mark_re = re.compile(r"(?<=\S)(\[\d{1,3}\])")
+    # In-text ref markers [n]: tolerate one space before the marker (OSCOLA puts it after the
+    # closing punctuation, and the model often adds a space) so it still becomes a real footnote
+    # instead of leaking as a literal '[n]' with its note dropped from the page bottom.
+    mark_re = re.compile(r"(?<=\S)[ \t]?(\[\d{1,3}\])")
 
     def add_fn_ref(p, fid):
         run = p.add_run()
@@ -9958,7 +9961,8 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     notes_pt = max(8, base_pt - 2)
     in_notes = False
     _note_head = re.compile(r"^(foot ?notes|end ?notes|bibliography|table of )", re.I)
-    _mark = re.compile(r"(?<=\S)(\[\d{1,3}\])")
+    # tolerate one space before the marker (see _docx_with_footnotes) so spaced [n] still superscripts
+    _mark = re.compile(r"(?<=\S)[ \t]?(\[\d{1,3}\])")
     for raw in text.split("\n"):
         line = raw.rstrip()
         if not line.strip():
