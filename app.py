@@ -7197,12 +7197,17 @@ def api_issue_cases():
                        (("Problem: " + context[:900] + "\n\n") if context else "")
                        + "Issue: " + issue + "\n\nIssue analysis — find cases that strengthen "
                        "THIS argument:\n" + answer[:6000]}])
-        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+        raw = _text_after_tools(resp) or _text_of(resp)
+        try:
+            return _first_json_obj(raw)
+        except Exception:
+            return {"cases": []}                 # model returned prose / nothing found → empty, not an error
     try:
         import gevent
         data = gevent.get_hub().threadpool.apply(_run)
     except Exception as e:
-        return jsonify({"error": str(e)[:140], "cases": []})
+        app.logger.exception("issue cases find error")
+        return jsonify({"error": "The web search didn't complete — please try again.", "cases": []})
     cases = data.get("cases") if isinstance(data, dict) else data
     if not isinstance(cases, list):
         cases = []
@@ -7528,19 +7533,24 @@ def api_document_evidence_find():
 
     def _run():
         resp, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=2800,
+            c, model=ANSWER_MODEL, max_tokens=4000,
             tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 10}],
             system=sys,
             messages=[{"role": "user", "content":
                        (("Search focus: " + query[:400] + "\n\n") if query else "")
                        + (("Problem: " + context[:900] + "\n\n") if context else "")
                        + "MEMORANDUM — find current-events evidence that strengthens it:\n" + document[:7000]}])
-        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+        raw = _text_after_tools(resp) or _text_of(resp)
+        try:
+            return _first_json_obj(raw)          # normal path: strict JSON
+        except Exception:
+            return {"evidence": []}              # model returned prose / found nothing → empty, not an error
     try:
         import gevent
         data = gevent.get_hub().threadpool.apply(_run)
     except Exception as e:
-        return jsonify({"error": str(e)[:140], "evidence": []})
+        app.logger.exception("evidence find error")
+        return jsonify({"error": "The web search didn't complete — please try again.", "evidence": []})
     ev = data.get("evidence") if isinstance(data, dict) else data
     if not isinstance(ev, list):
         ev = []
