@@ -865,12 +865,25 @@ function mdToHtml(raw){
   // Notes / back-matter (Footnotes or Endnotes, Bibliography, Tables) render SMALLER than the body;
   // in-text reference markers [n] (1–3 digits, attached to text — not a [2010] case year) SUPERSCRIPT.
   const noteHead = /^(foot ?notes|end ?notes|bibliography|table of )/i;
-  const supMark = (h) => inNotes ? h : h.replace(/([^\s\[])\[(\d{1,3})\]/g, '$1<sup>$2</sup>');
+  // A notes label ('Footnotes', 'Bibliography', 'Table of Cases') on its own line, even when the
+  // model emits it bold/plain instead of a '#' heading — it still opens the smaller notes zone.
+  const noteLabel = /^(foot ?notes|end ?notes|bibliography|table of (cases|legislation|statutes|authorities))\s*:?$/i;
+  // In-text reference markers [n] (1–3 digits) → superscript. Handle a marker glued to text,
+  // separated by one space, or several in a row ([1][2]). Leave 4-digit case years ([2015]) and
+  // line-leading footnote-list markers ('[1] Donoghue…') untouched.
+  const supMark = (h) => inNotes ? h : h.replace(/(\S)[ \t]?((?:\[\d{1,3}\])+)/g,
+    (m, pre, marks) => pre === '[' ? m : pre + marks.replace(/\[(\d{1,3})\]/g, '<sup>$1</sup>'));
   const nStyle = () => inNotes ? " style='font-size:.85em;color:#aab4c6'" : "";
   for (const ln of lines){
     const t = ln.trim();
     if (!t){ closeList(); continue; }
     if (/^([-*_]\s*){3,}$/.test(t)){ closeList(); html += "<hr class='ans-hr'>"; continue; }
+    // Notes label emitted as plain/bold text (not a '#' heading) — open the notes zone anyway.
+    const labelOnly = t.replace(/^[*_]+/,'').replace(/[*_]+$/,'').trim();
+    if (!inNotes && noteLabel.test(labelOnly)){
+      closeList(); inNotes = true;
+      html += "<h4 class='ans-h'>" + mdInline(labelOnly) + "</h4>"; continue;
+    }
     let m;
     if (m = t.match(/^(#{1,6})\s+(.*)/)){
       closeList();
@@ -3427,7 +3440,50 @@ let _barSeq = 0;
 // and you can engage with the document critically while it fills the screen.
 // Space reserved on the right for the (maximised) pop-up chat.
 const _DOCK_RESERVE = 470;
+// --- Read-aloud (free, browser-built-in speechSynthesis; no key, works offline) ---
+// Reads the BODY of the document: footnote markers (<sup>) and the collapsible law drawers are
+// stripped, and it stops before the back-matter (Footnotes / Bibliography / Tables) — you want the
+// argument read to you, not citation strings and page numbers.
+let _readOn = false;
+function docReadText(el) {
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll("sup, details, .lawdrop").forEach(n => n.remove());
+  let txt = clone.innerText || clone.textContent || "";
+  txt = txt.split(/\n\s*(?:foot ?notes|end ?notes|bibliography|table of )/i)[0];
+  return txt.replace(/[ \t]+/g, " ").trim();
+}
+function stopRead(btn) {
+  try { window.speechSynthesis.cancel(); } catch (e) {}
+  _readOn = false;
+  if (btn) btn.textContent = "🔊 Read";
+}
+function toggleRead(el, btn, rateSel) {
+  const synth = window.speechSynthesis;
+  if (!synth || !("SpeechSynthesisUtterance" in window)) { if (btn) btn.textContent = "🔊 n/a"; return; }
+  if (synth.paused) { synth.resume(); btn.textContent = "⏸ Pause"; return; }      // resume
+  if (_readOn && synth.speaking) { synth.pause(); btn.textContent = "▶︎ Resume"; return; }  // pause
+  const text = docReadText(el);
+  if (!text) return;
+  synth.cancel();
+  const rate = rateSel ? (parseFloat(rateSel.value) || 1) : 1;
+  // chunk into sentences — some engines cut off long single utterances
+  const chunks = text.match(/[^.!?\n]+[.!?]*["'’”)\]]*\s*/g) || [text];
+  let i = 0;
+  const speakNext = () => {
+    if (!_readOn || i >= chunks.length) { stopRead(btn); return; }
+    const u = new SpeechSynthesisUtterance(chunks[i++]);
+    u.rate = rate;
+    u.onend = speakNext;
+    u.onerror = () => stopRead(btn);
+    synth.speak(u);
+  };
+  _readOn = true;
+  btn.textContent = "⏸ Pause";
+  speakNext();
+}
 function toggleDocFullscreen(el) {
+  // leaving full screen (or re-entering) must never leave a voice reading on in the background
+  stopRead();
   if (el.classList.contains("docFS")) {
     el.classList.remove("docFS");
     el.style.cssText = el._prevCss || "";
@@ -3469,6 +3525,15 @@ function toggleDocFullscreen(el) {
     b.style.cssText = "background:#1c2330;color:#fff;border:none;border-radius:8px;padding:7px 11px;cursor:pointer;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.4)"; return b; };
   const dn = mk("A−", "Smaller text"), up = mk("A+", "Larger text"),
         th = mk(night ? "☀️ Day" : "🌙 Night", "Day / night reading"), ex = mk("✕ Exit", "Exit full screen (Esc)");
+  const rd = mk("🔊 Read", "Read the essay aloud (body only — skips footnotes). Click again to pause / resume.");
+  const rate = document.createElement("select");
+  rate.title = "Reading speed";
+  rate.style.cssText = "background:#1c2330;color:#fff;border:none;border-radius:8px;padding:7px 6px;cursor:pointer;font-size:13px";
+  [["0.8","0.8×"],["1","1×"],["1.15","1.15×"],["1.3","1.3×"],["1.5","1.5×"]].forEach(([v,t]) => {
+    const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === "1") o.selected = true; rate.appendChild(o); });
+  rd.onclick = () => toggleRead(el, rd, rate);
+  // changing speed mid-read restarts from the top at the new rate (the engine can't re-rate a live utterance)
+  rate.onchange = () => { if (_readOn) { stopRead(rd); toggleRead(el, rd, rate); } };
   const step = (delta) => { let c = parseFloat(el.style.fontSize) || 18;
     let n = Math.max(13, Math.min(40, Math.round((c + delta) * 10) / 10));
     el.style.fontSize = n + "px"; localStorage.setItem("docFontPx", n); };
@@ -3482,9 +3547,9 @@ function toggleDocFullscreen(el) {
     el.style.borderRight = "1px solid " + (nn ? "#2a3344" : "#d7dbe2");
     th.textContent = nn ? "☀️ Day" : "🌙 Night";
   };
-  bar.append(dn, up, th, ex); document.body.appendChild(bar);
+  bar.append(rd, rate, dn, up, th, ex); document.body.appendChild(bar);
   document.addEventListener("keydown", function esc(ev){
-    if (ev.key === "Escape" && el.classList.contains("docFS")) { toggleDocFullscreen(el); document.removeEventListener("keydown", esc); }
+    if (ev.key === "Escape" && el.classList.contains("docFS")) { stopRead(rd); toggleDocFullscreen(el); document.removeEventListener("keydown", esc); }
   });
 }
 function renderExportBar(afterEl, doc, wordName, defaultTitle) {
@@ -3530,6 +3595,10 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       + "verbatim-quote check, and calibrate the language — catches anything Deepen re-introduced.'>🔒 Final check</button>";
   const readCtl = "<div style='margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap'>"
     + "<span style='font-size:11px;color:#8b93a7'>Reading:</span>"
+    + "<button class='btn mini bRead' style='background:#1f9d55;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(31,157,85,.35)' title='Read the essay aloud (body only — skips footnotes). Click again to pause / resume.'>🔊 Read aloud</button>"
+    + "<select class='bRate' title='Reading speed' style='font-size:12px;padding:3px 4px'>"
+    + "<option value='0.8'>0.8×</option><option value='1' selected>1×</option>"
+    + "<option value='1.15'>1.15×</option><option value='1.3'>1.3×</option><option value='1.5'>1.5×</option></select>"
     + "<button class='btn mini alt bFontDn' title='Smaller text'>A−</button>"
     + "<button class='btn mini alt bFontUp' title='Larger text'>A+</button>"
     + "<button class='btn mini alt bTheme' title='Switch the document between day (white) and night (dark) reading'>🌙 Night</button>"
@@ -3549,6 +3618,10 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   };
   box.querySelector(".bFontDn").onclick = () => fontStep(-1);
   box.querySelector(".bFontUp").onclick = () => fontStep(1);
+  // Read the essay aloud (free browser voice). Works in this inline view AND full screen.
+  const readBtn = box.querySelector(".bRead"), rateSel = box.querySelector(".bRate");
+  if (readBtn) readBtn.onclick = () => toggleRead(afterEl, readBtn, rateSel);
+  if (rateSel) rateSel.onchange = () => { if (_readOn) { stopRead(readBtn); toggleRead(afterEl, readBtn, rateSel); } };
   // day / night reading theme for the document (persisted)
   const applyDocTheme = () => {
     const night = localStorage.getItem("docTheme") === "night";
