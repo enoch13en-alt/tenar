@@ -3674,6 +3674,11 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const finalBtn = "<button class='btn mini bFinalChk' style='margin-left:6px' "
       + "title='Final check on the WHOLE document: re-audit authorities against the corpus, "
       + "verbatim-quote check, and calibrate the language — catches anything reshaping or an injection re-introduced.'>🔒 Final check</button>";
+  const reviewBtn = "<button class='btn mini bReview' style='margin-left:6px' "
+      + "title='Extensive WEB accuracy &amp; currency review — a second opinion that verifies, as of "
+      + "today, that your law is still good, your facts are current, and no recent development is "
+      + "missed, then FLAGS issues to address (it does not rewrite). Like sending your work out for "
+      + "suggestions, but grounded in real sources.'>🔎 Accuracy review</button>";
   const readCtl = "<div style='margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap'>"
     + "<span style='font-size:11px;color:#8b93a7'>Reading:</span>"
     + "<button class='btn mini bRead' style='background:#1f9d55;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(31,157,85,.35)' title='Read the essay aloud (body only — skips footnotes). Click again to pause / resume.'>🔊 Read aloud</button>"
@@ -3688,7 +3693,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   box.innerHTML = coverBlock + readCtl + docSettingsHTML()
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + fitBtn + casesBtn + finalBtn + evidenceBtn + injectBtn + "</div>";
+    + pdfBtn + fitBtn + casesBtn + finalBtn + reviewBtn + evidenceBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   wireDocSettings(box, afterEl, doc, wordName, defaultTitle);   // sync to globals, live typography, + ✓ Apply
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
@@ -3756,6 +3761,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   if (injectEl) injectEl.onclick = () => injectReport(box, afterEl, doc, wordName, defaultTitle);
   const evEl = box.querySelector(".bEvidence");
   if (evEl) evEl.onclick = () => findDocEvidence(box, afterEl, doc, wordName, defaultTitle, evEl);
+  const reviewEl = box.querySelector(".bReview");
+  if (reviewEl) reviewEl.onclick = () => reviewDoc(box, afterEl, doc, wordName, defaultTitle, reviewEl);
   const casesEl = box.querySelector(".bCases");
   if (casesEl) casesEl.onclick = () => (EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length)
     ? weaveRunCases(box, afterEl, doc, wordName, defaultTitle, casesEl)
@@ -3973,6 +3980,48 @@ function mountEvidencePanel(host, items, onAdd) {
     if (!chosen.length) { host.querySelector(".evNote").textContent = "Tick at least one verified item first."; return; }
     onAdd(chosen, host);
   };
+}
+
+// 🔎 Extensive WEB accuracy & currency review — the "second opinion" that verifies, as of today,
+// that the law is still good, the facts are current, and no recent development is missed, then FLAGS
+// issues to address (read-only; it does not rewrite). You then fix them with inject / reshape / edit.
+async function reviewDoc(bar, docEl, doc, wordName, defaultTitle, btn) {
+  let panel = bar.querySelector(".docReviewOut");
+  if (!panel) { panel = document.createElement("div"); panel.className = "docReviewOut"; panel.style.marginTop = "8px"; bar.appendChild(panel); }
+  const lbl = btn.textContent; btn.disabled = true; btn.textContent = "🔎 Reviewing…";
+  panel.innerHTML = "<span style='font-size:11px;color:#8b93a7'>running an extensive web accuracy &amp; currency review (as of today)… (30–120s)</span>";
+  try {
+    const r = await (await fetch("/api/document/review", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({document: doc, question: EXAM.question || ""})})).json();
+    if (r.error) panel.innerHTML = "⚠️ " + esc(r.error);
+    else mountReviewPanel(panel, r.flags || [], r.verdict || "");
+  } catch (e) { panel.innerHTML = "Error — try again."; }
+  btn.disabled = false; btn.textContent = lbl;
+}
+// Render the review as a flagged to-do list — high severity first, source links, and a fix action.
+function mountReviewPanel(host, flags, verdict) {
+  const sevColor = {high:"#e06f6f", medium:"#e0b050", low:"#6fb0e0"};
+  const catIcon = {"outdated law":"⚠️","factual currency":"📅","missing development":"🆕","reasoning":"🧩","citation":"🔖","overstatement":"📏"};
+  let h = "<div style='font-size:12px;color:#8fb4ff;font-weight:600;margin:6px 0 4px'>🔎 Accuracy &amp; currency review — web, as of today</div>";
+  if (verdict) h += "<div style='font-size:12px;color:#cdd5e6;margin-bottom:6px'>" + esc(verdict) + "</div>";
+  if (!flags.length) {
+    h += "<div style='font-size:12px;color:#7fdca0'>✅ No issues flagged — the work holds up on the checks run. (Still confirm anything time-sensitive independently.)</div>";
+    host.innerHTML = h; return;
+  }
+  h += "<div style='font-size:11px;color:#8b93a7;margin-bottom:4px'>" + flags.length + " issue(s) to address — high severity first:</div>";
+  h += flags.map(f => {
+    const sc = sevColor[(f.severity||"").toLowerCase()] || "#8b93a7";
+    return "<div style='border-left:3px solid " + sc + ";padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px'>"
+      + "<div><span style='color:" + sc + ";font-weight:700;text-transform:uppercase;font-size:10px'>" + esc(f.severity||"") + "</span> "
+      + (catIcon[f.category] || "•") + " <b>" + esc(f.category||"") + "</b>"
+      + (f.confirmed === false ? " <span style='color:#e0b050;font-size:10px'>⚠ verify manually</span>" : "") + "</div>"
+      + (f.locus ? "<div style='color:#aab4c6;margin-top:2px'>where: " + esc(f.locus) + "</div>" : "")
+      + (f.issue ? "<div style='color:#cdd5e6;margin-top:2px'>⚠ " + esc(f.issue) + "</div>" : "")
+      + (f.action ? "<div style='color:#9fd0b0;margin-top:2px'>→ " + esc(f.action) + "</div>" : "")
+      + (f.url ? "<div style='margin-top:2px'><a href='" + esc(f.url) + "' target='_blank' rel='noopener' style='font-size:11px'>🔗 " + esc(f.source||"source") + "</a></div>" : "")
+      + "</div>";
+  }).join("");
+  host.innerHTML = h;
 }
 
 // ---- polish my draft ----

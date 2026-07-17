@@ -7615,6 +7615,91 @@ def api_document_evidence_add():
     return jsonify({"document": updated or document, "added": len(items)})
 
 
+@app.route("/api/document/review", methods=["POST"])
+def api_document_review():
+    """Extensive WEB-GROUNDED accuracy & currency review of the FINAL document — a rigorous external
+    'second opinion' (the way a student pastes work into another AI for suggestions). Verifies, as of
+    today, that cited law is still good, factual/current claims hold, and no recent development is
+    missed; applies a critical reasoning lens; then FLAGS issues to address. It does NOT rewrite.
+    Metered as one question (uses web search)."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(document) < 40:
+        return jsonify({"error": "Compile the document first.", "flags": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "flags": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "flags": []}), 402
+    consume("questions")
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+    except Exception:
+        today = "today"
+    sys = (
+        "You are a meticulous EXTERNAL REVIEWER giving a final second opinion on a finished legal "
+        "document before submission — think rigorous examiner AND opposing counsel. VERIFY ITS "
+        "ACCURACY AND CURRENCY AS OF TODAY (" + today + ") and FLAG every issue the author should "
+        "address. You do NOT rewrite the document.\n"
+        "USE WEB SEARCH EXTENSIVELY to check, as of today:\n"
+        "1. CURRENCY OF LAW — is each cited statute / regulation / constitutional provision / case "
+        "still GOOD LAW: in force, not repealed, amended, superseded or overruled? Flag any authority "
+        "that has changed, stating WHAT changed, with the source.\n"
+        "2. FACTUAL / CURRENT-EVENTS ACCURACY — are the factual and current claims correct and up to "
+        "date? Flag anything outdated, wrong, or overtaken by events.\n"
+        "3. MISSING RECENT DEVELOPMENTS — is there a recent case, statute, amendment, policy or event "
+        "(as of today) that bears on the analysis and should be addressed or at least acknowledged?\n"
+        "Also apply a rigorous LEGAL-REASONING lens (no web needed): overstatements, unsupported or "
+        "over-read conclusions, gaps or weak steps in the argument, misapplied authority, internal "
+        "inconsistencies, and citation errors (wrong name / section / year / misattribution).\n"
+        "DISCIPLINE — this must be trustworthy, not noise:\n"
+        "- GROUND every currency/factual flag in a REAL web source with a URL you actually saw; NEVER "
+        "invent an overruling, repeal, amendment or 'development'. If you CANNOT confirm a change, do "
+        "NOT assert one — either state the authority APPEARS current, or flag it 'could not confirm "
+        "currency — verify manually' with confirmed=false, clearly separating verified problems from "
+        "unverified ones.\n"
+        "- Do NOT manufacture problems to look thorough: if a point is sound, do not flag it. Flag "
+        "real, actionable issues only.\n"
+        "- Be specific: name or quote the EXACT locus in the document each flag concerns.\n"
+        "Return STRICT JSON {\"verdict\":<one-line overall assessment, e.g. 'Broadly sound; 2 currency "
+        "checks and 1 citation fix needed'>, \"flags\":[{\"category\":\"outdated law|factual currency|"
+        "missing development|reasoning|citation|overstatement\", \"severity\":\"high|medium|low\", "
+        "\"locus\":<the section, heading or quoted phrase it concerns>, \"issue\":<the concern, "
+        "precisely>, \"action\":<the concrete step to fix it>, \"confirmed\":<true if verified against "
+        "a source, false if it needs manual confirmation>, \"url\":<source URL you saw, if any>, "
+        "\"source\":<short source name, if any>}]}. Order flags HIGH severity first. Return an EMPTY "
+        "flags list (with a clean verdict) if the work genuinely holds up. No prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=5000,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 18}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Assignment / question: " + context[:900] + "\n\n") if context else "")
+                       + "DOCUMENT TO REVIEW (verify accuracy & currency as of today; flag issues to "
+                       "address):\n\n" + document[:60000]}])
+        raw = _text_after_tools(resp) or _text_of(resp)
+        try:
+            return _first_json_obj(raw)
+        except Exception:
+            return {"flags": [], "verdict": (raw[:280] if raw else "Review returned no structured output — please try again.")}
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        app.logger.exception("document review error")
+        return jsonify({"error": "The review didn't complete — please try again.", "flags": []})
+    flags = data.get("flags") if isinstance(data, dict) else None
+    if not isinstance(flags, list):
+        flags = []
+    verdict = (data.get("verdict") if isinstance(data, dict) else "") or ""
+    return jsonify({"flags": flags, "verdict": verdict})
+
+
 @app.route("/api/document/chat/add", methods=["POST"])
 def api_document_chat_add():
     """Inject a student-CURATED claim or piece of information (from the corner chat) DIRECTLY into
