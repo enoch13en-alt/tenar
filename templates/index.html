@@ -3568,7 +3568,7 @@ function docSettingsHTML() {
     + "<option value='1'>Single</option><option value='1.5'>1.5</option><option value='2'>Double</option></select></label>"
     + "</div></details>";
 }
-function wireDocSettings(box) {
+function wireDocSettings(box, docEl) {
   const panel = box.querySelector(".dsPanel"); if (!panel) return;
   const map = [["dsType","examLen"],["dsWords","wordLimit"],["dsFn","fnCount"],["dsPages","pageLimit"],
                ["dsFont","docFont"],["dsSize","docFontSize"],["dsSpacing","docSpacing"]];
@@ -3578,6 +3578,20 @@ function wireDocSettings(box) {
     el.value = g.value;                               // init from the top panel (one source of truth)
     el.onchange = () => { g.value = el.value; try { g.dispatchEvent(new Event("change")); } catch (e) {} };
   });
+  // Make Font / Size / Spacing VISIBLE on the on-screen document immediately — not only on export.
+  if (docEl) {
+    const fontEl = panel.querySelector(".dsFont"), sizeEl = panel.querySelector(".dsSize"), spEl = panel.querySelector(".dsSpacing");
+    const applyFont = () => { docEl.style.fontFamily = fontEl.value + ", Georgia, serif"; };
+    const applySpacing = () => { docEl.style.lineHeight = spEl.value; };
+    const applySize = () => {                          // pt → px preview; keep A−/A+ (docFontPx) in sync
+      const px = Math.round((parseFloat(sizeEl.value) || 12) * 1.34 * 10) / 10;
+      docEl.style.fontSize = px + "px"; localStorage.setItem("docFontPx", px);
+    };
+    applyFont(); applySpacing();                       // reflect the current font/spacing on render (size stays with A−/A+)
+    fontEl.addEventListener("change", applyFont);
+    spEl.addEventListener("change", applySpacing);
+    sizeEl.addEventListener("change", applySize);      // size updates the on-screen text the moment you pick one
+  }
 }
 function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const cv = coverDefaults();
@@ -3641,7 +3655,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
     + pdfBtn + fitBtn + casesBtn + finalBtn + evidenceBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
-  wireDocSettings(box);      // sync the duplicated 📄 Document settings to the top globals
+  wireDocSettings(box, afterEl);   // sync to globals AND live-apply font/size/spacing to the on-screen doc
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
   const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
   const fontStep = (delta) => {
