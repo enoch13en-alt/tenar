@@ -3602,9 +3602,19 @@ function wireDocSettings(box, docEl, doc, wordName, defaultTitle) {
     applyFont(); applySpacing(); applySize();          // 1) typography → on-screen + export
     const words = parseInt(panel.querySelector(".dsWords").value, 10) || 0;
     const pages = parseInt(panel.querySelector(".dsPages").value, 10) || 0;
-    if (words >= 50 || pages >= 1) {                   // 2) length → reshape to the target, one click
-      const instruction = words >= 50 ? ("fit to " + words + " words") : ("fit to " + pages + " pages");
-      if (msg) { msg.style.color = "#8b93a7"; msg.textContent = "reshaping to " + instruction.replace("fit to ", "") + "…"; }
+    let target = words, note = "";
+    // A page target is meaningless to the reshaper on its own — convert PAGES → a concrete WORD
+    // count using spacing (12pt baseline) AND the chosen font size, so it has a target it can hit.
+    if (!target && pages) {
+      const sp = parseFloat(spEl.value) || 1.5, sz = parseFloat(sizeEl.value) || 12;
+      let wpp = sp >= 2 ? 280 : sp >= 1.5 ? 350 : 500; // words/page at 12pt by spacing (matches backend)
+      wpp = wpp * Math.pow(12 / sz, 2);                // fewer words/page at larger font sizes
+      target = Math.max(50, Math.round(pages * wpp / 50) * 50);
+      note = " (≈ " + pages + " page" + (pages > 1 ? "s" : "") + " at " + sz + "pt / " + spEl.value + " spacing — approximate; check the PDF and nudge)";
+    }
+    if (target >= 50) {                                // 2) length → reshape to the word target, one click
+      const instruction = "fit to " + target + " words";
+      if (msg) { msg.style.color = "#8b93a7"; msg.textContent = "reshaping to ~" + target + " words" + note + "…"; }
       reshapeDoc(box, docEl, doc, wordName, defaultTitle, instruction);
     } else if (msg) {
       msg.style.color = "#7fdca0";
