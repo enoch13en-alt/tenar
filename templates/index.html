@@ -3744,14 +3744,13 @@ async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle) {
     const seg = (parts[0] || "").split(MARK);
     const reshaped = seg[0].trim(), wc = (seg[1] || "").trim();
     rDoc.style.whiteSpace = "normal"; rDoc.innerHTML = mdToHtml(reshaped);
-    let tail = rDoc;
-    if (wc) {
-      const cnt = document.createElement("div");
-      cnt.style.cssText = "margin-top:6px;font-size:12px;color:#6fcf97"; cnt.textContent = "📏 " + wc;
-      rDoc.insertAdjacentElement("afterend", cnt); tail = cnt;
-    }
+    // Put the word count in the HEADER, not as a separate element — the reading controls
+    // (A−/A+, night, full screen, read aloud) must operate on the reshaped TEXT, so the export
+    // bar is anchored on rDoc (same as the main document at the top), not on a count line.
+    if (wc) { const h = out.querySelector("h4"); if (h) h.insertAdjacentHTML("beforeend",
+      " <span style='font-size:12px;color:#6fcf97'>· 📏 " + esc(wc) + "</span>"); }
     go.disabled = false; go.textContent = "Reshape";
-    renderExportBar(tail, reshaped, wordName + " (reshaped)", defaultTitle);
+    renderExportBar(rDoc, reshaped, wordName + " (reshaped)", defaultTitle);
   };
   go.onclick = run;
   input.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
