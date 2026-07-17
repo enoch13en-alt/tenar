@@ -7479,6 +7479,122 @@ def api_document_cases_add():
     return jsonify({"document": updated or document, "added": len(cases)})
 
 
+@app.route("/api/document/evidence/find", methods=["POST"])
+def api_document_evidence_find():
+    """Web-search for REAL, sourced CURRENT-EVENTS EVIDENCE that would strengthen the memorandum —
+    official statements, data, reports, scientific findings (e.g. NADMO / hydrological updates,
+    IPCC / WMO climate-attribution). Returned as CANDIDATES for the student to verify and SELECT;
+    NOTHING enters the corpus. Metered as one question (uses web search)."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    query = (body.get("query") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(document) < 40 and len(query) < 3:
+        return jsonify({"error": "Compile the document first, or type what evidence to look for.",
+                        "evidence": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "evidence": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "evidence": []}), 402
+    consume("questions")
+    sys = (
+        "You find REAL, verifiable CURRENT-EVENTS EVIDENCE that would strengthen the memorandum "
+        "given — what an examiner means by 'recent events and available evidence'. This is "
+        "FACTUAL / EMPIRICAL / SCIENTIFIC material, NOT case law: official statements and press "
+        "releases (a national disaster agency, hydrological authority, water/river-basin authority, "
+        "a government ministry), data (rainfall, flood extent, satellite mapping), reports and "
+        "scientific findings (e.g. IPCC, WMO, regional climate assessments), and reputable news of "
+        "the specific events in issue.\n"
+        "USE WEB SEARCH to ground EVERY item in a REAL, verifiable source with a URL you actually "
+        "saw in results — this is critical: NEVER invent a statement, figure, date, body, report or "
+        "finding, and never reconstruct one from memory; a fabricated fact is the worst error. "
+        "Follow the user's search focus if given; otherwise infer the memo's real-world subject.\n"
+        "EACH ITEM IS EVIDENCE / CONTEXT, NOT LAW: state it SOURCE-RELATIVELY ('on X's record, as "
+        "of [date], …') and NO WIDER than the source shows; carry the date; never convert it into a "
+        "proposition of law or a bald universal claim. RELEVANCE IS STRICT: an item earns its place "
+        "ONLY if it bears directly on THIS memo's facts or an argument in it — an examiner's two "
+        "typical needs are (a) evidence of the specific events, and (b) scientific attribution "
+        "explaining WHY such events are becoming more frequent; match to what the memo argues. "
+        "Return STRICT JSON {\"evidence\":[{\"claim\":<the factual point, stated source-relatively "
+        "with its date>, \"source\":<the issuing body / publication>, \"date\":<date of the "
+        "statement/report>, \"url\":<a source URL you actually saw>, \"strengthens\":<the specific "
+        "part of the memo it reinforces>, \"woven\":<a READY-TO-INSERT one/two-sentence, cited, "
+        "source-relative statement applying this evidence at that point — the exact text to be "
+        "woven, worked out NOW>, \"kind\":<'evidence'|'data'|'report'>}]}. Return at most 6, most "
+        "on-point first; return an EMPTY list rather than any doubtful or unverifiable item. No "
+        "prose, no fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=2800,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 10}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Search focus: " + query[:400] + "\n\n") if query else "")
+                       + (("Problem: " + context[:900] + "\n\n") if context else "")
+                       + "MEMORANDUM — find current-events evidence that strengthens it:\n" + document[:7000]}])
+        return _first_json_obj(_text_after_tools(resp) or _text_of(resp))
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        return jsonify({"error": str(e)[:140], "evidence": []})
+    ev = data.get("evidence") if isinstance(data, dict) else data
+    if not isinstance(ev, list):
+        ev = []
+    return jsonify({"evidence": ev[:6]})
+
+
+@app.route("/api/document/evidence/add", methods=["POST"])
+def api_document_evidence_add():
+    """Weave student-SELECTED, web-verified current-events evidence into the FINAL document — each
+    cited as CONTEXT/evidence (source-relative, NOT law), placed at the right point, OSCOLA footnote
+    renumbering where used. Nothing enters the corpus. Metered as one question."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    items = body.get("evidence") or []
+    if not document or not isinstance(items, list) or not items:
+        return jsonify({"error": "Need the document and at least one selected item."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You weave student-SELECTED, web-verified CURRENT-EVENTS EVIDENCE into a FINISHED legal "
+        "memorandum. Each item carries a ready, source-relative 'woven' sentence and its source. "
+        "Your job is PLACEMENT, not re-argument: insert each at the logically correct point (the "
+        "passage it strengthens — evidence of the events near the factual/analysis part; scientific "
+        "attribution near the transition into the recommendations), adjusting ONLY the connective "
+        "words needed to read naturally in flow.\n"
+        "- EVIDENCE IS CONTEXT, NOT LAW: keep it SOURCE-RELATIVE ('according to X, as of [date], …') "
+        "and NO WIDER than stated; never convert it into a proposition of law or a universal claim.\n"
+        "- CITE THE SOURCE in the document's OWN style: if it uses OSCOLA FOOTNOTES, add each source "
+        "as a NEW footnote at the inserted sentence and RENUMBER the following footnotes; add it to "
+        "any Bibliography / sources list the document keeps. Reproduce each source reference EXACTLY "
+        "as given.\n"
+        "- Do NOT overstate, dramatise or generalise; keep each to its one/two-sentence point. If an "
+        "item has no natural home, leave it out rather than force it. PRESERVE everything else — the "
+        "analysis, authorities, structure, headings and the CONCLUSIONS — VERBATIM except for the "
+        "inserted sentence(s) and the footnote renumbering. Return ONLY the updated document text — "
+        "no preamble, no notes.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "FINAL DOCUMENT:\n" + document
+                       + "\n\nSELECTED EVIDENCE TO PLACE (each with its ready source-relative "
+                       "'woven' sentence and source):\n" + json.dumps(items)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"document": updated or document, "added": len(items)})
+
+
 @app.route("/api/document/chat/add", methods=["POST"])
 def api_document_chat_add():
     """Inject a student-CURATED claim or piece of information (from the corner chat) DIRECTLY into

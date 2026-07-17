@@ -3578,6 +3578,10 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       + "title='Inject a report / findings / verified facts into this final document — "
       + "woven in at the right point and cited in the document&#39;s own style. Add a source "
       + "if you have one.'>📥 Inject report</button>";
+  const evidenceBtn = "<button class='btn mini bEvidence' style='margin-left:6px' "
+      + "title='Search the WEB for recent events, official statements, data or scientific findings "
+      + "(e.g. IPCC / WMO) that strengthen this memo. Nothing is saved to your corpus — you get a "
+      + "list and tick what to weave in, cited as context.'>🌐 Find evidence</button>";
   const hasRunCases = EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length;
   const casesBtn = "<button class='btn mini bCases' style='margin-left:6px' title='"
       + (hasRunCases
@@ -3601,7 +3605,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   box.innerHTML = coverBlock + readCtl
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + fitBtn + casesBtn + finalBtn + injectBtn + "</div>";
+    + pdfBtn + fitBtn + casesBtn + finalBtn + evidenceBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
   const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
@@ -3666,6 +3670,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   if (fitEl) fitEl.onclick = () => reshapeDoc(box, afterEl, doc, wordName, defaultTitle);
   const injectEl = box.querySelector(".bInject");
   if (injectEl) injectEl.onclick = () => injectReport(box, afterEl, doc, wordName, defaultTitle);
+  const evEl = box.querySelector(".bEvidence");
+  if (evEl) evEl.onclick = () => findDocEvidence(box, afterEl, doc, wordName, defaultTitle, evEl);
   const casesEl = box.querySelector(".bCases");
   if (casesEl) casesEl.onclick = () => (EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length)
     ? weaveRunCases(box, afterEl, doc, wordName, defaultTitle, casesEl)
@@ -3793,6 +3799,77 @@ async function injectReport(barEl, anchorEl, doc, wordName, defaultTitle) {
       barEl.remove();                                  // rebuild the toolbar against the injected doc
       renderExportBar(anchorEl, updated, wordName, defaultTitle);
     } catch (e) { msg.style.color = "#e0a06f"; msg.textContent = "Error: " + e; go.disabled = false; go.textContent = "Weave into document"; }
+  };
+}
+
+// 🌐 Find current-events EVIDENCE on the web (NOT into the corpus): returns a selectable list of
+// real, sourced findings; you tick what you want and it's woven into the final document, cited as
+// context. Mirrors the Include-cases flow, but for factual / scientific evidence.
+async function findDocEvidence(bar, docEl, doc, wordName, defaultTitle, btn) {
+  let panel = bar.querySelector(".docEvOut");
+  if (!panel) { panel = document.createElement("div"); panel.className = "docEvOut"; panel.style.marginTop = "8px"; bar.appendChild(panel); }
+  panel.innerHTML =
+    "<div style='font-size:12px;color:#aab4c6;margin-bottom:6px'>🌐 <b>Find evidence online</b> — recent events, official statements, "
+    + "data, or scientific findings (e.g. IPCC / WMO). Nothing is saved to your corpus; you pick what to weave in.</div>"
+    + "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"
+    + "<input class='evQ' placeholder='what to look for — e.g. June 2026 Oti/Volta flood statements; IPCC AR6 West Africa rainfall attribution' "
+    + "style='flex:1;min-width:240px;padding:6px;font-size:12px'>"
+    + "<button class='btn mini gold evGo'>🌐 Search</button></div>"
+    + "<div class='evResults' style='margin-top:8px'></div>";
+  const q = panel.querySelector(".evQ"), go = panel.querySelector(".evGo"), results = panel.querySelector(".evResults");
+  q.focus();
+  const run = async () => {
+    go.disabled = true; go.textContent = "Searching…";
+    results.innerHTML = "<span style='font-size:11px;color:#8b93a7'>searching the web for sourced evidence… (30–90s)</span>";
+    try {
+      const r = await (await fetch("/api/document/evidence/find", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({document: doc, query: q.value.trim(), question: EXAM.question || ""})})).json();
+      if (r.error) { results.innerHTML = "⚠️ " + esc(r.error); go.disabled = false; go.textContent = "🌐 Search"; return; }
+      mountEvidencePanel(results, r.evidence || [], async (chosen, host) => {
+        const add = host.querySelector(".evAdd"); add.disabled = true; add.textContent = "weaving in…";
+        try {
+          const rr = await (await fetch("/api/document/evidence/add", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({document: doc, evidence: chosen})})).json();
+          if (rr.error) { host.querySelector(".evNote").textContent = "⚠️ " + rr.error; add.disabled = false; add.textContent = "✓ Weave ticked into the document"; return; }
+          const updated = rr.document || doc;
+          EXAM.doc = updated; try { saveExam(); } catch (e) {}
+          docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(updated);
+          bar.remove();                                    // rebuild the toolbar against the new doc
+          renderExportBar(docEl, updated, wordName, defaultTitle);
+        } catch (e) { host.querySelector(".evNote").textContent = "Error — try again."; add.disabled = false; add.textContent = "✓ Weave ticked into the document"; }
+      });
+    } catch (e) { results.innerHTML = "Error — try again."; }
+    go.disabled = false; go.textContent = "🌐 Search";
+  };
+  go.onclick = run;
+  q.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
+}
+
+// Selectable list of web-found evidence (the factual counterpart of mountCasePanel). You open each
+// link, confirm it's real & current, tick, and weave the chosen ones in.
+function mountEvidencePanel(host, items, onAdd) {
+  if (!items || !items.length) {
+    host.innerHTML = "<span style='font-size:12px;color:#8b93a7'>No solid sourced evidence surfaced — better none than an unverified claim. Try a more specific search.</span>";
+    return;
+  }
+  host.innerHTML =
+    "<div style='font-size:12px;color:#6fb0e0;font-weight:600;margin:6px 0 4px'>🌐 Candidate evidence — open each 🔗, confirm it is real &amp; current, then tick to weave in:</div>"
+    + items.map((e, k) =>
+      "<div style='border-left:3px solid #5a8fd6;padding:5px 9px;background:#11151d;border-radius:4px;margin:4px 0;font-size:12px'>"
+      + "<label style='cursor:pointer'><input type='checkbox' class='evChk' data-k='" + k + "'> <b>" + esc(e.source||"source") + "</b>"
+      + (e.date ? " <span style='color:#7a8296'>(" + esc(e.date) + ")</span>" : "") + "</label>"
+      + (e.claim ? "<div style='color:#cdd5e6;margin:2px 0 0 20px'>" + esc(e.claim) + "</div>" : "")
+      + (e.woven ? "<div style='color:#9fb0c6;margin:2px 0 0 20px'>↳ woven: " + esc(e.woven) + "</div>" : "")
+      + (e.strengthens ? "<div style='color:#8b93a7;margin-left:20px'>strengthens: " + esc(e.strengthens) + "</div>" : "")
+      + (e.url ? "<div style='margin-left:20px'><a href='" + esc(e.url) + "' target='_blank' rel='noopener' style='font-size:11px'>🔗 verify source</a></div>"
+               : "<div style='margin-left:20px;color:#e0a0a0;font-size:11px'>⚠ no link — verify independently before including</div>")
+      + "</div>").join("")
+    + "<button class='btn gold mini evAdd' style='width:auto;margin-top:6px'>✓ Weave ticked into the document</button>"
+    + "<span class='evNote' style='font-size:11px;color:#8b93a7;margin-left:8px'></span>";
+  host.querySelector(".evAdd").onclick = () => {
+    const chosen = [...host.querySelectorAll(".evChk")].filter(x => x.checked).map(x => items[+x.dataset.k]).filter(Boolean);
+    if (!chosen.length) { host.querySelector(".evNote").textContent = "Tick at least one verified item first."; return; }
+    onAdd(chosen, host);
   };
 }
 
