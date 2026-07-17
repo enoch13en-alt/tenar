@@ -3599,26 +3599,32 @@ function wireDocSettings(box, docEl, doc, wordName, defaultTitle) {
   // reshapes the document to that length (protecting the key issues) in one click.
   const applyBtn = panel.querySelector(".dsApply"), msg = panel.querySelector(".dsMsg");
   if (applyBtn) applyBtn.onclick = () => {
-    applyFont(); applySpacing(); applySize();          // 1) typography → on-screen + export
-    const words = parseInt(panel.querySelector(".dsWords").value, 10) || 0;
-    const pages = parseInt(panel.querySelector(".dsPages").value, 10) || 0;
-    let target = words, note = "";
-    // A page target is meaningless to the reshaper on its own — convert PAGES → a concrete WORD
-    // count using spacing (12pt baseline) AND the chosen font size, so it has a target it can hit.
-    if (!target && pages) {
-      const sp = parseFloat(spEl.value) || 1.5, sz = parseFloat(sizeEl.value) || 12;
-      let wpp = sp >= 2 ? 280 : sp >= 1.5 ? 350 : 500; // words/page at 12pt by spacing (matches backend)
-      wpp = wpp * Math.pow(12 / sz, 2);                // fewer words/page at larger font sizes
-      target = Math.max(50, Math.round(pages * wpp / 50) * 50);
-      note = " (≈ " + pages + " page" + (pages > 1 ? "s" : "") + " at " + sz + "pt / " + spEl.value + " spacing — approximate; check the PDF and nudge)";
-    }
-    if (target >= 50) {                                // 2) length → reshape to the word target, one click
-      const instruction = "fit to " + target + " words";
-      if (msg) { msg.style.color = "#8b93a7"; msg.textContent = "reshaping to ~" + target + " words" + note + "…"; }
-      reshapeDoc(box, docEl, doc, wordName, defaultTitle, instruction, true);   // replace THE document in place
-    } else if (msg) {
-      msg.style.color = "#7fdca0";
-      msg.textContent = "✓ Font/size/spacing applied — they'll also appear in your Word/PDF export. (Set Words or Pages to resize length.)";
+    try {
+      applyFont(); applySpacing(); applySize();        // 1) typography → on-screen + export
+      // Read the length from the bottom panel OR fall back to the top globals — wherever it was set.
+      const gW = document.getElementById("wordLimit"), gP = document.getElementById("pageLimit");
+      const words = parseInt(panel.querySelector(".dsWords").value || (gW && gW.value) || "", 10) || 0;
+      const pages = parseInt(panel.querySelector(".dsPages").value || (gP && gP.value) || "", 10) || 0;
+      let target = words, note = "";
+      // A page target is meaningless to the reshaper on its own — convert PAGES → a concrete WORD
+      // count using spacing (12pt baseline) AND the chosen font size, so it has a target it can hit.
+      if (!target && pages) {
+        const sp = parseFloat(spEl.value) || 1.5, sz = parseFloat(sizeEl.value) || 12;
+        let wpp = sp >= 2 ? 280 : sp >= 1.5 ? 350 : 500; // words/page at 12pt by spacing (matches backend)
+        wpp = wpp * Math.pow(12 / sz, 2);              // fewer words/page at larger font sizes
+        target = Math.max(50, Math.round(pages * wpp / 50) * 50);
+        note = " (≈ " + pages + " page" + (pages > 1 ? "s" : "") + " at " + sz + "pt / " + spEl.value + " spacing — approximate)";
+      }
+      if (target >= 50) {                              // 2) length → reshape to the word target, one click
+        const instruction = "fit to " + target + " words";
+        if (msg) { msg.style.color = "#e0b050"; msg.textContent = "⏳ reshaping to ~" + target + " words" + note + " — watch below…"; }
+        reshapeDoc(box, docEl, doc, wordName, defaultTitle, instruction, true);   // replace THE document in place
+      } else if (msg) {
+        msg.style.color = "#e0b050";
+        msg.textContent = "⚠ Set a Words or Pages number first (font/size/spacing were applied). Nothing to resize yet.";
+      }
+    } catch (e) {
+      if (msg) { msg.style.color = "#e88"; msg.textContent = "Apply error: " + (e && e.message ? e.message : e); }
     }
   };
 }
@@ -3845,7 +3851,10 @@ async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle, autoInst
   };
   go.onclick = run;
   input.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
-  if (autoInstruction) run();     // Apply-from-settings: reshape straight to the target, no extra click
+  if (autoInstruction) {          // Apply-from-settings: reshape straight to the target, no extra click
+    try { panel.scrollIntoView({behavior: "smooth", block: "center"}); } catch (e) {}
+    run();
+  }
 }
 
 // Inject a report / findings / verified facts into the FINAL document at the final stage —
