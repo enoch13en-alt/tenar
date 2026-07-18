@@ -3663,9 +3663,29 @@ KEEP_LAW_MARKERS = (
     "verbatim text inside it unchanged — do not remove, relocate, alter or add them.")
 
 
+PLAIN_MODE = (
+    "PLAIN / STEP-BY-STEP MODE (short mode) — the reader wants SIMPLE, STRAIGHTFORWARD writing with a "
+    "clear, almost MATHEMATICAL flow. Reduce DENSITY, not substance:\n"
+    "- ONE IDEA PER SENTENCE. Short, direct sentences in plain English. Do not stack clauses or pack "
+    "several points into one paragraph; if a sentence carries two ideas, split it.\n"
+    "- REASON IN VISIBLE STEPS, like a proof: state the rule, then apply it one step at a time, each "
+    "step following plainly from the one before, then the conclusion — make the logical chain explicit "
+    "('The rule is X. Here, the facts are Y. Y satisfies X because…. Therefore Z.').\n"
+    "- Prefer short paragraphs and, where it makes the logic easier to follow, numbered or bulleted "
+    "steps — over dense continuous prose.\n"
+    "- Plain words over ornate ones; define a term the first time in one short clause; cut hedging "
+    "pile-ups and throat-clearing.\n"
+    "- KEEP ALL THE SUBSTANCE: every legal point, authority, verbatim provision, counterargument and "
+    "conclusion stays — you are UNPACKING the analysis so it is easy to follow, NOT cutting it. This "
+    "takes about the SAME space or MORE (ideas are spread out, not removed), so it does NOT conflict "
+    "with a length target — fill the space with clear, well-spaced steps, never padding.\n"
+    "- Still fully accurate and properly cited; the simplicity is in the PRESENTATION, never in the law."
+)
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
-                    extract_model=None):
+                    extract_model=None, simple=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -3869,6 +3889,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
+    if simple and mode != "cases" and fmt != "chat":
+        system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if ctx_note:
         system = system + ctx_note              # background-context usage rules
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
@@ -5015,7 +5037,8 @@ def api_ask():
                                    use_context=bool(body.get("use_context")),
                                    max_quality=max_quality,
                                    prior=(body.get("prior") or "").strip(),
-                                   extract_model=(body.get("extract_model") or None)))
+                                   extract_model=(body.get("extract_model") or None),
+                                   simple=bool(body.get("simple"))))
 
 
 @app.route("/api/cases", methods=["POST"])
@@ -9932,6 +9955,8 @@ def api_exam_assemble():
     kind = kind_map.get(length, kind_map["exam"])
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]
+    if bool(body.get("simple")):
+        system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if word_limit:
         fn_rule = ("Footnotes COUNT toward the limit — include footnote wording in the budget."
                    if footnotes_inclusive else

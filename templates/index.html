@@ -549,6 +549,9 @@
       <label style="color:#aab4c6;font-size:12px" title="After auditing, find leading / locus classicus cases for each issue and PAUSE so you can verify each (open the link) before it is woven in and the document is compiled.">
         <input type="checkbox" id="autoCases"> ⚖️ Include cases (verify before compile)
       </label>
+      <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
+        <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
+      </label>
       <details style="margin:3px 0"><summary style="cursor:pointer;color:#8b93a7;font-size:12px">⚙ Advanced options</summary>
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
@@ -2657,7 +2660,8 @@ async function gatherIssue(i) {
       body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         prior: priorRulesLedger(i),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
-        max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked)})})).json();
+        max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
+        simple: !!($("#examSimple") && $("#examSimple").checked)})})).json();
     it.answer = r.answer || r.error || "";
     it._audited = false;                        // fresh answer — not yet audited
     it.answer_annotated = r.answer_annotated || "";
@@ -3365,6 +3369,7 @@ async function compileExam() {
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
+        simple: !!($("#examSimple") && $("#examSimple").checked),
         answers: done.map(it => ({
           issue: it.issue,
           answer: stripLawTags(it.answer) + (it.followups || []).map(f =>
