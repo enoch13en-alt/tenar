@@ -3696,6 +3696,22 @@ PLAIN_MODE = (
 )
 
 
+VERBATIM_PRIORITY = (
+    "VERBATIM LAW IS THE PRIORITY — spend your greatest care here; getting the law exactly right "
+    "matters more than anything else in the answer. Reproduce every governing provision WORD-FOR-"
+    "WORD and in FULL — the whole operative limb and every sub-paragraph, proviso and exception it "
+    "contains — exactly as it appears in the retrieved materials. Put quoted law in quotation marks "
+    "with its pinpoint and instrument. NEVER paraphrase, compress, 'tidy', modernise, merge or trim "
+    "a quotation.\n"
+    "- If the retrieved text is PARTIAL, truncated, mid-sentence, paraphrased in commentary, or "
+    "SECOND-HAND (quoted by an author rather than the enacted text), quote exactly what is shown and "
+    "FLAG it '⚠ NOT VERBATIM — confirm against [instrument]' with a 【FILL】 pointer. Do NOT silently "
+    "complete, reconstruct or smooth wording from memory.\n"
+    "- NOTHING may alter a quotation — not short mode, not a length/page target, not issue-scoping, "
+    "not calibration. Simplification and trimming apply ONLY to your own analysis, NEVER to the "
+    "quoted law. When in doubt, quote MORE of the provision, not less."
+)
+
 ISSUE_SCOPE = (
     "ISSUE SCOPE — ANSWER THIS ISSUE, AND THIS ISSUE ONLY. Keep the IRAC, but hold it to the EXACT "
     "question this issue asks — nothing wider. This issue's conclusion is a BUILDING BLOCK that the "
@@ -3922,6 +3938,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
+    if mode != "cases" and fmt != "chat":
+        system = system + "\n\n" + VERBATIM_PRIORITY   # law quoted word-for-word, in full, flagged if not
     if simple and mode != "cases" and fmt != "chat":
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if mode == "gather":
@@ -10000,6 +10018,7 @@ def api_exam_assemble():
     kind = kind_map.get(length, kind_map["exam"])
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]
+    system = system + "\n\n" + VERBATIM_PRIORITY   # quoted law stays word-for-word in the final document
     if bool(body.get("simple")):
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if word_limit:
