@@ -204,8 +204,11 @@ GENERAL
 - Citations go in footnotes/endnotes, keyed by a SUPERSCRIPT number. In the text, place the
   reference marker immediately AFTER the relevant word or the closing punctuation, written as [n]
   (it renders as a superscript numeral). Collect the full citations, numbered to match and in
-  order of first appearance, under a 'Footnotes' (or 'Endnotes') heading at the END — this notes
-  block is set in a SMALLER font than the body. Minimal punctuation; no full
+  order of first appearance, under a 'Footnotes' (or 'Endnotes') heading at the END. Write each
+  footnote as a PLAIN numbered line — '1. <citation>' — one per line. Do NOT wrap footnotes, or the
+  in-text [n] marker, in <sub>, <small>, <sup> or ANY HTML tag: the notes block is rendered in a
+  smaller font automatically, and <sub> would wrongly SUBSCRIPT the notes (push them below the
+  line). Output plain markdown only. Minimal punctuation; no full
   stops in abbreviations (eg 'ed', 'edn', 'UKSC'). End each footnote with a full stop.
 - Multiple sources in one footnote: separate with semicolons.
 
@@ -10358,6 +10361,7 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     import io
     import docx
     from docx.shared import Pt
+    text = re.sub(r'</?(sub|small)\b[^>]*>', '', text or '', flags=re.I)   # strip model's <sub>/<small>
     # Prefer REAL page-bottom Word footnotes when the compiled doc carries a Footnotes/Endnotes
     # section keyed by [n] markers; fall back to the superscript-endnote render on any error.
     try:
@@ -10445,6 +10449,9 @@ def api_export():
 # page-bottom footnotes, and a sectioned bibliography — via reportlab (pure
 # Python, no system typesetting engine needed).
 def _exam_pdf_parse(doc):
+    # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
+    # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
+    doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
     # normalise run-on structure: put '##' headings and '---' rules on their own
     # lines so an inline '… Rep 14 ## Table of Legislation …' is still found
     doc = re.sub(r'[ \t]*-{3,}[ \t]*', '\n\n', doc)

@@ -862,7 +862,10 @@ function deJam(t){
     .replace(/(”)(?=[A-Za-z])/g, '$1 ');
 }
 function mdToHtml(raw){
-  const lines = deJam(raw||"").split("\n");
+  // The model sometimes wraps footnotes in <sub>/<small> to "make them small" — that wrongly
+  // SUBSCRIPTS them. Strip those tags (the notes zone is styled smaller automatically); keep <sup>.
+  raw = (raw||"").replace(/<\/?(sub|small)\b[^>]*>/gi, "");
+  const lines = deJam(raw).split("\n");
   let html = "", inList = false, inNotes = false;
   const closeList = () => { if(inList){ html += "</ul>"; inList = false; } };
   // Notes / back-matter (Footnotes or Endnotes, Bibliography, Tables) render SMALLER than the body;
