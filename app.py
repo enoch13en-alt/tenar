@@ -3696,9 +3696,29 @@ PLAIN_MODE = (
 )
 
 
+ISSUE_SCOPE = (
+    "ISSUE SCOPE — ANSWER THIS ISSUE, AND THIS ISSUE ONLY. Keep the IRAC, but hold it to the EXACT "
+    "question this issue asks — nothing wider. This issue's conclusion is a BUILDING BLOCK that the "
+    "later issues will apply, so it must be clean and self-contained.\n"
+    "- Resolve the PRECISE question posed. If the issue asks 'who OWNS X', answer who owns it — do "
+    "NOT also decide who may CONTROL/CONSENT/BE COMPENSATED. Those are separate questions with their "
+    "own issues; resolving them here pre-empts those issues and doubles the length.\n"
+    "- A consequence that is itself another issue is resolved THERE, not here. Where one would "
+    "naturally arise, DEFER it in ONE short line — a pointer, not an analysis ('this gates the consent "
+    "question, addressed below'; 'compensation is dealt with separately'). Never argue it out.\n"
+    "- Even if THIS issue's own wording brushes against a matter that belongs to another issue, still "
+    "defer that matter — answer only the core question your issue is really testing.\n"
+    "- Do NOT restate law or reasoning already established in an earlier issue; apply it by brief "
+    "cross-reference. The reader has the whole work in front of them.\n"
+    "- TEST every sentence: does it answer THIS exact question? If it really answers a different "
+    "issue, cut it and let that issue carry it. Tight scope keeps the whole work short and non-"
+    "repetitive."
+)
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
-                    extract_model=None, simple=False):
+                    extract_model=None, simple=False, siblings=None, issue_index=None):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -3904,6 +3924,16 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             system = system + "\n\n" + FORMATS[fmt]
     if simple and mode != "cases" and fmt != "chat":
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
+    if mode == "gather":
+        system = system + "\n\n" + ISSUE_SCOPE  # answer THIS issue only; defer downstream matters
+        if siblings and isinstance(siblings, list):
+            n = (issue_index + 1) if isinstance(issue_index, int) else "?"
+            system = system + (
+                "\n\nTHE FULL ISSUE SET (you are answering ONLY issue " + str(n) + " of "
+                + str(len(siblings)) + "):\n" + "\n".join(str(s) for s in siblings[:25])
+                + "\nResolve ONLY your own issue. Any matter that plainly belongs to another issue "
+                "listed above — even if this issue's wording brushes against it — is resolved THERE; "
+                "defer it in ONE line ('gates issue 2'), do not analyse it here.")
     if ctx_note:
         system = system + ctx_note              # background-context usage rules
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
@@ -5051,7 +5081,9 @@ def api_ask():
                                    max_quality=max_quality,
                                    prior=(body.get("prior") or "").strip(),
                                    extract_model=(body.get("extract_model") or None),
-                                   simple=bool(body.get("simple"))))
+                                   simple=bool(body.get("simple")),
+                                   siblings=body.get("siblings"),
+                                   issue_index=body.get("issue_index")))
 
 
 @app.route("/api/cases", methods=["POST"])

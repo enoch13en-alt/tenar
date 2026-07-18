@@ -2661,7 +2661,9 @@ async function gatherIssue(i) {
         prior: priorRulesLedger(i),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
-        simple: !!($("#examSimple") && $("#examSimple").checked)})})).json();
+        simple: !!($("#examSimple") && $("#examSimple").checked),
+        issue_index: i,
+        siblings: (EXAM.issues || []).map((x, k) => (k + 1) + ". " + ((x.issue || "").split("\n")[0].slice(0, 150)))})})).json();
     it.answer = r.answer || r.error || "";
     it._audited = false;                        // fresh answer — not yet audited
     it.answer_annotated = r.answer_annotated || "";
