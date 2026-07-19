@@ -10318,19 +10318,24 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
             pass
     if title:
         d.add_heading(title, level=0)
-    used = []
+    built = []          # (unique_id, text) per reference, in body order
+    _ctr = [0]          # every reference gets a UNIQUE w:id — Word repairs duplicate ids
     # In-text ref markers [n]: tolerate one space before the marker (OSCOLA puts it after the
     # closing punctuation, and the model often adds a space) so it still becomes a real footnote
     # instead of leaking as a literal '[n]' with its note dropped from the page bottom.
     mark_re = re.compile(r"(?<=\S)[ \t]?(\[\d{1,3}\])")
 
-    def add_fn_ref(p, fid):
+    def add_fn_ref(p, src_n):
+        # Assign a fresh unique id for THIS occurrence (the same source [n] may be cited more than
+        # once; two footnoteReferences with the same id make Word 'repair' the file). Word numbers
+        # footnotes by order of appearance anyway, so unique sequential ids display correctly.
+        _ctr[0] += 1
+        uid = _ctr[0]
         run = p.add_run()
         rpr = run._r.get_or_add_rPr()
         va = OxmlElement('w:vertAlign'); va.set(qn('w:val'), 'superscript'); rpr.append(va)
-        ref = OxmlElement('w:footnoteReference'); ref.set(qn('w:id'), str(fid)); run._r.append(ref)
-        if fid not in used:
-            used.append(fid)
+        ref = OxmlElement('w:footnoteReference'); ref.set(qn('w:id'), str(uid)); run._r.append(ref)
+        built.append((uid, fmap[src_n]))
 
     def render_block(txt, small=False):
         for raw in (txt or "").split("\n"):
@@ -10372,15 +10377,15 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
         # CT_RPr has a STRICT child order: b, i come BEFORE sz. Wrong order => Word "repairs" the footnote.
         rpr = ('<w:b/>' if bold else '') + ('<w:i/>' if ital else '') + ('<w:sz w:val="%s"/>' % hp)
         return '<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve">%s</w:t></w:r>' % (rpr, _esc(seg))
-    for fid in used:
-        raw_txt = re.sub(r"\s+", " ", fmap[fid]).strip()
+    for uid, text in built:
+        raw_txt = re.sub(r"\s+", " ", text or "").strip()
         runs = ''.join(_fn_run(seg, b, i) for seg, b, i in _md_runs(raw_txt) if seg)
         # rPr order: rStyle, then sz, then vertAlign (vertAlign comes AFTER sz in CT_RPr).
         fn.append('<w:footnote w:id="%d"><w:p>%s'
                   '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:sz w:val="%s"/>'
                   '<w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>'
                   '<w:r><w:rPr><w:sz w:val="%s"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>'
-                  '%s</w:p></w:footnote>' % (fid, ppr, hp, hp, runs))
+                  '%s</w:p></w:footnote>' % (uid, ppr, hp, hp, runs))
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            '<w:footnotes xmlns:w="%s">%s</w:footnotes>' % (W, ''.join(fn))).encode('utf-8')
     part = Part(PackURI('/word/footnotes.xml'),
