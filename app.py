@@ -10274,6 +10274,14 @@ def api_oscola():
     return jsonify({"oscola": _text_of(resp), "cost": record_cost(resp)})
 
 
+# Characters that are ILLEGAL in XML 1.0 (control chars other than tab/LF/CR, and a few others).
+# An injected external fact can carry one of these; it makes the .docx invalid, so Word reports
+# "unreadable content", repairs the file, and mangles/renumbers the footnotes. Strip them out.
+_XML_ILLEGAL = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￾￿]')
+def _xml_safe(s):
+    return _XML_ILLEGAL.sub('', s or '')
+
+
 def _md_runs(line):
     for part in re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", line):
         if not part:
@@ -10352,7 +10360,7 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
 
     # Build /word/footnotes.xml (two separators + one footnote per referenced marker) and attach it.
     W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-    def _esc(s): return (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    def _esc(s): return _xml_safe(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     fn_pt = max(8, base_pt - 3)          # footnotes distinctly smaller than the body
     hp = str(fn_pt * 2)                   # font size in half-points
     # single line spacing, no space before/after — overrides any body line-spacing so notes are tight
@@ -10427,6 +10435,7 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     import io
     import docx
     from docx.shared import Pt
+    text = _xml_safe(text)                                                  # strip XML-illegal chars
     text = re.sub(r'</?(sub|small)\b[^>]*>', '', text or '', flags=re.I)   # strip model's <sub>/<small>
     # Prefer REAL page-bottom Word footnotes when the compiled doc carries a Footnotes/Endnotes
     # section keyed by [n] markers; fall back to the superscript-endnote render on any error.
@@ -10515,6 +10524,7 @@ def api_export():
 # page-bottom footnotes, and a sectioned bibliography — via reportlab (pure
 # Python, no system typesetting engine needed).
 def _exam_pdf_parse(doc):
+    doc = _xml_safe(doc)   # strip XML-illegal chars (from injected facts) that make the .docx unreadable
     # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
     # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
     doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
