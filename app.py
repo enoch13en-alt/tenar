@@ -7682,15 +7682,19 @@ def api_document_evidence_add():
         "words needed to read naturally in flow.\n"
         "- EVIDENCE IS CONTEXT, NOT LAW: keep it SOURCE-RELATIVE ('according to X, as of [date], …') "
         "and NO WIDER than stated; never convert it into a proposition of law or a universal claim.\n"
-        "- CITE THE SOURCE in the document's OWN style: if it uses OSCOLA FOOTNOTES, add each source "
-        "as a NEW footnote at the inserted sentence and RENUMBER the following footnotes; add it to "
-        "any Bibliography / sources list the document keeps. Reproduce each source reference EXACTLY "
-        "as given.\n"
+        "- CITE EACH SOURCE AS A FOOTNOTE, ROBUSTLY, so numbering NEVER breaks (botched footnote "
+        "insertion is the main defect): find the CURRENT HIGHEST footnote number N; for each item add "
+        "a NEW marker [N+1], [N+2] … after its sentence AND a MATCHING 'N+1. <full citation>' line at "
+        "the END of the Footnotes list — ALWAYS both the marker and the entry, never one alone. Do NOT "
+        "renumber, move or touch any existing footnote (append the next numbers). Format each as a "
+        "COMPLETE citation even from a bare URL (issuer/title, date, URL), reproduced EXACTLY as given, "
+        "ending with a full stop — never empty or a stray fragment. Add to any Bibliography / sources "
+        "list the document keeps.\n"
         "- Do NOT overstate, dramatise or generalise; keep each to its one/two-sentence point. If an "
         "item has no natural home, leave it out rather than force it. PRESERVE everything else — the "
-        "analysis, authorities, structure, headings and the CONCLUSIONS — VERBATIM except for the "
-        "inserted sentence(s) and the footnote renumbering. Return ONLY the updated document text — "
-        "no preamble, no notes.")
+        "analysis, authorities, structure, headings, the CONCLUSIONS and every EXISTING footnote and "
+        "its number — VERBATIM, except for the inserted sentence(s) and the newly appended footnotes. "
+        "Return ONLY the updated document text — no preamble, no notes.")
     try:
         r, _m = _create_final(
             c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
@@ -7809,7 +7813,7 @@ def api_document_chat_add():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
-    src_line = _fact_src_line(user_source, [])
+    src_line = _fact_src_line(user_source, [], footnoted=True)
     sys = (
         "You inject a student-CURATED claim or piece of information into a FINISHED, compiled legal "
         "document (an OSCOLA-referenced memorandum/essay) — and change NOTHING else. Integrate it "
@@ -7820,21 +7824,33 @@ def api_document_chat_add():
         "point of need. Otherwise place it at the logically correct point.\n"
         "- TRANSFER ONLY WHAT THE MATERIAL SUPPORTS: never overstate, extrapolate, or upgrade a "
         "tentative point into a firm one; carry over any hedge or 'not established' limitation.\n"
-        "- CITE THE SOURCE the student gives, IN THE DOCUMENT'S OWN REFERENCING STYLE: if the "
-        "document uses OSCOLA FOOTNOTES, add the source as a NEW footnote at the inserted sentence "
-        "and RENUMBER the following footnotes consistently (and add it to the Bibliography / Table of "
-        "Cases or Table of Legislation if it is an authority of that kind); if the document cites "
-        "in-text, cite in-text. Reproduce the source reference EXACTLY as given — do not alter, "
-        "shorten misleadingly, or invent any part of it. Treat an externally-verified fact as "
-        "CONTEXT / evidence, not a proposition of law, unless the source is itself a statute or case.\n"
+        "- CITE THE SOURCE AS A FOOTNOTE, ROBUSTLY, so the numbering NEVER breaks — this is critical, "
+        "because botched footnote insertion is the main defect here:\n"
+        "   (a) find the CURRENT HIGHEST footnote number N already in the document;\n"
+        "   (b) put a NEW in-text marker [N+1] immediately after the inserted sentence;\n"
+        "   (c) add a MATCHING new line 'N+1. <full citation>' at the END of the existing Footnotes "
+        "(or Endnotes) list.\n"
+        "   ALWAYS add BOTH the [N+1] marker AND its matching Footnotes line — never one without the "
+        "other. Do NOT renumber, move or touch ANY existing footnote or its marker: appending the "
+        "next number keeps every existing footnote intact, which is exactly what prevents the dropped/"
+        "blank/mis-numbered footnotes. If the source is an authority the document tables, also add it "
+        "to the Bibliography / Table of Cases / Table of Legislation.\n"
+        "- FORMAT THE FOOTNOTE AS A COMPLETE CITATION even if the student gave a bare URL or a loose "
+        "reference: reproduce the reference EXACTLY as given (do not alter, shorten misleadingly or "
+        "invent any part — URL, date, body, title), but present it as a proper footnote line — for a "
+        "web source, the issuer/title, the date, and the URL — ending with a full stop. NEVER leave "
+        "the footnote text empty, a bare fragment, or a stray character. Treat an externally-verified "
+        "fact as CONTEXT / evidence, not a proposition of law, unless the source is itself a statute "
+        "or case.\n"
         "- KEEP IT SOURCE-RELATIVE where the source only shows something on a record ('on the "
         "official record, as of [date], X …'); never convert silence into a bald negative.\n"
         "- If the claim is MATERIAL (it changes whether a conclusion holds), follow the consequence "
         "through the affected passage AND its conclusion so the document stays internally consistent; "
         "if it is merely contextual, place it without disturbing the conclusions. If it has no "
         "natural home in the document, say so plainly rather than force it in.\n"
-        "- PRESERVE everything else — the analysis, authorities, headings, structure, tables and the "
-        "CONCLUSION — VERBATIM except for the inserted sentence(s) and the footnote renumbering. "
+        "- PRESERVE everything else — the analysis, authorities, headings, structure, tables, the "
+        "CONCLUSION and EVERY existing footnote and its number — VERBATIM, except for the inserted "
+        "sentence(s), the one NEW appended footnote, and its [N+1] marker. "
         "Return ONLY the updated document text — no preamble, no notes.")
     try:
         r, _m = _create_final(
@@ -8120,18 +8136,22 @@ FACT_WEAVE_SYS = (
     "ONLY the updated issue answer — no preamble, no notes.")
 
 
-def _fact_src_line(user_source, sources):
-    """Build the source-attribution note appended to a fact weave (shared by weave + propagate)."""
+def _fact_src_line(user_source, sources, footnoted=False):
+    """Build the source-attribution note appended to a fact weave (shared by weave + propagate).
+    footnoted=True for a compiled OSCOLA-footnoted document (cite in a footnote, not in-text)."""
     titles = [s.get("title", "") for s in (sources or []) if isinstance(s, dict) and s.get("title")]
     src_line = ("\n\nSOURCES THE CHAT CITED (attribute to these; do not go beyond them): "
                 + json.dumps(titles)[:1500]) if titles else ""
     if user_source:
+        where = ("in a FOOTNOTE exactly as instructed above (never in-text parenthetically)"
+                 if footnoted else
+                 "in-text (e.g. '… (per " + user_source[:120] + ")')")
         src_line += ("\n\nSTUDENT-VERIFIED SOURCE — the student independently verified this material "
                      "against the following source and REQUIRES it to be cited with the fact: \""
                      + user_source[:400] + "\". You MUST attribute the woven-in fact to this source "
-                     "in-text (e.g. '… (per " + user_source[:120] + ")') so it is never stated "
-                     "unattributed. Reproduce the source reference EXACTLY as given — do not alter, "
-                     "shorten misleadingly, or invent any part of it (URL, date, body, title).")
+                     + where + " so it is never stated unattributed. Reproduce the source reference "
+                     "EXACTLY as given — do not alter, shorten misleadingly, or invent any part of it "
+                     "(URL, date, body, title).")
     return src_line
 
 
