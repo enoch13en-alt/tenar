@@ -10369,16 +10369,16 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     fn = ['<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>',
           '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>']
     def _fn_run(seg, bold, ital):
-        rpr = '<w:sz w:val="%s"/>' % hp
-        if bold: rpr += '<w:b/>'
-        if ital: rpr += '<w:i/>'      # OSCOLA: case names / titles render as real italics, not *asterisks*
+        # CT_RPr has a STRICT child order: b, i come BEFORE sz. Wrong order => Word "repairs" the footnote.
+        rpr = ('<w:b/>' if bold else '') + ('<w:i/>' if ital else '') + ('<w:sz w:val="%s"/>' % hp)
         return '<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve">%s</w:t></w:r>' % (rpr, _esc(seg))
     for fid in used:
         raw_txt = re.sub(r"\s+", " ", fmap[fid]).strip()
         runs = ''.join(_fn_run(seg, b, i) for seg, b, i in _md_runs(raw_txt) if seg)
+        # rPr order: rStyle, then sz, then vertAlign (vertAlign comes AFTER sz in CT_RPr).
         fn.append('<w:footnote w:id="%d"><w:p>%s'
-                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/>'
-                  '<w:sz w:val="%s"/></w:rPr><w:footnoteRef/></w:r>'
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:sz w:val="%s"/>'
+                  '<w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>'
                   '<w:r><w:rPr><w:sz w:val="%s"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>'
                   '%s</w:p></w:footnote>' % (fid, ppr, hp, hp, runs))
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
