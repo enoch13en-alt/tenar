@@ -10387,6 +10387,12 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     sett = d.settings.element
     if sett.find(qn('w:footnotePr')) is None:
         fpr = OxmlElement('w:footnotePr')
+        # explicit numbering (schema order: pos, numFmt, numStart, numRestart, then separators) —
+        # without a stated continuous decimal format Word can number every footnote "1".
+        _pos = OxmlElement('w:pos'); _pos.set(qn('w:val'), 'pageBottom'); fpr.append(_pos)
+        _nf = OxmlElement('w:numFmt'); _nf.set(qn('w:val'), 'decimal'); fpr.append(_nf)
+        _ns = OxmlElement('w:numStart'); _ns.set(qn('w:val'), '1'); fpr.append(_ns)
+        _nr = OxmlElement('w:numRestart'); _nr.set(qn('w:val'), 'continuous'); fpr.append(_nr)
         for sid in ('-1', '0'):
             fi = OxmlElement('w:footnote'); fi.set(qn('w:id'), sid); fpr.append(fi)
         # CT_Settings has a STRICT child order — footnotePr must sit just before compat/rsids, or
