@@ -10359,6 +10359,29 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
                 xml, d.part.package)
     d.part.relate_to(part, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes')
+
+    # Word can only NUMBER footnotes if settings.xml declares the separators via <w:footnotePr>.
+    # Without it Word renders every footnote as "1". Add it, plus the referenced footnote styles.
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    sett = d.settings.element
+    if sett.find(qn('w:footnotePr')) is None:
+        fpr = OxmlElement('w:footnotePr')
+        for sid in ('-1', '0'):
+            fi = OxmlElement('w:footnote'); fi.set(qn('w:id'), sid); fpr.append(fi)
+        sett.insert(0, fpr)          # Word tolerates the position; it repairs order silently on open
+    styles_el = d.styles.element
+    have = {s.get(qn('w:styleId')) for s in styles_el.findall(qn('w:style'))}
+    if 'FootnoteText' not in have:
+        styles_el.append(parse_xml(
+            '<w:style %s w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/>'
+            '<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
+            '<w:rPr><w:sz w:val="%d"/></w:rPr></w:style>' % (nsdecls('w'), fn_pt * 2)))
+    if 'FootnoteReference' not in have:
+        styles_el.append(parse_xml(
+            '<w:style %s w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/>'
+            '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>' % nsdecls('w')))
+
     bio = io.BytesIO(); d.save(bio); bio.seek(0)
     return bio
 
