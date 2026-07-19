@@ -10340,13 +10340,19 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
            '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>')
     fn = ['<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>',
           '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>']
+    def _fn_run(seg, bold, ital):
+        rpr = '<w:sz w:val="%s"/>' % hp
+        if bold: rpr += '<w:b/>'
+        if ital: rpr += '<w:i/>'      # OSCOLA: case names / titles render as real italics, not *asterisks*
+        return '<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve">%s</w:t></w:r>' % (rpr, _esc(seg))
     for fid in used:
-        txt = _esc(re.sub(r"\s+", " ", fmap[fid]).strip())
+        raw_txt = re.sub(r"\s+", " ", fmap[fid]).strip()
+        runs = ''.join(_fn_run(seg, b, i) for seg, b, i in _md_runs(raw_txt) if seg)
         fn.append('<w:footnote w:id="%d"><w:p>%s'
                   '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/>'
                   '<w:sz w:val="%s"/></w:rPr><w:footnoteRef/></w:r>'
-                  '<w:r><w:rPr><w:sz w:val="%s"/></w:rPr>'
-                  '<w:t xml:space="preserve"> %s</w:t></w:r></w:p></w:footnote>' % (fid, ppr, hp, hp, txt))
+                  '<w:r><w:rPr><w:sz w:val="%s"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>'
+                  '%s</w:p></w:footnote>' % (fid, ppr, hp, hp, runs))
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            '<w:footnotes xmlns:w="%s">%s</w:footnotes>' % (W, ''.join(fn))).encode('utf-8')
     part = Part(PackURI('/word/footnotes.xml'),
@@ -10452,6 +10458,10 @@ def _exam_pdf_parse(doc):
     # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
     # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
     doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
+    # Strip stray pipe artifacts (a lone '|' left over from a broken table/placeholder) that print
+    # as a floating '|' between footnotes; keep genuine 'a | b' inline text intact.
+    doc = re.sub(r'(?m)^[ \t>*_-]*\|[ \t>*_-]*$', '', doc)   # pipe-only lines
+    doc = re.sub(r'(?<=\s)\|(?=\s)', '', doc)                 # isolated space-surrounded pipe
     # normalise run-on structure: put '##' headings and '---' rules on their own
     # lines so an inline '… Rep 14 ## Table of Legislation …' is still found
     doc = re.sub(r'[ \t]*-{3,}[ \t]*', '\n\n', doc)
@@ -10491,8 +10501,10 @@ def _exam_pdf_parse(doc):
             # a footnote entry is 'N. text', 'N) text' or '[N] text'; text may wrap but must not
             # swallow a later '---'/'##'/heading line or the next footnote (any of those formats)
             for fm in re.finditer(
-                    r'(?m)^\s*\[?(\d+)[\].)]\s+(.*(?:\n(?!\s*(?:\[?\d+[\].)]\s|#|-{3})).*)*)', content):
-                fmap[int(fm.group(1))] = re.sub(r'\s+', ' ', fm.group(2)).strip()
+                    r'(?m)^\s*\[?(\d+)[\].)]\s*(.*(?:\n(?!\s*(?:\[?\d+[\].)]\s|#|-{3})).*)*)', content):
+                cite = re.sub(r'\s+', ' ', fm.group(2)).strip()
+                if cite:                                   # skip empty/placeholder footnote lines
+                    fmap[int(fm.group(1))] = cite
         else:
             sections.append((name, content))
     return body, fmap, sections
