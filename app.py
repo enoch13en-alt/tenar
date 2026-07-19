@@ -10389,7 +10389,18 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
         fpr = OxmlElement('w:footnotePr')
         for sid in ('-1', '0'):
             fi = OxmlElement('w:footnote'); fi.set(qn('w:id'), sid); fpr.append(fi)
-        sett.insert(0, fpr)          # Word tolerates the position; it repairs order silently on open
+        # CT_Settings has a STRICT child order — footnotePr must sit just before compat/rsids, or
+        # Word silently IGNORES it and numbers every footnote "1". Insert at the schema position.
+        anchor = None
+        for tag in ('w:endnotePr', 'w:compat', 'w:rsids', 'm:mathPr', 'w:themeFontLang',
+                    'w:clrSchemeMapping', 'w:shapeDefaults', 'w:decimalSymbol', 'w:listSeparator'):
+            el = sett.find(qn(tag))
+            if el is not None:
+                anchor = el; break
+        if anchor is not None:
+            anchor.addprevious(fpr)
+        else:
+            sett.append(fpr)
     styles_el = d.styles.element
     have = {s.get(qn('w:styleId')) for s in styles_el.findall(qn('w:style'))}
     if 'FootnoteText' not in have:
