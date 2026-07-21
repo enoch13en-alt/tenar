@@ -6678,6 +6678,61 @@ def api_week():
                     headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
+@app.route("/api/week/videos", methods=["POST"])
+def api_week_videos():
+    """Web-search for REAL, reputable educational videos that illuminate a week's topic, so the
+    weekly study guide can point the student to lectures/explainers. Grounded — only videos actually
+    found in search, with real URLs; never fabricated. Returns a markdown section. One question."""
+    body = request.json or {}
+    topic = (body.get("topic") or "").strip()
+    week = str(body.get("week") or "").strip()
+    course = safe_course(body.get("course", ""))
+    if not topic:
+        return jsonify({"error": "No topic given."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You find REAL, reputable educational VIDEOS that help a student understand a specific week's "
+        "law-course topic — university lectures, established educational channels, respected explainers, "
+        "or authoritative institutional talks (YouTube and other reputable platforms are fine).\n"
+        "USE WEB SEARCH to ground EVERY video in a REAL, verifiable URL you actually saw in the search "
+        "results — this is CRITICAL: NEVER invent or guess a video, title, channel or URL (a fabricated "
+        "video link is the worst possible error). Include a video ONLY if you actually located it in "
+        "results with a real URL and it genuinely covers THIS topic.\n"
+        "PREFER quality and on-point relevance from credible sources; skip anything off-topic, low "
+        "quality, or unverifiable. Returning FEWER (or none) is correct — never pad with weak or "
+        "unverifiable links.\n"
+        "Return ONLY a concise MARKDOWN section headed '## 📺 Videos for this week' followed by a short "
+        "bullet list (at most 5). Each bullet: the video title in **bold**, ' — ', the channel/source, "
+        "a 6-12 word note on what it covers, then the FULL video URL as a BARE link (https://…) on the "
+        "same line. If you cannot verify any on-point video, output the heading and one line saying no "
+        "reliable video was found — do NOT invent one. No preamble, no other text.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=1600,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Course: " + course + "\n") if course else "")
+                       + (("Week: " + week + "\n") if week else "")
+                       + "Topic: " + topic + "\n\nFind reputable educational videos that shed light on "
+                       "this week's topic."}])
+        return (_text_after_tools(resp) or _text_of(resp) or "").strip()
+    try:
+        import gevent
+        md = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        app.logger.exception("week videos error")
+        return jsonify({"error": "The video search didn't complete — please try again."})
+    return jsonify({"markdown": md or ""})
+
+
 # ---------------------------------------------------------------- Legal updates
 LAW_UPDATE = (
     "LEGAL UPDATE SCAN — you are checking whether the law taught in a course has "

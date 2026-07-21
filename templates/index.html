@@ -602,6 +602,9 @@
       <button class="btn alt mini" id="weeklyRefresh" style="width:auto" title="Re-read the outline">↻ Re-read</button>
       <button class="btn alt" id="weeklyClose" style="width:auto">Close</button>
     </div>
+    <label style="color:#aab4c6;font-size:12px;display:block;margin-top:6px" title="After the summary, search the web for reputable educational videos (lectures/explainers) on that week's topic and add them with real links. Uses one web search per week.">
+      <input type="checkbox" id="weeklyVideos"> 📺 Add video links for each week (web)
+    </label>
     <div id="weeklyStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="weeklyList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
     <div id="weeklyOut"></div>
@@ -4874,9 +4877,20 @@ async function loadWeekSummary(w) {
   try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
   const d=$("#wDot"); if(d) d.remove();
   if (meta.error) { wDoc.textContent = meta.error; return; }
+  let finalMd = parts[0].trim();
   wDoc.style.whiteSpace = "normal";
-  wDoc.innerHTML = mdToHtml(parts[0].trim());
-  renderExportBar(wDoc, parts[0].trim(), COURSE + " — " + weekLabel(w), weekLabel(w) + " — " + w.topic);
+  wDoc.innerHTML = mdToHtml(finalMd);
+  // Optionally append reputable educational video links (web-searched, real URLs only).
+  if ($("#weeklyVideos") && $("#weeklyVideos").checked) {
+    wDoc.insertAdjacentHTML("beforeend", "<div class='vidStatus' style='font-size:12px;color:#6fb0e0;margin-top:10px'>📺 finding videos for this week… (20–60s)</div>");
+    try {
+      const vr = await (await fetch("/api/week/videos", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic})})).json();
+      const vs = wDoc.querySelector(".vidStatus"); if (vs) vs.remove();
+      if (vr.markdown && !vr.error) { finalMd = finalMd + "\n\n" + vr.markdown; wDoc.innerHTML = mdToHtml(finalMd); }
+    } catch (e) { const vs = wDoc.querySelector(".vidStatus"); if (vs) vs.remove(); }
+  }
+  renderExportBar(wDoc, finalMd, COURSE + " — " + weekLabel(w), weekLabel(w) + " — " + w.topic);
 }
 
 // ---- legal updates (web) ----
