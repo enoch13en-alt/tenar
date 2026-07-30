@@ -7763,6 +7763,134 @@ def api_document_evidence_add():
     return jsonify({"document": updated or document, "added": len(items)})
 
 
+@app.route("/api/document/authorities/find", methods=["POST"])
+def api_document_authorities_find():
+    """Web-search for REAL case law, law reports and SCHOLARLY WRITINGS (journal articles, textbooks,
+    reputable commentary, official reports) on the document's topics — returned as CANDIDATES for the
+    student to verify and SELECT. This is the legal / academic counterpart of evidence/find: it finds
+    AUTHORITY and SECONDARY LITERATURE, not current-events data. Nothing enters the corpus. Metered as
+    one question (uses web search)."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    query = (body.get("query") or "").strip()
+    context = (body.get("question") or "").strip()
+    if len(document) < 40 and len(query) < 3:
+        return jsonify({"error": "Compile the document first, or type a topic to search for.",
+                        "items": []}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set", "items": []}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "items": []}), 402
+    consume("questions")
+    sys = (
+        "You find REAL, verifiable LEGAL AUTHORITY and SCHOLARLY WRITING that would strengthen the "
+        "study document / memorandum given. THREE kinds only: (a) CASES — leading / locus classicus "
+        "decisions and the law reports that carry them; (b) SCHOLARSHIP — journal articles, textbooks, "
+        "monographs, reputable academic commentary and restatements; (c) REPORTS — law-reform / "
+        "commission / official reports on the topic. This is AUTHORITY and SECONDARY LITERATURE, NOT "
+        "current-events data.\n"
+        "USE WEB SEARCH to ground EVERY item in a REAL, verifiable source with a URL you actually saw "
+        "in results — this is critical: NEVER invent a case, citation, author, article, court, year or "
+        "holding, and never reconstruct one from memory; a fabricated authority is the worst possible "
+        "error in law. If you are not sure a case name / neutral citation / author / title is REAL and "
+        "correct, LEAVE IT OUT. Follow the user's search focus if given; otherwise infer the document's "
+        "legal subject and jurisdiction (note: much of this is Ghanaian / Commonwealth law — prefer the "
+        "right jurisdiction's authority, and clearly mark anything merely persuasive).\n"
+        "STATE EACH ITEM HONESTLY: a CASE is stated as law with its proper citation and its precise "
+        "ratio / point; SCHOLARSHIP is stated as an ATTRIBUTED view ('X argues that …'), never as a "
+        "bald proposition of law; a REPORT is stated source-relatively with its date. RELEVANCE IS "
+        "STRICT: an item earns its place ONLY if it bears directly on THIS document's topics or an "
+        "argument in it. For each, work out NOW the exact, cited sentence(s) to weave in.\n"
+        "Return STRICT JSON {\"items\":[{\"claim\":<the point/holding/argument in one line>, "
+        "\"source\":<case name + citation, OR author + title, OR issuing body + report>, \"date\":<year "
+        "/ date>, \"url\":<a source URL you actually saw>, \"strengthens\":<the specific part of the "
+        "document it reinforces>, \"woven\":<a READY-TO-INSERT one/two-sentence, correctly cited "
+        "statement applying this authority at that point — the exact text to weave, worked out NOW>, "
+        "\"kind\":<'case'|'scholarship'|'report'>}]}. Return at most 8, most authoritative and on-point "
+        "first; return an EMPTY list rather than any doubtful or unverifiable item. No prose, no "
+        "fences.")
+
+    def _run():
+        resp, _ = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=4500,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 10}],
+            system=sys,
+            messages=[{"role": "user", "content":
+                       (("Search focus: " + query[:400] + "\n\n") if query else "")
+                       + (("Problem / question: " + context[:900] + "\n\n") if context else "")
+                       + "DOCUMENT — find cases, reports and scholarship that strengthen it:\n" + document[:8000]}])
+        raw = _text_after_tools(resp) or _text_of(resp)
+        try:
+            return _first_json_obj(raw)
+        except Exception:
+            return {"items": []}
+    try:
+        import gevent
+        data = gevent.get_hub().threadpool.apply(_run)
+    except Exception as e:
+        app.logger.exception("authorities find error")
+        return jsonify({"error": "The web search didn't complete — please try again.", "items": []})
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        items = []
+    return jsonify({"items": items[:8]})
+
+
+@app.route("/api/document/authorities/add", methods=["POST"])
+def api_document_authorities_add():
+    """Weave student-SELECTED, web-verified CASES / REPORTS / SCHOLARSHIP into the FINAL document —
+    cases as law with their citation, scholarship as an attributed view, reports source-relatively;
+    each placed at the right point with a robust OSCOLA footnote. Nothing enters the corpus. Metered
+    as one question."""
+    body = request.json or {}
+    document = (body.get("document") or "").strip()
+    items = body.get("items") or body.get("evidence") or []
+    if not document or not isinstance(items, list) or not items:
+        return jsonify({"error": "Need the document and at least one selected item."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    sys = (
+        "You weave student-SELECTED, web-verified LEGAL AUTHORITY and SCHOLARSHIP into a FINISHED legal "
+        "study document. Each item carries a ready 'woven' sentence, its kind ('case'|'scholarship'|"
+        "'report') and its source. Your job is PLACEMENT, not re-argument: insert each at the logically "
+        "correct point (the passage it strengthens) and adjust ONLY the connective words needed to read "
+        "naturally in flow.\n"
+        "- STATE EACH BY ITS KIND: a CASE is law — weave it as authority with its proper citation and "
+        "its precise point (never soften it into mere 'commentary'). SCHOLARSHIP is an ATTRIBUTED view "
+        "('X argues that …'), never dressed up as a proposition of law. A REPORT is source-relative "
+        "with its date. Do not overstate, and keep each to its one/two-sentence point.\n"
+        "- CITE EACH AS A FOOTNOTE, ROBUSTLY, so numbering NEVER breaks (botched footnote insertion is "
+        "the main defect): find the CURRENT HIGHEST footnote number N; for each item add a NEW marker "
+        "[N+1], [N+2] … after its sentence AND a MATCHING 'N+1. <full citation>' line at the END of the "
+        "Footnotes list — ALWAYS both the marker and the entry, never one alone. Do NOT renumber, move "
+        "or touch any existing footnote (append the next numbers). Format each as a COMPLETE OSCOLA "
+        "citation (case name + citation; author, title, journal/publisher, year; or issuer, title, "
+        "date, URL), ending with a full stop — never empty or a stray fragment. Add to any Table of "
+        "Cases / Bibliography the document keeps.\n"
+        "- If an item has no natural home, leave it out rather than force it. PRESERVE everything else — "
+        "the analysis, existing authorities, structure, headings, the CONCLUSIONS and every EXISTING "
+        "footnote and its number — VERBATIM, except for the inserted sentence(s) and the newly appended "
+        "footnotes. Return ONLY the updated document text — no preamble, no notes.")
+    try:
+        r, _m = _create_final(
+            c, model=ANSWER_MODEL, max_tokens=16000, system=cached_system(sys),
+            messages=[{"role": "user", "content":
+                       "FINAL DOCUMENT:\n" + document
+                       + "\n\nSELECTED AUTHORITIES / SCHOLARSHIP TO PLACE (each with its ready 'woven' "
+                       "sentence, kind and source):\n" + json.dumps(items)[:8000]}])
+        updated = (_text_of(r) or "").strip()
+    except Exception as e:
+        return jsonify({"error": str(e)[:140]})
+    return jsonify({"document": updated or document, "added": len(items)})
+
+
 @app.route("/api/document/review", methods=["POST"])
 def api_document_review():
     """Extensive WEB-GROUNDED accuracy & currency review of the FINAL document — a rigorous external

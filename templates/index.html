@@ -599,6 +599,7 @@
         <select id="weeklyDoc" style="width:auto;display:inline-block;min-width:200px"></select>
       </label>
       <button class="btn" id="weeklyFind" style="width:auto">Find weeks</button>
+      <button class="btn gold" id="weeklyCompile" style="width:auto" title="Write EVERY week's summary and join them into ONE study document — then you can search cases, reports and scholarship to weave in. Uses one question credit per week, so it can take a while.">📚 Compile all weeks</button>
       <button class="btn alt mini" id="weeklyRefresh" style="width:auto" title="Re-read the outline">↻ Re-read</button>
       <button class="btn alt" id="weeklyClose" style="width:auto">Close</button>
     </div>
@@ -3678,6 +3679,11 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
       + "title='Search the WEB for recent events, official statements, data or scientific findings "
       + "(e.g. IPCC / WMO) that strengthen this memo. Nothing is saved to your corpus — you get a "
       + "list and tick what to weave in, cited as context.'>🌐 Find evidence</button>";
+  const scholarBtn = "<button class='btn mini bScholar' style='margin-left:6px' "
+      + "title='Search the WEB for real CASE LAW, law reports and SCHOLARLY WRITINGS (journal "
+      + "articles, textbooks, commentary, law-reform reports) on this document&#39;s topics. Nothing "
+      + "is saved to your corpus — you get a list, verify each link, and tick what to weave in, cited "
+      + "as a footnote.'>📚 Cases &amp; scholarship</button>";
   const hasRunCases = EXAM._pipelineCases && Object.keys(EXAM._pipelineCases).length;
   const casesBtn = "<button class='btn mini bCases' style='margin-left:6px' title='"
       + (hasRunCases
@@ -3706,7 +3712,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   box.innerHTML = coverBlock + readCtl + docSettingsHTML()
     + "<div style='margin-top:8px'><button class='btn mini bCopy'>Copy document</button>"
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
-    + pdfBtn + fitBtn + casesBtn + finalBtn + reviewBtn + evidenceBtn + injectBtn + "</div>";
+    + pdfBtn + fitBtn + casesBtn + finalBtn + reviewBtn + evidenceBtn + scholarBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
   wireDocSettings(box, afterEl, doc, wordName, defaultTitle);   // sync to globals, live typography, + ✓ Apply
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
@@ -3774,6 +3780,8 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   if (injectEl) injectEl.onclick = () => injectReport(box, afterEl, doc, wordName, defaultTitle);
   const evEl = box.querySelector(".bEvidence");
   if (evEl) evEl.onclick = () => findDocEvidence(box, afterEl, doc, wordName, defaultTitle, evEl);
+  const scholarEl = box.querySelector(".bScholar");
+  if (scholarEl) scholarEl.onclick = () => findDocScholarship(box, afterEl, doc, wordName, defaultTitle, scholarEl);
   const reviewEl = box.querySelector(".bReview");
   if (reviewEl) reviewEl.onclick = () => reviewDoc(box, afterEl, doc, wordName, defaultTitle, reviewEl);
   const casesEl = box.querySelector(".bCases");
@@ -3960,6 +3968,48 @@ async function findDocEvidence(bar, docEl, doc, wordName, defaultTitle, btn) {
       });
     } catch (e) { results.innerHTML = "Error — try again."; }
     go.disabled = false; go.textContent = "🌐 Search";
+  };
+  go.onclick = run;
+  q.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
+}
+
+// 📚 Search the web for real CASE LAW, law reports and SCHOLARLY WRITINGS on the document's topics,
+// then tick which to weave in (cited as footnotes). Legal/academic counterpart of findDocEvidence.
+async function findDocScholarship(bar, docEl, doc, wordName, defaultTitle, btn) {
+  let panel = bar.querySelector(".docScholarOut");
+  if (!panel) { panel = document.createElement("div"); panel.className = "docScholarOut"; panel.style.marginTop = "8px"; bar.appendChild(panel); }
+  panel.innerHTML =
+    "<div style='font-size:12px;color:#aab4c6;margin-bottom:6px'>📚 <b>Cases &amp; scholarship</b> — real case law, law reports and academic writing on this "
+    + "document's topics. Nothing is saved to your corpus; you verify each link and pick what to weave in.</div>"
+    + "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"
+    + "<input class='schQ' placeholder='topic / focus — e.g. locus classicus on mineral ownership in Ghana; academic writing on the vesting of natural resources' "
+    + "style='flex:1;min-width:240px;padding:6px;font-size:12px'>"
+    + "<button class='btn mini gold schGo'>📚 Search</button></div>"
+    + "<div class='schResults' style='margin-top:8px'></div>";
+  const q = panel.querySelector(".schQ"), go = panel.querySelector(".schGo"), results = panel.querySelector(".schResults");
+  q.focus();
+  const run = async () => {
+    go.disabled = true; go.textContent = "Searching…";
+    results.innerHTML = "<span style='font-size:11px;color:#8b93a7'>searching the web for real cases, reports &amp; scholarship… (30–90s)</span>";
+    try {
+      const r = await (await fetch("/api/document/authorities/find", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({document: doc, query: q.value.trim(), question: EXAM.question || ""})})).json();
+      if (r.error) { results.innerHTML = "⚠️ " + esc(r.error); go.disabled = false; go.textContent = "📚 Search"; return; }
+      mountEvidencePanel(results, r.items || [], async (chosen, host) => {
+        const add = host.querySelector(".evAdd"); add.disabled = true; add.textContent = "weaving in…";
+        try {
+          const rr = await (await fetch("/api/document/authorities/add", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({document: doc, items: chosen})})).json();
+          if (rr.error) { host.querySelector(".evNote").textContent = "⚠️ " + rr.error; add.disabled = false; add.textContent = "✓ Weave ticked into the document"; return; }
+          const updated = rr.document || doc;
+          EXAM.doc = updated; try { saveExam(); } catch (e) {}
+          docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(updated);
+          bar.remove();                                    // rebuild the toolbar against the new doc
+          renderExportBar(docEl, updated, wordName, defaultTitle);
+        } catch (e) { host.querySelector(".evNote").textContent = "Error — try again."; add.disabled = false; add.textContent = "✓ Weave ticked into the document"; }
+      });
+    } catch (e) { results.innerHTML = "Error — try again."; }
+    go.disabled = false; go.textContent = "📚 Search";
   };
   go.onclick = run;
   q.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); run(); } });
@@ -4820,6 +4870,7 @@ $("#openWeekly").onclick = () => {
 $("#weeklyClose").onclick = () => { $("#weeklyModal").style.display = "none"; };
 $("#weeklyFind").onclick = () => loadWeekly(false, $("#weeklyDoc").value);
 $("#weeklyRefresh").onclick = () => loadWeekly(true, $("#weeklyDoc").value);
+$("#weeklyCompile").onclick = () => compileAllWeeks();
 
 async function loadWeekly(refresh, doc) {
   const st = $("#weeklyStatus");
@@ -4843,8 +4894,11 @@ function weekLabel(w) {
   const s = String(w.week || "").trim();
   return /[a-z]/i.test(s) ? s : ("Week " + s);
 }
+let WEEKS_CACHE = [];
 function renderWeeks(weeks) {
+  WEEKS_CACHE = weeks || [];
   const box = $("#weeklyList"); box.innerHTML = "";
+  const compile = $("#weeklyCompile"); if (compile) compile.disabled = !WEEKS_CACHE.length;
   weeks.forEach(w => {
     const b = document.createElement("button");
     b.className = "btn alt"; b.style.cssText = "text-align:left;width:100%";
@@ -4891,6 +4945,76 @@ async function loadWeekSummary(w) {
     } catch (e) { const vs = wDoc.querySelector(".vidStatus"); if (vs) vs.remove(); }
   }
   renderExportBar(wDoc, finalMd, COURSE + " — " + weekLabel(w), weekLabel(w) + " — " + w.topic);
+}
+
+// Read one week's /api/week stream to the end and return its final markdown (no rendering).
+// onTick(chars) is called as text arrives so the caller can show live progress.
+async function fetchWeekMarkdown(w, onTick) {
+  const DELIM = "\x1e\x1eMETA\x1e\x1e";
+  const resp = await fetch("/api/week", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic})});
+  if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error || "failed"); }
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const {done, value} = await reader.read(); if (done) break;
+    buf += dec.decode(value, {stream:true});
+    if (onTick) onTick(buf.split(DELIM)[0].length);
+  }
+  const parts = buf.split(DELIM);
+  let meta = {}; try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) {}
+  if (meta.error) throw new Error(meta.error);
+  return parts[0].trim();
+}
+
+// 📚 Compile EVERY week into one study document, then hand it to the export bar (Word/PDF + Cases &
+// scholarship + Inject + reshape). One question credit per week — so we confirm the count first.
+async function compileAllWeeks() {
+  const weeks = WEEKS_CACHE.slice();
+  if (!weeks.length) { $("#weeklyStatus").textContent = "Find the weeks first."; return; }
+  const wantVideos = $("#weeklyVideos") && $("#weeklyVideos").checked;
+  const cost = weeks.length + (wantVideos ? weeks.length : 0);
+  if (!confirm("Compile all " + weeks.length + " weeks into one document?\n\nThis writes each week in turn"
+      + (wantVideos ? " and finds videos for each" : "")
+      + " — about " + cost + " question credit(s), and can take several minutes. Continue?")) return;
+  const btn = $("#weeklyCompile"), st = $("#weeklyStatus"), out = $("#weeklyOut");
+  btn.disabled = true; const btnLabel = btn.textContent; btn.textContent = "Compiling…";
+  out.innerHTML = "<h4 style='margin:14px 0 4px'>📚 " + esc(COURSE) + " — all weeks"
+    + " <span id='cDot' style='color:#6fcf97;font-size:12px'>● compiling…</span></h4>"
+    + "<div id='cProg' style='font-size:12px;color:#aab4c6;margin-bottom:8px'></div>"
+    + "<div id='cDoc' style='white-space:pre-wrap'></div>";
+  out.scrollIntoView({block:"start"});
+  const prog = $("#cProg"), cDoc = $("#cDoc");
+  const sections = [];
+  for (let i = 0; i < weeks.length; i++) {
+    const w = weeks[i], label = weekLabel(w);
+    prog.innerHTML = "Writing <b>" + esc(label) + "</b> — " + esc(w.topic)
+      + " <span style='color:#7a8296'>(" + (i + 1) + " of " + weeks.length + ")</span>";
+    try {
+      let md = await fetchWeekMarkdown(w, (n) => { cDoc.textContent = "…" + n + " characters so far…"; });
+      if (wantVideos) {
+        try {
+          const vr = await (await fetch("/api/week/videos", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic})})).json();
+          if (vr.markdown && !vr.error) md += "\n\n" + vr.markdown;
+        } catch (e) {}
+      }
+      sections.push("# " + label + " — " + w.topic + "\n\n" + md);
+    } catch (e) {
+      sections.push("# " + label + " — " + w.topic + "\n\n_(This week could not be compiled: "
+        + (e.message || "error") + ")_");
+    }
+    cDoc.textContent = "✓ " + (i + 1) + " of " + weeks.length + " weeks written.";
+  }
+  const finalMd = "# " + COURSE + " — Weekly study compilation\n\n"
+    + "_All " + weeks.length + " weeks, grounded in the course materials._\n\n"
+    + sections.join("\n\n---\n\n");
+  const dot = $("#cDot"); if (dot) dot.remove();
+  prog.textContent = "✅ Compiled " + weeks.length + " weeks. Export below, or search cases & scholarship to weave in.";
+  cDoc.style.whiteSpace = "normal";
+  cDoc.innerHTML = mdToHtml(finalMd);
+  renderExportBar(cDoc, finalMd, COURSE + " — weekly compilation", COURSE + " — Weekly study compilation");
+  btn.disabled = false; btn.textContent = btnLabel;
 }
 
 // ---- legal updates (web) ----
