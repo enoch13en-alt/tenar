@@ -1063,7 +1063,7 @@ async function refresh() {
     ? r.docs.map(d => "<div style='display:flex;align-items:center;gap:6px'>"
         + "<span style='flex:1'>" + tag(d.type) + esc(d.name) + "</span>"
         + (canDelete
-            ? "<button class='btn alt mini' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' onclick='deleteSource(this)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
+            ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
             : "")
         + "</div>").join("") : "none yet";
   $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
@@ -1111,6 +1111,12 @@ function applyPlan(p) {
     else { wt.disabled = false; wt.parentElement.style.opacity = 1; }
   }
 }
+// Delegated so the handler survives the 2.5s rebuild of #docs (no inline onclick — matches the
+// rest of the app, and works regardless of how the list is redrawn).
+document.getElementById("docs").addEventListener("click", e => {
+  const b = e.target.closest(".delSource");
+  if (b) deleteSource(b);
+});
 setInterval(refresh, 2500);
 
 async function ask() {
