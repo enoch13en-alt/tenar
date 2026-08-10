@@ -608,6 +608,7 @@
     </label>
     <div id="weeklyStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="weeklyList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
+    <div id="weeklyFolder" style="margin-top:12px"></div>
     <div id="weeklyOut"></div>
   </div>
 </div>
@@ -1056,8 +1057,15 @@ function xhrUpload(url, fd, onProgress, timeoutMs) {
 async function refresh() {
   const r = await (await fetch("/api/docs?course=" + encodeURIComponent(COURSE))).json();
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
+  // Owner/admin (or a matter's owner) may delete a source — same gate as the /api/doc/delete route.
+  const canDelete = r.plan && (r.plan.is_admin || (COURSE || "").startsWith("mtr-"));
   $("#docs").innerHTML = r.docs.length
-    ? r.docs.map(d => "<div>" + tag(d.type) + esc(d.name) + "</div>").join("") : "none yet";
+    ? r.docs.map(d => "<div style='display:flex;align-items:center;gap:6px'>"
+        + "<span style='flex:1'>" + tag(d.type) + esc(d.name) + "</span>"
+        + (canDelete
+            ? "<button class='btn alt mini' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' onclick='deleteSource(this)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
+            : "")
+        + "</div>").join("") : "none yet";
   $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
     ? Object.entries(r.mix).sort((a,b)=>b[1]-a[1]).map(([t,n]) => tag(t)+n).join(" ") : "";
   // The 2.5s poller must NOT clobber a live upload/indexing message with the server's
@@ -1067,6 +1075,21 @@ async function refresh() {
   $("#nameStatus").textContent = r.name_status || "";
   $("#cost").textContent = "Total spent: $" + (r.total_cost_usd || 0).toFixed(4);
   if (r.plan) applyPlan(r.plan);
+}
+
+// Delete a single source from the current course (owner/admin gated server-side too). Removes the
+// file and its indexed chunks; the 2.5s refresh redraws the list.
+async function deleteSource(btn) {
+  const file = btn.getAttribute("data-file"), name = btn.getAttribute("data-name") || file;
+  if (!file) return;
+  if (!confirm('Remove "' + name + '" from ' + COURSE + '?\n\nThis deletes the source and its indexed text, and can\'t be undone.')) return;
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const r = await (await fetch("/api/doc/delete", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, file})})).json();
+    if (r.error) { alert("Couldn't delete: " + r.error); btn.disabled = false; btn.textContent = "🗑"; return; }
+    refresh();
+  } catch (e) { alert("Delete failed — try again."); btn.disabled = false; btn.textContent = "🗑"; }
 }
 
 let PLAN = null;
@@ -4866,6 +4889,7 @@ $("#openWeekly").onclick = () => {
   $("#weeklyList").innerHTML = ""; $("#weeklyOut").innerHTML = ""; $("#weeklyStatus").textContent = "";
   $("#weeklyModal").style.display = "flex";
   loadWeekly(false);
+  renderFolder();           // show this course's saved weekly work (survives refresh)
 };
 $("#weeklyClose").onclick = () => { $("#weeklyModal").style.display = "none"; };
 $("#weeklyFind").onclick = () => loadWeekly(false, $("#weeklyDoc").value);
@@ -4944,7 +4968,107 @@ async function loadWeekSummary(w) {
       if (vr.markdown && !vr.error) { finalMd = finalMd + "\n\n" + vr.markdown; wDoc.innerHTML = mdToHtml(finalMd); }
     } catch (e) { const vs = wDoc.querySelector(".vidStatus"); if (vs) vs.remove(); }
   }
+  saveWeekly(finalMd, weekLabel(w) + " — " + w.topic, "week");   // survives a page refresh
   renderExportBar(wDoc, finalMd, COURSE + " — " + weekLabel(w), weekLabel(w) + " — " + w.topic);
+}
+
+// ---- Weekly folder: a per-course library of every weekly document generated (survives refresh) ----
+// Each entry: {id, t, title, kind:'week'|'all', md}. Stored under weeklyLib_<course>.
+function loadLib() {
+  try { return JSON.parse(localStorage.getItem("weeklyLib_" + COURSE) || "[]") || []; } catch (e) { return []; }
+}
+function saveLib(lib) {
+  try { localStorage.setItem("weeklyLib_" + COURSE, JSON.stringify(lib.slice(0, 80))); } catch (e) { /* quota */ }
+}
+// Add or update a weekly document in this course's folder (dedupe by title+kind so re-running a week
+// updates in place rather than piling up duplicates).
+function saveWeekly(md, title, kind) {
+  if (!md || md.length < 20 || !COURSE) return;
+  const lib = loadLib();
+  const i = lib.findIndex(x => x.title === title && x.kind === (kind || "week"));
+  const entry = { id: (i >= 0 ? lib[i].id : "w" + Date.now()), t: Date.now(), title: title || "", kind: kind || "week", md };
+  if (i >= 0) lib[i] = entry; else lib.push(entry);
+  saveLib(lib);
+  renderFolder();
+}
+// Pull a leading week number out of a title ("Week 3 — …" → 3) so the folder & report sort in
+// teaching order; things without a number sort after, compilations last.
+function weekOrder(it) {
+  if (it.kind === "all") return 1e9;
+  const m = String(it.title || "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 1e8;
+}
+function sortedLib() {
+  return loadLib().sort((a, b) => weekOrder(a) - weekOrder(b) || (a.t || 0) - (b.t || 0));
+}
+// Render the per-course folder: each saved document with Open / Delete, plus a "Download final
+// report" that merges the WHOLE folder into one detailed document.
+function renderFolder() {
+  const host = $("#weeklyFolder"); if (!host) return;
+  const lib = sortedLib();
+  if (!lib.length) { host.innerHTML = ""; return; }
+  host.innerHTML =
+    "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid #2a3344;padding-top:10px'>"
+    + "<b style='font-size:12px;color:#8fb4ff'>📁 Saved weekly work — " + esc(COURSE) + " (" + lib.length + ")</b>"
+    + "<button class='btn gold mini' id='weeklyReport' style='width:auto' title='Merge every saved weekly document above into ONE detailed final report you can download as Word or PDF. Nothing is summarised away.'>⬇ Download final report (all weeks)</button>"
+    + "<button class='btn alt mini' id='weeklyFolderClear' style='width:auto'>Clear all</button></div>"
+    + "<div style='display:flex;flex-direction:column;gap:5px;margin-top:8px'>"
+    + lib.map(it => {
+        const ago = Math.round((Date.now() - (it.t || 0)) / 60000);
+        const when = ago < 1 ? "just now" : ago < 60 ? ago + " min ago" : Math.round(ago / 60) + " h ago";
+        return "<div style='display:flex;align-items:center;gap:6px;background:#11151d;border-radius:4px;padding:5px 8px;font-size:12px'>"
+          + "<span style='flex:1;color:#cdd5e6'>" + (it.kind === "all" ? "📚 " : "📄 ") + esc(it.title || "Untitled")
+          + " <span style='color:#7a8296;font-size:11px'>(" + when + ")</span></span>"
+          + "<button class='btn alt mini wkOpen' data-id='" + it.id + "' style='width:auto'>Open</button>"
+          + "<button class='btn alt mini wkDel' data-id='" + it.id + "' style='width:auto'>🗑</button></div>";
+      }).join("")
+    + "</div>";
+  host.querySelectorAll(".wkOpen").forEach(b => b.onclick = () => {
+    const it = loadLib().find(x => x.id === b.dataset.id); if (it) openSavedWeekly(it);
+  });
+  host.querySelectorAll(".wkDel").forEach(b => b.onclick = () => {
+    saveLib(loadLib().filter(x => x.id !== b.dataset.id)); renderFolder();
+  });
+  $("#weeklyReport").onclick = () => downloadFinalReport();
+  $("#weeklyFolderClear").onclick = () => {
+    if (confirm("Remove ALL saved weekly work for " + COURSE + "? This can't be undone.")) {
+      localStorage.removeItem("weeklyLib_" + COURSE); renderFolder(); $("#weeklyOut").innerHTML = "";
+    }
+  };
+}
+// Open one saved weekly document into the output area with its full export bar.
+function openSavedWeekly(it) {
+  const out = $("#weeklyOut");
+  out.innerHTML = "<h4 style='margin:14px 0 4px'>" + (it.kind === "all" ? "📚 " : "📄 ") + esc(it.title || "Weekly study") + "</h4>"
+    + "<div id='wDoc' style='white-space:normal'></div>";
+  out.scrollIntoView({ block: "start" });
+  const wDoc = $("#wDoc"); wDoc.innerHTML = mdToHtml(it.md);
+  renderExportBar(wDoc, it.md, COURSE + " — " + (it.title || "weekly"), it.title || "");
+}
+// Merge the WHOLE course folder into one detailed final report and render it with the export bar
+// (download as Word / PDF from there). Nothing is summarised — every saved document is kept in full.
+function downloadFinalReport() {
+  let lib = sortedLib();
+  if (!lib.length) { $("#weeklyStatus").textContent = "Nothing saved yet — generate some weeks first."; return; }
+  // Individual weeks already hold the full detail; if any exist, skip the redundant full-compilation
+  // copies so the report doesn't repeat every week twice.
+  const weeks = lib.filter(x => x.kind !== "all");
+  const skipped = lib.length - weeks.length;
+  if (weeks.length) lib = weeks;
+  const now = new Date().toLocaleDateString();
+  const contents = lib.map((it, i) => (i + 1) + ". " + (it.title || "Untitled")).join("\n");
+  const body = lib.map((it, i) => "# " + (i + 1) + ". " + (it.title || "Untitled") + "\n\n" + it.md).join("\n\n---\n\n");
+  const md = "# " + COURSE + " — Final Report\n\n"
+    + "_Compiled from " + lib.length + " weekly document(s) · " + now
+    + (skipped ? " · " + skipped + " full-compilation copy left out to avoid repeating weeks" : "") + "_\n\n"
+    + "## Contents\n\n" + contents + "\n\n---\n\n" + body;
+  const out = $("#weeklyOut");
+  out.innerHTML = "<h4 style='margin:14px 0 4px'>📘 " + esc(COURSE) + " — Final Report "
+    + "<span style='font-size:11px;color:#8b93a7'>(" + lib.length + " document(s) — download as Word or PDF below)</span></h4>"
+    + "<div id='wDoc' style='white-space:normal'></div>";
+  out.scrollIntoView({ block: "start" });
+  const wDoc = $("#wDoc"); wDoc.innerHTML = mdToHtml(md);
+  renderExportBar(wDoc, md, COURSE + " — Final Report", COURSE + " — Final Report");
 }
 
 // Read one week's /api/week stream to the end and return its final markdown (no rendering).
@@ -5013,6 +5137,7 @@ async function compileAllWeeks() {
   prog.textContent = "✅ Compiled " + weeks.length + " weeks. Export below, or search cases & scholarship to weave in.";
   cDoc.style.whiteSpace = "normal";
   cDoc.innerHTML = mdToHtml(finalMd);
+  saveWeekly(finalMd, COURSE + " — Weekly study compilation", "all");   // survives a page refresh
   renderExportBar(cDoc, finalMd, COURSE + " — weekly compilation", COURSE + " — Weekly study compilation");
   btn.disabled = false; btn.textContent = btnLabel;
 }
