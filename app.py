@@ -2626,6 +2626,10 @@ def _detect_numbering(d):
 
 
 def page_label(pdf_path, fname, physical):
+    # Non-PDF (txt/md/docx): the chunk's stored 'page' IS the real label (from a converter's page
+    # markers) or a sequential section — return it as-is; fitz page-label logic is PDF-only.
+    if not fname.lower().endswith(".pdf"):
+        return str(physical)
     if fname not in LABELS:
         try:
             d = fitz.open(pdf_path)
@@ -2845,6 +2849,38 @@ def chunk_page_text(text):
     return [c for c in chunks if c]
 
 
+# A page marker a converter kept, ALONE on its own line — captures the REAL page label so a
+# converted .txt/.md keeps true pinpoint citations. Matches (case-insensitive): '--- Page 213 ---',
+# '=== Page 213 ===', '[Page 213]', '[p. 213]', '{{Page 213}}', '<page 213>', 'Page 213',
+# 'Page 213 of 456'. Label is arabic (213) or roman (xiii). Own-line only → won't match a stray
+# 'see p. 5' inside prose.
+_PAGE_MARKER = re.compile(
+    r'(?im)^[ \t>#*_]*(?:[-=]{2,}\s*)?[\[{<]{0,2}\s*'
+    r'(?:page|pg|p)\s*\.?\s*'
+    r'([0-9]+|[ivxlcdm]+)'
+    r'\s*(?:of\s+[0-9]+)?\s*'
+    r'[\]}>]{0,2}\s*(?:[-=]{2,})?[ \t]*$')
+
+
+def _paginate_text(text):
+    """Split converted text into real pages. Returns [(label, page_text), …] where label is the
+    document's REAL page number/roman (str) when the converter kept a marker, or None. Order:
+    explicit markers → form-feed breaks (pdftotext default) → one unpaged blob."""
+    marks = list(_PAGE_MARKER.finditer(text))
+    if len(marks) >= 2:                          # explicit '--- Page N ---' markers → real labels
+        pages = []
+        pre = text[:marks[0].start()].strip()
+        if pre:
+            pages.append((None, pre))            # any preamble before the first marker
+        for k, m in enumerate(marks):
+            end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
+            pages.append((m.group(1), text[m.end():end]))
+        return pages
+    if "\f" in text:                             # form-feed page breaks → sequential physical pages
+        return [(str(i + 1), p) for i, p in enumerate(text.split("\f"))]
+    return [(None, text)]                        # no page info at all
+
+
 def extract_doc_chunks(path, fname):
     out = []
     ext = fname.lower().rsplit(".", 1)[-1]
@@ -2860,10 +2896,24 @@ def extract_doc_chunks(path, fname):
             text = "\n".join(p.text for p in docx.Document(path).paragraphs)
         else:                                    # txt / md
             text = open(path, encoding="utf-8", errors="ignore").read()
-        # Word/text files have no fixed pages → number chunks as sequential
-        # "sections" so citations still point somewhere ('p.1', 'p.2', …).
-        for n, ch in enumerate(chunk_page_text(text), start=1):
-            out.append({"doc": fname, "page": n, "text": ch})
+        pages = _paginate_text(text)
+        has_pages = len(pages) > 1 or (pages and pages[0][0] is not None)
+        if not has_pages:
+            # No page markers → keep the old per-chunk 'section' numbering ('p.1', 'p.2', …).
+            for n, ch in enumerate(chunk_page_text(text), start=1):
+                out.append({"doc": fname, "page": n, "text": ch})
+        else:
+            # Real pages: every chunk carries its source page's REAL label (or sequential when a
+            # page had no explicit number), so citations pinpoint the actual page.
+            seq = 0
+            for label, ptext in pages:
+                chunks = chunk_page_text(ptext)
+                if not chunks:
+                    continue
+                seq += 1
+                page_val = label if label is not None else seq
+                for ch in chunks:
+                    out.append({"doc": fname, "page": page_val, "text": ch})
     return out
 
 # ---------------------------------------------------------------- index state
