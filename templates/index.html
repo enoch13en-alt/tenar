@@ -262,8 +262,10 @@
       <textarea id="pasteBody" placeholder="Paste the text here — dates, affected areas, displacement/damage figures, what the VBA/NADMO did. Indexes cleanly with no scanning." style="height:150px;width:100%"></textarea>
       <div class="rowbtn" style="margin-top:6px">
         <button class="btn gold" id="pasteAdd" style="width:auto">＋ Add to corpus</button>
+        <button class="btn" id="pasteSplit" style="width:auto" title="Paste your converter's WHOLE output — many documents separated by '@@@FILE: Title.md' lines — and this splits it into one indexed source per document, each keeping its own name and page numbers. No download / unzip needed.">✂️ Split &amp; add (many docs)</button>
         <span id="pasteStatus" style="font-size:12px;color:#8b93a7"></span>
       </div>
+      <div style="font-size:11px;color:#6b7488;margin-top:4px">One document → ＋ Add. A whole converter dump (with <code>@@@FILE:</code> lines) → ✂️ Split &amp; add.</div>
     </div>
   </details>
 
@@ -1853,6 +1855,26 @@ $("#pasteAdd").onclick = async () => {
     else {
       st.textContent = "✅ added “" + (r.title || "context") + "” — " + (r.chunks_added || 0) + " chunks, searchable now";
       $("#pasteTitle").value = ""; $("#pasteBody").value = "";
+      refresh();
+    }
+  } catch (e) { st.textContent = "Error — try again."; }
+  btn.disabled = false;
+};
+
+// Split a whole converter dump (documents separated by '@@@FILE:' lines) into one indexed source
+// each — the splitter, built into TENAR so there's no download/unzip step.
+$("#pasteSplit").onclick = async () => {
+  const text = $("#pasteBody").value.trim(), st = $("#pasteStatus");
+  if (!/^@@@FILE:/m.test(text)) { st.textContent = "No @@@FILE: markers — use ＋ Add for a single document, or add the markers in the converter."; return; }
+  const btn = $("#pasteSplit"); btn.disabled = true; st.textContent = "splitting & indexing…";
+  try {
+    const r = await (await fetch("/api/paste/split", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, text})})).json();
+    if (r.error) { st.textContent = "⚠️ " + r.error; }
+    else {
+      const fails = (r.failed && r.failed.length) ? " · ⚠ " + r.failed.length + " failed" : "";
+      st.textContent = "✅ added " + r.count + " document(s), searchable now" + fails;
+      if (!r.failed || !r.failed.length) { $("#pasteBody").value = ""; $("#pasteTitle").value = ""; }
       refresh();
     }
   } catch (e) { st.textContent = "Error — try again."; }

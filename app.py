@@ -4804,6 +4804,55 @@ def api_paste():
     return jsonify({"ok": True, "file": fn, "title": title, "indexed": True, "chunks_added": n})
 
 
+@app.route("/api/paste/split", methods=["POST"])
+def api_paste_split():
+    """Split ONE pasted blob of converter output — many documents separated by '@@@FILE: <title>.md'
+    lines — into SEPARATE indexed sources, each keeping its own citation name and its '--- Page N ---'
+    markers. Turns 'convert everything → paste → done' into one step. Owner/admin gated."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if not _may_edit_corpus(course):
+        return jsonify({"error": "Only the owner can add to a shared course."}), 403
+    text = body.get("text", "") or ""
+    marks = list(re.finditer(r'(?im)^@@@FILE:\s*(.+?)\s*$', text))
+    if not marks:
+        return jsonify({"error": "No '@@@FILE:' markers found. Paste the converter's output (each "
+                        "document preceded by a '@@@FILE: Title.md' line), or use ＋ Add for a single "
+                        "document."}), 400
+    pdf_dir, _ = course_paths(course)
+    made, failed, used = [], [], set()
+    for k, m in enumerate(marks):
+        raw = (m.group(1) or "").strip()
+        end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
+        doc_text = text[m.end():end].strip()
+        if len(doc_text) < 40:                        # skip an empty / stub section
+            continue
+        base = re.sub(r'\.(md|txt)$', '', raw, flags=re.I)
+        safe = re.sub(r'[^\w %()&.,\'-]', '_', base).strip()[:90] or ("document %d" % (k + 1))
+        fn = safe + ".md"
+        n2 = 2
+        while fn in used:                             # avoid collisions within one batch
+            fn = "%s (%d).md" % (safe, n2); n2 += 1
+        used.add(fn)
+        title = (base[:120] or safe)
+        old = os.path.join(pdf_dir, fn)
+        if os.path.exists(old):                       # replace a prior copy of the same file
+            try:
+                os.remove(old)
+            except Exception:
+                pass
+        try:
+            with open(os.path.join(pdf_dir, fn), "w", encoding="utf-8") as f:
+                f.write(doc_text)                     # body already carries its title + page markers
+            SOURCES[fn] = title
+            chunks = index_one_doc(course, fn)
+            made.append({"file": fn, "title": title, "chunks": chunks})
+        except Exception as e:
+            failed.append({"title": title, "why": str(e)[:120]})
+    save_sources()
+    return jsonify({"ok": True, "made": made, "failed": failed, "count": len(made)})
+
+
 @app.route("/api/doc/index", methods=["POST"])
 def api_doc_index():
     """Incrementally index ONE file already saved in the course (no full rebuild). Recovers
