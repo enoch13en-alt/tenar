@@ -734,6 +734,26 @@
       </optgroup>
     </select>
     <div id="planUsage" style="margin-top:14px"></div>
+    <div id="adminCreate" style="display:none;margin-top:14px;border-top:1px solid #2a3344;padding-top:12px">
+      <div style="font-size:12px;color:#8fb4ff;font-weight:600;margin-bottom:6px">👤 Create an account (admin)</div>
+      <input id="acEmail" placeholder="new user's email" autocomplete="off" style="width:100%;margin:3px 0;padding:6px;font-size:12px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:3px 0">
+        <select id="acPlan" style="width:auto">
+          <option value="free">Free</option>
+          <option value="semester">Semester Bundle</option>
+          <option value="dissertation">Dissertation</option>
+          <option value="full_llm" selected>Full LLM</option>
+          <option value="consultant">Consultant</option>
+        </select>
+        <select id="acRole" style="width:auto">
+          <option value="student" selected>Student</option>
+          <option value="consultant">Consultant</option>
+        </select>
+        <input id="acPw" placeholder="password (blank = auto)" autocomplete="off" style="flex:1;min-width:130px;padding:6px;font-size:12px">
+        <button class="btn gold" id="acCreate" style="width:auto">Create</button>
+      </div>
+      <div id="acOut" style="font-size:12px;margin-top:6px"></div>
+    </div>
     <div class="rowbtn">
       <button class="btn" id="buyComp" style="width:auto">+10 comparative credits</button>
       <button class="btn" id="buyExam" style="width:auto">+5 Exam credits</button>
@@ -1095,6 +1115,7 @@ async function deleteSource(btn) {
 let PLAN = null;
 function applyPlan(p) {
   PLAN = p;
+  const ac = $("#adminCreate"); if (ac) ac.style.display = p.is_admin ? "block" : "none";
   const u = p.usage, l = p.limits, c = p.credits;
   const cap = (k, credit) => l[k] + (credit ? (c[k] || 0) : 0);
   $("#planLine").innerHTML =
@@ -4309,6 +4330,26 @@ $("#buyExam").onclick = () => buyCredits({exam_sessions: 5});
 $("#resetUsage").onclick = async () => {
   const p = await (await fetch("/api/plan/reset", {method:"POST"})).json();
   renderPlanUsage(p); applyPlan(p);
+};
+// Admin: create a new account with a chosen plan/role; shows the temp password ONCE to hand over.
+$("#acCreate").onclick = async () => {
+  const email = $("#acEmail").value.trim(), out = $("#acOut"), btn = $("#acCreate");
+  if (!email) { out.innerHTML = "<span style='color:#e0a0a0'>Enter an email.</span>"; return; }
+  btn.disabled = true; btn.textContent = "Creating…"; out.textContent = "";
+  try {
+    const r = await (await fetch("/api/admin/user/create", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email, plan: $("#acPlan").value, role: $("#acRole").value, password: $("#acPw").value.trim()})})).json();
+    if (r.error) { out.innerHTML = "<span style='color:#e0a0a0'>⚠️ " + esc(r.error) + "</span>"; }
+    else {
+      out.innerHTML = "<div style='border:1px solid #1f9d55;border-radius:6px;padding:8px;background:#0d1712'>"
+        + "✅ <b>" + esc(r.email) + "</b> created on <b>" + esc(r.label || r.plan) + "</b> (" + esc(r.role) + ").<br>"
+        + "Password: <code style='background:#11151d;padding:1px 6px;border-radius:4px;user-select:all'>" + esc(r.password) + "</code>"
+        + (r.generated ? " <span style='color:#8b93a7'>(auto-generated)</span>" : "")
+        + "<br><span style='color:#e0b050'>Copy this now — it isn't shown again. Send it to them and have them change it.</span></div>";
+      $("#acEmail").value = ""; $("#acPw").value = "";
+    }
+  } catch (e) { out.innerHTML = "<span style='color:#e0a0a0'>Error — try again.</span>"; }
+  btn.disabled = false; btn.textContent = "Create";
 };
 
 // ---- Question Decoder: entry-point folded into Exam Coach's 'Break it down'. ----

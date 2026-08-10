@@ -11143,6 +11143,41 @@ def api_signup():
     return jsonify({"ok": True, "email": email})
 
 
+@app.route("/api/admin/user/create", methods=["POST"])
+def api_admin_user_create():
+    """Admin-only: provision a new account with a chosen plan/role, WITHOUT an invite code or
+    editing env vars. Returns the (temp) password ONCE so the owner can hand it over. Strictly
+    is_admin gated — this is a privileged endpoint; it does NOT log the new user in."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
+    body = request.json or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"error": "Enter a valid email."}), 400
+    if email in USERS:
+        return jsonify({"error": "That email is already registered — upgrade their plan "
+                        "instead, or pick another email."}), 400
+    plan = (body.get("plan") or "free").strip()
+    if plan not in PLAN_LIMITS:
+        return jsonify({"error": "Unknown plan."}), 400
+    role = (body.get("role") or "student").strip().lower()
+    if role not in ("student", "consultant"):
+        role = "student"
+    pw = (body.get("password") or "").strip()
+    generated = False
+    if not pw:
+        pw = "tenar-" + secrets.token_urlsafe(6)   # readable-ish temp password
+        generated = True
+    elif len(pw) < 6:
+        return jsonify({"error": "Password must be 6+ characters."}), 400
+    create_user(email, pw, plan=plan, role=role)   # persists (save_users)
+    app.logger.info("admin %s created account %s (plan=%s role=%s)",
+                    session.get("email"), email, plan, role)
+    return jsonify({"ok": True, "email": email, "plan": plan, "role": role,
+                    "password": pw, "generated": generated,
+                    "label": PLAN_LIMITS[plan]["label"]})
+
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     body = request.json or {}
