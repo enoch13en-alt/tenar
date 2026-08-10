@@ -4120,6 +4120,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
     save_config(CONFIG)
+    _bill_user(cost, in_tok, out_tok)          # per-user spend tracking
     _final_answer = "".join(s["text"] for s in segments).strip()
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
@@ -4232,6 +4233,18 @@ def _usage_cost(u, model=None):
     return cost, in_tok + c_write + c_read, out_tok
 
 
+def _bill_user(cost, in_tok=0, out_tok=0):
+    """Attribute API $ + tokens to the logged-in user, so the owner can track per-user spend.
+    No-op outside a request / for anonymous calls. Cheap: piggybacks on the same save cadence."""
+    u = current_user()
+    if u is None:
+        return
+    u["spend_usd"] = round(u.get("spend_usd", 0.0) + cost, 6)
+    u["in_tok"] = u.get("in_tok", 0) + int(in_tok or 0)
+    u["out_tok"] = u.get("out_tok", 0) + int(out_tok or 0)
+    save_users()
+
+
 def record_cost(resp, model=None):
     u = getattr(resp, "usage", None)
     if not u:
@@ -4241,6 +4254,7 @@ def record_cost(resp, model=None):
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
     save_config(CONFIG)
+    _bill_user(cost, in_tok, out_tok)
     return {"this_usd": round(cost, 5),
             "total_usd": round(CONFIG["total_cost_usd"], 4),
             "input_tokens": in_tok, "output_tokens": out_tok}
@@ -11176,6 +11190,30 @@ def api_admin_user_create():
     return jsonify({"ok": True, "email": email, "plan": plan, "role": role,
                     "password": pw, "generated": generated,
                     "label": PLAN_LIMITS[plan]["label"]})
+
+
+@app.route("/api/admin/users")
+def api_admin_users():
+    """Admin-only: every account with its plan, questions used this period, and total $ spent —
+    so the owner can track per-user spend. Read-only; is_admin gated."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
+    rows = []
+    for email, u in USERS.items():
+        plan = u.get("plan", "free")
+        lim = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+        rows.append({
+            "email": email,
+            "plan": plan, "label": lim.get("label", plan),
+            "role": u.get("role", "student"), "is_admin": bool(u.get("is_admin")),
+            "questions_used": int(u.get("usage", {}).get("questions", 0)),
+            "questions_limit": int(lim.get("questions", 0)),
+            "spend_usd": round(float(u.get("spend_usd", 0.0)), 4),
+            "in_tok": int(u.get("in_tok", 0)), "out_tok": int(u.get("out_tok", 0)),
+            "period_start": u.get("period_start", ""),
+        })
+    rows.sort(key=lambda r: r["spend_usd"], reverse=True)
+    return jsonify({"users": rows, "count": len(rows)})
 
 
 @app.route("/api/login", methods=["POST"])

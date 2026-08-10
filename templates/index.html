@@ -754,6 +754,13 @@
       </div>
       <div id="acOut" style="font-size:12px;margin-top:6px"></div>
     </div>
+    <div id="adminUsers" style="display:none;margin-top:14px;border-top:1px solid #2a3344;padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:12px;color:#8fb4ff;font-weight:600">👥 Users &amp; spend</div>
+        <button class="btn alt mini" id="usersRefresh" style="width:auto">↻ Refresh</button>
+      </div>
+      <div id="usersList" style="margin-top:8px;font-size:12px;overflow-x:auto"></div>
+    </div>
     <div class="rowbtn">
       <button class="btn" id="buyComp" style="width:auto">+10 comparative credits</button>
       <button class="btn" id="buyExam" style="width:auto">+5 Exam credits</button>
@@ -1116,6 +1123,7 @@ let PLAN = null;
 function applyPlan(p) {
   PLAN = p;
   const ac = $("#adminCreate"); if (ac) ac.style.display = p.is_admin ? "block" : "none";
+  const au = $("#adminUsers"); if (au) au.style.display = p.is_admin ? "block" : "none";
   const u = p.usage, l = p.limits, c = p.credits;
   const cap = (k, credit) => l[k] + (credit ? (c[k] || 0) : 0);
   $("#planLine").innerHTML =
@@ -4310,9 +4318,34 @@ function renderPlanUsage(p) {
 }
 async function openPlan() {
   const p = await (await fetch("/api/plan")).json();
-  renderPlanUsage(p); $("#planModal").style.display = "flex";
+  renderPlanUsage(p); applyPlan(p); $("#planModal").style.display = "flex";
+  if (p.is_admin) loadUsers();
 }
 $("#openPlan").onclick = openPlan;
+// Admin: list every account with its plan, questions used, and total $ spent.
+async function loadUsers() {
+  const host = $("#usersList"); if (!host) return;
+  host.innerHTML = "<span style='color:#8b93a7'>loading…</span>";
+  try {
+    const r = await (await fetch("/api/admin/users")).json();
+    if (r.error) { host.innerHTML = "<span style='color:#e0a0a0'>" + esc(r.error) + "</span>"; return; }
+    const total = (r.users || []).reduce((a, u) => a + (u.spend_usd || 0), 0);
+    host.innerHTML =
+      "<table style='width:100%;border-collapse:collapse'>"
+      + "<tr style='color:#8b93a7;text-align:left'><th style='padding:3px 6px'>User</th><th>Plan</th>"
+      + "<th style='text-align:right'>Q used</th><th style='text-align:right'>Spend</th></tr>"
+      + (r.users || []).map(u =>
+          "<tr style='border-top:1px solid #1c2430'>"
+          + "<td style='padding:3px 6px'>" + esc(u.email) + (u.is_admin ? " <span style='color:#b9772a'>(admin)</span>" : "") + "</td>"
+          + "<td>" + esc(u.label || u.plan) + "</td>"
+          + "<td style='text-align:right'>" + u.questions_used + "/" + u.questions_limit + "</td>"
+          + "<td style='text-align:right;color:#7fdca0'>$" + (u.spend_usd || 0).toFixed(3) + "</td></tr>").join("")
+      + "<tr style='border-top:1px solid #2a3344;font-weight:600'><td style='padding:3px 6px' colspan='3'>Total (" + (r.count || 0) + " users)</td>"
+      + "<td style='text-align:right;color:#7fdca0'>$" + total.toFixed(3) + "</td></tr>"
+      + "</table>";
+  } catch (e) { host.innerHTML = "<span style='color:#e0a0a0'>Error — try again.</span>"; }
+}
+$("#usersRefresh").onclick = loadUsers;
 $("#closePlan").onclick = () => $("#planModal").style.display = "none";
 $("#planSel").onchange = async () => {
   const p = await (await fetch("/api/plan", {method:"POST",
