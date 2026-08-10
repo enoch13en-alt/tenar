@@ -1103,7 +1103,9 @@ async function refresh() {
   if (!_statusHold)
     $("#status").textContent = r.status + (r.indexing ? " ⏳" : "");
   $("#nameStatus").textContent = r.name_status || "";
-  $("#cost").textContent = "Total spent: $" + (r.total_cost_usd || 0).toFixed(4);
+  // total_cost_usd is only sent to admins; ordinary users never see global spend
+  $("#cost").textContent = (r.total_cost_usd != null)
+    ? "Total spent: $" + r.total_cost_usd.toFixed(4) : "";
   if (r.plan) applyPlan(r.plan);
 }
 
@@ -1127,6 +1129,9 @@ function applyPlan(p) {
   PLAN = p;
   const ac = $("#adminCreate"); if (ac) ac.style.display = p.is_admin ? "block" : "none";
   const au = $("#adminUsers"); if (au) au.style.display = p.is_admin ? "block" : "none";
+  // Owner-only surfaces: global spend and the system-prompt editor are hidden from normal users.
+  const cost = $("#cost"); if (cost) cost.style.display = p.is_admin ? "block" : "none";
+  const setBtn = $("#openSettings"); if (setBtn) setBtn.style.display = p.is_admin ? "block" : "none";
   const u = p.usage, l = p.limits, c = p.credits;
   const cap = (k, credit) => l[k] + (credit ? (c[k] || 0) : 0);
   $("#planLine").innerHTML =
@@ -3484,7 +3489,8 @@ async function compileExam() {
   docEl.innerHTML = mdToHtml(document);
   EXAM.doc = document; saveExam();           // expose the compiled text for the pipeline
   EXAM.cost = (EXAM.cost || 0) + (meta.cost ? (meta.cost.this_usd || 0) : 0);
-  $("#examStatus").textContent = meta.cost
+  // Cost figures are owner-only; a normal user just sees that it compiled.
+  $("#examStatus").textContent = (meta.cost && PLAN && PLAN.is_admin)
     ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $"
        + EXAM.cost.toFixed(4) + " · total spent $" + meta.cost.total_usd)
     : "Compiled.";

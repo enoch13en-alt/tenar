@@ -4489,7 +4489,9 @@ def api_docs():
         "status": _status(course)["message"],
         "indexing": _status(course)["running"],
         "name_status": NAME_STATUS.get(course, ""),
-        "total_cost_usd": round(CONFIG["total_cost_usd"], 4),
+        # global spend is owner-only; never leak it to an ordinary user
+        "total_cost_usd": (round(CONFIG["total_cost_usd"], 4)
+                           if (current_user() or {}).get("is_admin") else None),
         "plan": plan_status(),
     })
 
@@ -9408,6 +9410,10 @@ def api_advisory():
 
 @app.route("/api/prompt", methods=["GET", "POST"])
 def api_prompt():
+    # The system prompt is proprietary — how the bot answers. Admin/owner only; a normal
+    # user must never read or change it.
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
     if request.method == "POST":
         p = (request.json or {}).get("system_prompt", "").strip()
         if p:
