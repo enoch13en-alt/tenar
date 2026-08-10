@@ -11184,12 +11184,17 @@ def api_admin_user_create():
         generated = True
     elif len(pw) < 6:
         return jsonify({"error": "Password must be 6+ characters."}), 400
-    create_user(email, pw, plan=plan, role=role)   # persists (save_users)
-    app.logger.info("admin %s created account %s (plan=%s role=%s)",
-                    session.get("email"), email, plan, role)
+    # Non-admin accounts only SEE courses they're enrolled in. Default to enrolling the new
+    # account in every current course pack, so they land with the whole library (turnkey);
+    # the owner can prune later via /api/enroll. enroll_all=false makes an empty account.
+    enroll_all = body.get("enroll_all", True)
+    courses = list_courses(visible_only=True) if enroll_all else []
+    create_user(email, pw, plan=plan, role=role, courses=courses)   # persists (save_users)
+    app.logger.info("admin %s created account %s (plan=%s role=%s courses=%d)",
+                    session.get("email"), email, plan, role, len(courses))
     return jsonify({"ok": True, "email": email, "plan": plan, "role": role,
                     "password": pw, "generated": generated,
-                    "label": PLAN_LIMITS[plan]["label"]})
+                    "label": PLAN_LIMITS[plan]["label"], "courses": len(courses)})
 
 
 @app.route("/api/admin/users")
@@ -11214,6 +11219,21 @@ def api_admin_users():
         })
     rows.sort(key=lambda r: r["spend_usd"], reverse=True)
     return jsonify({"users": rows, "count": len(rows)})
+
+
+@app.route("/api/admin/user/enroll_all", methods=["POST"])
+def api_admin_user_enroll_all():
+    """Admin-only: enrol an existing account in EVERY current course pack (fixes an account that
+    was created empty and therefore sees no courses)."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
+    email = ((request.json or {}).get("email") or "").strip().lower()
+    u = USERS.get(email)
+    if not u:
+        return jsonify({"error": "No such user."}), 404
+    u["courses"] = list_courses(visible_only=True)
+    save_users()
+    return jsonify({"ok": True, "email": email, "count": len(u["courses"])})
 
 
 @app.route("/api/login", methods=["POST"])

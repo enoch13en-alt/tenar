@@ -752,6 +752,9 @@
         <input id="acPw" placeholder="password (blank = auto)" autocomplete="off" style="flex:1;min-width:130px;padding:6px;font-size:12px">
         <button class="btn gold" id="acCreate" style="width:auto">Create</button>
       </div>
+      <label style="color:#aab4c6;font-size:12px;display:block;margin-top:2px">
+        <input type="checkbox" id="acEnrollAll" checked> Enrol in all course packs (so they see your courses)
+      </label>
       <div id="acOut" style="font-size:12px;margin-top:6px"></div>
     </div>
     <div id="adminUsers" style="display:none;margin-top:14px;border-top:1px solid #2a3344;padding-top:12px">
@@ -4333,16 +4336,28 @@ async function loadUsers() {
     host.innerHTML =
       "<table style='width:100%;border-collapse:collapse'>"
       + "<tr style='color:#8b93a7;text-align:left'><th style='padding:3px 6px'>User</th><th>Plan</th>"
-      + "<th style='text-align:right'>Q used</th><th style='text-align:right'>Spend</th></tr>"
+      + "<th style='text-align:right'>Q used</th><th style='text-align:right'>Spend</th><th></th></tr>"
       + (r.users || []).map(u =>
           "<tr style='border-top:1px solid #1c2430'>"
           + "<td style='padding:3px 6px'>" + esc(u.email) + (u.is_admin ? " <span style='color:#b9772a'>(admin)</span>" : "") + "</td>"
           + "<td>" + esc(u.label || u.plan) + "</td>"
           + "<td style='text-align:right'>" + u.questions_used + "/" + u.questions_limit + "</td>"
-          + "<td style='text-align:right;color:#7fdca0'>$" + (u.spend_usd || 0).toFixed(3) + "</td></tr>").join("")
+          + "<td style='text-align:right;color:#7fdca0'>$" + (u.spend_usd || 0).toFixed(3) + "</td>"
+          + "<td style='text-align:right'>" + (u.is_admin ? "" :
+              "<button class='btn alt mini enrolAll' data-email=\"" + esc(u.email) + "\" style='width:auto;padding:1px 7px' title='Enrol this account in every course pack'>Enrol all</button>") + "</td>"
+          + "</tr>").join("")
       + "<tr style='border-top:1px solid #2a3344;font-weight:600'><td style='padding:3px 6px' colspan='3'>Total (" + (r.count || 0) + " users)</td>"
-      + "<td style='text-align:right;color:#7fdca0'>$" + total.toFixed(3) + "</td></tr>"
+      + "<td style='text-align:right;color:#7fdca0'>$" + total.toFixed(3) + "</td><td></td></tr>"
       + "</table>";
+    host.querySelectorAll(".enrolAll").forEach(b => b.onclick = async () => {
+      b.disabled = true; b.textContent = "…";
+      try {
+        const rr = await (await fetch("/api/admin/user/enroll_all", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({email: b.dataset.email})})).json();
+        if (rr.error) { alert(rr.error); b.disabled = false; b.textContent = "Enrol all"; return; }
+        b.textContent = "✓ " + rr.count;
+      } catch (e) { b.disabled = false; b.textContent = "Enrol all"; }
+    });
   } catch (e) { host.innerHTML = "<span style='color:#e0a0a0'>Error — try again.</span>"; }
 }
 $("#usersRefresh").onclick = loadUsers;
@@ -4371,11 +4386,13 @@ $("#acCreate").onclick = async () => {
   btn.disabled = true; btn.textContent = "Creating…"; out.textContent = "";
   try {
     const r = await (await fetch("/api/admin/user/create", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({email, plan: $("#acPlan").value, role: $("#acRole").value, password: $("#acPw").value.trim()})})).json();
+      body: JSON.stringify({email, plan: $("#acPlan").value, role: $("#acRole").value, password: $("#acPw").value.trim(),
+        enroll_all: $("#acEnrollAll").checked})})).json();
     if (r.error) { out.innerHTML = "<span style='color:#e0a0a0'>⚠️ " + esc(r.error) + "</span>"; }
     else {
       out.innerHTML = "<div style='border:1px solid #1f9d55;border-radius:6px;padding:8px;background:#0d1712'>"
-        + "✅ <b>" + esc(r.email) + "</b> created on <b>" + esc(r.label || r.plan) + "</b> (" + esc(r.role) + ").<br>"
+        + "✅ <b>" + esc(r.email) + "</b> created on <b>" + esc(r.label || r.plan) + "</b> (" + esc(r.role) + ")"
+        + (r.courses ? ", enrolled in " + r.courses + " course(s)" : "") + ".<br>"
         + "Password: <code style='background:#11151d;padding:1px 6px;border-radius:4px;user-select:all'>" + esc(r.password) + "</code>"
         + (r.generated ? " <span style='color:#8b93a7'>(auto-generated)</span>" : "")
         + "<br><span style='color:#e0b050'>Copy this now — it isn't shown again. Send it to them and have them change it.</span></div>";
