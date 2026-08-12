@@ -4371,8 +4371,9 @@ async function loadUsers() {
           + "<td>" + esc(u.label || u.plan) + "</td>"
           + "<td style='text-align:right'>" + u.questions_used + "/" + u.questions_limit + "</td>"
           + "<td style='text-align:right;color:#7fdca0'>$" + (u.spend_usd || 0).toFixed(3) + "</td>"
-          + "<td style='text-align:right'>" + (u.is_admin ? "" :
-              "<button class='btn alt mini enrolAll' data-email=\"" + esc(u.email) + "\" style='width:auto;padding:1px 7px' title='Enrol this account in every course pack'>Enrol all</button>") + "</td>"
+          + "<td style='text-align:right;white-space:nowrap'>" + (u.is_admin ? "" :
+              "<button class='btn alt mini enrolAll' data-email=\"" + esc(u.email) + "\" style='width:auto;padding:1px 7px' title='Enrol this account in every course pack'>Enrol all</button>"
+              + " <button class='btn alt mini resetUser' data-email=\"" + esc(u.email) + "\" style='width:auto;padding:1px 7px' title='Reset this account&#39;s question count and spend to zero (e.g. to refund a question run into it by mistake). Plan and courses untouched.'>Reset</button>") + "</td>"
           + "</tr>").join("")
       + "<tr style='border-top:1px solid #2a3344;font-weight:600'><td style='padding:3px 6px' colspan='3'>Total (" + (r.count || 0) + " users)</td>"
       + "<td style='text-align:right;color:#7fdca0'>$" + total.toFixed(3) + "</td><td></td></tr>"
@@ -4385,6 +4386,16 @@ async function loadUsers() {
         if (rr.error) { alert(rr.error); b.disabled = false; b.textContent = "Enrol all"; return; }
         b.textContent = "✓ " + rr.count;
       } catch (e) { b.disabled = false; b.textContent = "Enrol all"; }
+    });
+    host.querySelectorAll(".resetUser").forEach(b => b.onclick = async () => {
+      if (!confirm("Reset " + b.dataset.email + "'s question count and spend to zero?\n(Plan and courses are left untouched.)")) return;
+      b.disabled = true; b.textContent = "…";
+      try {
+        const rr = await (await fetch("/api/admin/user/reset", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({email: b.dataset.email})})).json();
+        if (rr.error) { alert(rr.error); b.disabled = false; b.textContent = "Reset"; return; }
+        loadUsers();                      // reload so the zeroed numbers show
+      } catch (e) { b.disabled = false; b.textContent = "Reset"; }
     });
   } catch (e) { host.innerHTML = "<span style='color:#e0a0a0'>Error — try again.</span>"; }
 }

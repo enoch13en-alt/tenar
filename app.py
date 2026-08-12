@@ -11341,6 +11341,27 @@ def api_admin_user_enroll_all():
     return jsonify({"ok": True, "email": email, "count": len(u["courses"])})
 
 
+@app.route("/api/admin/user/reset", methods=["POST"])
+def api_admin_user_reset():
+    """Admin-only: reset ONE account's usage counts AND attributed spend to zero (e.g. to refund a
+    question run into the wrong account by mistake). Does not touch their plan or courses."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
+    import datetime
+    email = ((request.json or {}).get("email") or "").strip().lower()
+    u = USERS.get(email)
+    if not u:
+        return jsonify({"error": "No such user."}), 404
+    u["usage"] = {}                       # give the question count(s) back
+    u["spend_usd"] = 0.0                   # clear attributed spend
+    u["in_tok"] = 0
+    u["out_tok"] = 0
+    u["period_start"] = datetime.date.today().isoformat()
+    # NB: purchased credits are deliberately left untouched.
+    save_users()
+    return jsonify({"ok": True, "email": email})
+
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     body = request.json or {}
