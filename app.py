@@ -6968,6 +6968,80 @@ PRIMARY_GAP = (
 )
 
 
+RULES_ESSENTIALS = (
+    "You produce an IN-PERSON EXAM RULE SHEET — the bare essentials a student must recall under exam "
+    "conditions: WHAT the rule is and WHERE to find it. This is NOT an essay, NOT application to facts, "
+    "NOT analysis, NOT counter-arguments. The lecturer wants to see the student KNOWS THE RULE and its "
+    "SOURCE — nothing more.\n"
+    "FORMAT — follow strictly:\n"
+    "- One '## <Area>' heading per area given, in the order given.\n"
+    "- Under each heading, DIRECT bullet points. Each bullet = ONE rule in as few words as possible, "
+    "then its PINPOINT SOURCE. Quote the operative words in single quotes when short; otherwise state "
+    "the rule crisply. ALWAYS end the bullet with the exact source: instrument + section/article "
+    "(e.g. 'Minerals and Mining Act 2006 (Act 703), s 1'), OR case name + citation, OR '(Title — p.N)' "
+    "taken from the materials.\n"
+    "- ONE line per bullet. No explanatory sentences, no 'this means', no application. A key exception "
+    "or leading case goes as a short sub-bullet with its OWN source.\n"
+    "- Order bullets logically: general rule first, then qualifications / exceptions.\n"
+    "GROUNDING: use ONLY the course materials provided. Every rule needs a real source drawn from them. "
+    "If an area isn't covered, say so in one bullet ('— not covered in the materials given') rather than "
+    "invent a rule, section number, case or pinpoint. NEVER fabricate a citation."
+)
+
+
+@app.route("/api/rules", methods=["POST"])
+def api_rules():
+    """In-person exam 'rule sheet': the student drops focus AREAS; returns terse bullets — each a rule
+    plus its pinpoint source, grounded in the course. No essay. One grounded call → cheap. Metered as
+    one question."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if is_matter(course) and not owns_matter(current_user(), course):
+        return jsonify({"error": "That isn't yours."}), 403
+    areas_raw = (body.get("areas") or "").strip()
+    if len(areas_raw) < 3:
+        return jsonify({"error": "Type at least one focus area."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg}), 402
+    consume("questions")
+    areas = [a.strip(" -•\t") for a in re.split(r'[\n;]+', areas_raw) if a.strip(" -•\t")][:25]
+    pdf_dir, _ = course_paths(course)
+    content, seen = [], set()
+    for a in areas:
+        for ch in search(course, a)[:6]:                 # a few best chunks per area
+            if len(content) >= 60:                       # cap total context → keep the call cheap
+                break
+            key = (ch["doc"], ch["page"], ch["text"][:60])
+            if key in seen:
+                continue
+            seen.add(key)
+            page = page_label(os.path.join(pdf_dir, ch["doc"]), ch["doc"], ch["page"])
+            content.append({
+                "type": "document",
+                "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
+                "title": f'{display_name(ch["doc"])} — p.{page}',
+                "citations": {"enabled": True},
+            })
+    content.append({"type": "text", "text":
+        "AREAS TO COVER (in this order):\n" + "\n".join("- " + a for a in areas)
+        + "\n\nProduce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source."})
+    system = RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY
+    try:
+        r, m = _create_final(c, model=ANSWER_MODEL, max_tokens=4000,
+                             system=cached_system(system),
+                             messages=[{"role": "user", "content": content}])
+        record_cost(r, m)                                # attributes per-user spend
+        md = (_text_of(r) or "").strip()
+    except Exception as e:
+        app.logger.exception("rules error")
+        return jsonify({"error": "The rule sheet failed — please try again."})
+    return jsonify({"markdown": md, "areas": areas})
+
+
 @app.route("/api/primary/gaps", methods=["POST"])
 def api_primary_gaps():
     """Automatically detect which PRIMARY instruments the corpus relies on but does

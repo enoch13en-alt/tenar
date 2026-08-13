@@ -283,6 +283,7 @@
   <div id="docs">none yet</div>
 
   <h2>Study tools</h2>
+  <button class="btn gold" id="openRules" title="For in-person exams: drop the areas to focus on and get very direct bullet points — the rule and exactly where to find it (section / case / page), grounded in this course. No essay. Export to Word or PDF.">📌 Rules (exam essentials)</button>
   <button class="btn gold" id="openExam">📝 Exam Coach</button>
   <button class="btn gold" id="openLawplan">🎯 Provision the law (facts → statutes)</button>
   <button class="btn gold" id="openWeekly" title="Reads your course OUTLINE and breaks it down week by week — what you should know by the end of each week and which stated materials to engage. A study plan, not web news.">📅 Weekly study guide (by outline)</button>
@@ -585,6 +586,24 @@
     </details>
     <div id="examStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="examOut"></div>
+  </div>
+</div>
+
+<!-- rules — exam essentials -->
+<div class="modal" id="rulesModal">
+  <div class="card" style="width:780px">
+    <h3>📌 Rules — exam essentials</h3>
+    <p>For in-person exams. Drop the areas to focus on (one per line). You get very direct
+       bullet points — the <b>rule</b> and exactly <b>where to find it</b> (section / case / page),
+       grounded in this course. No essay; just know the law and its source. Export to Word or PDF.</p>
+    <div id="rulesCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
+    <textarea id="rulesAreas" style="height:130px;width:100%" placeholder="One area per line — e.g.&#10;Mineral ownership&#10;Compulsory acquisition of land&#10;Stool land &amp; the Lands Commission"></textarea>
+    <div class="rowbtn" style="margin-top:8px">
+      <button class="btn gold" id="rulesGo" style="width:auto">Get the rules</button>
+      <button class="btn alt" id="rulesClose" style="width:auto">Close</button>
+    </div>
+    <div id="rulesStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="rulesOut"></div>
   </div>
 </div>
 
@@ -4930,6 +4949,33 @@ $("#researchClose").onclick = () => { $("#researchModal").style.display = "none"
 $("#researchGo").onclick = () => runResearch();
 
 loadCourses();
+
+// ---- Rules — exam essentials (in-person: rule + where to find it, terse bullets) ----
+$("#openRules").onclick = () => {
+  $("#rulesCourse").textContent = "📚 Course: " + COURSE;
+  $("#rulesModal").style.display = "flex";
+  $("#rulesAreas").focus();
+};
+$("#rulesClose").onclick = () => { $("#rulesModal").style.display = "none"; };
+$("#rulesGo").onclick = async () => {
+  const areas = $("#rulesAreas").value.trim(), st = $("#rulesStatus"), out = $("#rulesOut");
+  if (areas.length < 3) { st.textContent = "Type at least one focus area."; return; }
+  const btn = $("#rulesGo"); btn.disabled = true; btn.textContent = "Finding the rules…";
+  st.textContent = "reading the course materials…"; out.innerHTML = "";
+  try {
+    const r = await (await fetch("/api/rules", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, areas})})).json();
+    if (r.error) { st.textContent = "⚠️ " + r.error; }
+    else {
+      st.textContent = "";
+      out.innerHTML = "<h4 style='margin:14px 0 4px'>📌 Rule sheet — " + esc(COURSE) + "</h4>"
+        + "<div id='rulesDoc' style='white-space:normal'></div>";
+      const doc = $("#rulesDoc"); doc.innerHTML = mdToHtml(r.markdown || "");
+      renderExportBar(doc, r.markdown || "", COURSE + " — rule sheet", COURSE + " — Exam rule sheet");
+    }
+  } catch (e) { st.textContent = "Error — try again."; }
+  btn.disabled = false; btn.textContent = "Get the rules";
+};
 
 // ---- weekly update ----
 // ---- Provision the law (facts → statutes + links → ingest) ----
