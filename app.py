@@ -4234,6 +4234,26 @@ def _create_final(client, **kwargs):
     raise last
 
 
+def _create_completing(client, model, system, content, max_tokens, max_conts=3):
+    """Non-streaming create that AUTO-CONTINUES if the model stops on 'max_tokens', so a long
+    answer (e.g. a rule sheet over many areas) is never left truncated mid-sentence. Records cost on
+    every leg (per-user spend attributed). Returns the full concatenated text."""
+    msgs = [{"role": "user", "content": content}]
+    full = ""
+    for _ in range(max_conts + 1):
+        r, m = _create_final(client, model=model, max_tokens=max_tokens, system=system, messages=msgs)
+        record_cost(r, m)
+        piece = _text_of(r)
+        full += piece
+        if getattr(r, "stop_reason", None) != "max_tokens" or not piece.strip():
+            break
+        msgs.append({"role": "assistant", "content": piece})
+        msgs.append({"role": "user", "content":
+                     "Continue the rule sheet EXACTLY where you stopped — pick up mid-list if needed, "
+                     "do NOT repeat any bullet or heading already written, and add no preface."})
+    return full
+
+
 def _today_note():
     """A short, always-fresh statement of today's date and how to reason from it —
     so the bot writes from the present: past events in the past tense, future events
@@ -7061,11 +7081,10 @@ def api_rules():
            "\n\nProduce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source.")})
     system = RULES_FRIENDLY if explain else (RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY)
     try:
-        r, m = _create_final(c, model=ANSWER_MODEL, max_tokens=(6500 if explain else 4000),
-                             system=cached_system(system),
-                             messages=[{"role": "user", "content": content}])
-        record_cost(r, m)                                # attributes per-user spend
-        md = (_text_of(r) or "").strip()
+        # auto-continues if the sheet is long enough to hit the per-call token ceiling, so it never
+        # cuts off mid-area; per-leg cost is recorded (and attributed to the user).
+        md = _create_completing(c, ANSWER_MODEL, cached_system(system), content,
+                                max_tokens=(8000 if explain else 5000)).strip()
     except Exception as e:
         app.logger.exception("rules error")
         return jsonify({"error": "The rule sheet failed — please try again."})
