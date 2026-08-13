@@ -7004,8 +7004,11 @@ RULES_ESSENTIALS = (
     "or leading case goes as a short sub-bullet with its OWN source.\n"
     "- Order bullets logically: general rule first, then qualifications / exceptions.\n"
     "GROUNDING: use ONLY the course materials provided. Every rule needs a real source drawn from them. "
-    "If an area isn't covered, say so in one bullet ('— not covered in the materials given') rather than "
-    "invent a rule, section number, case or pinpoint. NEVER fabricate a citation."
+    "The materials are RETRIEVED EXCERPTS from the course — READ CAREFULLY ACROSS ALL OF THEM before "
+    "concluding anything is missing; the relevant provision is often present under a slightly different "
+    "heading or in a later excerpt. Only if an area genuinely appears NOWHERE in the provided excerpts, "
+    "say so in one bullet ('— not covered in the materials given') — never invent a rule, section number, "
+    "case or pinpoint to fill a gap. NEVER fabricate a citation."
 )
 
 
@@ -7029,9 +7032,11 @@ RULES_FRIENDLY = (
     "- Put exceptions / leading cases as short sub-bullets with their OWN source. Bold key terms; keep "
     "each point tight and easy to scan.\n"
     "GROUNDING: the RULES and SOURCES come ONLY from the course materials provided — never invent a rule, "
-    "section number, case or pinpoint. If an area isn't covered, say so in one bullet. Your plain-English "
-    "glosses and examples are your own wording but must stay faithful to the stated rule and add no new "
-    "law."
+    "section number, case or pinpoint. The materials are RETRIEVED EXCERPTS — READ ACROSS ALL of them "
+    "before concluding an area is missing (the provision is often in a later excerpt or under a slightly "
+    "different heading); only say 'not covered in the materials given' if it genuinely appears nowhere. "
+    "Your plain-English glosses and examples are your own wording but must stay faithful to the stated "
+    "rule and add no new law."
 )
 
 
@@ -7056,10 +7061,14 @@ def api_rules():
     consume("questions")
     areas = [a.strip(" -•\t") for a in re.split(r'[\n;]+', areas_raw) if a.strip(" -•\t")][:25]
     pdf_dir, _ = course_paths(course)
+    # Retrieval DEPTH is what decides whether a rule is "found": search() returns up to TOP_K (25)
+    # ranked, neighbour-completed chunks — take a healthy slice per area (more when few areas) so an
+    # uploaded provision isn't wrongly reported as "not covered". Total is capped to keep cost sane.
+    per_area = max(10, min(20, 140 // max(1, len(areas))))
     content, seen = [], set()
     for a in areas:
-        for ch in search(course, a)[:6]:                 # a few best chunks per area
-            if len(content) >= 60:                       # cap total context → keep the call cheap
+        for ch in search(course, a)[:per_area]:
+            if len(content) >= 130:                      # cap total context → bound the call cost
                 break
             key = (ch["doc"], ch["page"], ch["text"][:60])
             if key in seen:
