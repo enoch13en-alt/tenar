@@ -6989,11 +6989,37 @@ RULES_ESSENTIALS = (
 )
 
 
+RULES_FRIENDLY = (
+    "You produce a STUDENT-FRIENDLY exam rule sheet — the student must both KNOW each rule and its "
+    "SOURCE and UNDERSTAND it. Explain in plain, simple English with light examples. Still exam-focused "
+    "and scannable — NOT a flowing essay.\n"
+    "STRUCTURE — follow strictly, with clean formatting:\n"
+    "- One '## <Area>' heading per area given, in the order given; a single plain-English intro line "
+    "under the heading is welcome.\n"
+    "- Each rule is a bullet: start with the key term in **bold**, then state the rule in plain English, "
+    "then end with its PINPOINT SOURCE in brackets — instrument + section/article (e.g. 'Act 703, s 1'), "
+    "case + citation, or '(Title — p.N)'. Quote the operative words in single quotes ONLY where the exact "
+    "wording matters.\n"
+    "- Where a rule isn't self-evident, add an indented sub-bullet beginning '**In plain terms:**' — one "
+    "sentence in everyday language, defining any jargon.\n"
+    "- Where it aids understanding, add a sub-bullet beginning '**Example:**' — a SIMPLE, clearly "
+    "illustrative everyday scenario showing the rule in action. The example is your own wording, but it "
+    "must ONLY illustrate the rule just stated — it must NEVER introduce a new rule, section, figure, "
+    "case or citation.\n"
+    "- Put exceptions / leading cases as short sub-bullets with their OWN source. Bold key terms; keep "
+    "each point tight and easy to scan.\n"
+    "GROUNDING: the RULES and SOURCES come ONLY from the course materials provided — never invent a rule, "
+    "section number, case or pinpoint. If an area isn't covered, say so in one bullet. Your plain-English "
+    "glosses and examples are your own wording but must stay faithful to the stated rule and add no new "
+    "law."
+)
+
+
 @app.route("/api/rules", methods=["POST"])
 def api_rules():
-    """In-person exam 'rule sheet': the student drops focus AREAS; returns terse bullets — each a rule
-    plus its pinpoint source, grounded in the course. No essay. One grounded call → cheap. Metered as
-    one question."""
+    """In-person exam 'rule sheet': the student drops focus AREAS; returns bullets — each a rule plus its
+    pinpoint source, grounded in the course. 'explain' adds plain-English glosses + simple examples; off
+    gives the bare terse version. One grounded call → cheap. Metered as one question."""
     body = request.json or {}
     course = safe_course(body.get("course", ""))
     if is_matter(course) and not owns_matter(current_user(), course):
@@ -7026,12 +7052,16 @@ def api_rules():
                 "title": f'{display_name(ch["doc"])} — p.{page}',
                 "citations": {"enabled": True},
             })
+    explain = bool(body.get("explain", True))
     content.append({"type": "text", "text":
         "AREAS TO COVER (in this order):\n" + "\n".join("- " + a for a in areas)
-        + "\n\nProduce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source."})
-    system = RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY
+        + ("\n\nProduce the student-friendly rule sheet — rule + pinpoint source, plus plain-English "
+           "glosses and simple examples where they aid understanding."
+           if explain else
+           "\n\nProduce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source.")})
+    system = RULES_FRIENDLY if explain else (RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY)
     try:
-        r, m = _create_final(c, model=ANSWER_MODEL, max_tokens=4000,
+        r, m = _create_final(c, model=ANSWER_MODEL, max_tokens=(6500 if explain else 4000),
                              system=cached_system(system),
                              messages=[{"role": "user", "content": content}])
         record_cost(r, m)                                # attributes per-user spend

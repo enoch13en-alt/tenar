@@ -598,6 +598,9 @@
        grounded in this course. No essay; just know the law and its source. Export to Word or PDF.</p>
     <div id="rulesCourse" style="font-size:12px;color:#8fb4ff;margin-bottom:8px"></div>
     <textarea id="rulesAreas" style="height:130px;width:100%" placeholder="One area per line — e.g.&#10;Mineral ownership&#10;Compulsory acquisition of land&#10;Stool land &amp; the Lands Commission"></textarea>
+    <label style="color:#aab4c6;font-size:12px;display:block;margin-top:6px" title="Adds plain-English explanations and simple examples under each rule so it's easy to understand. Turn OFF for the bare, terse rule+source list (fastest to scan).">
+      <input type="checkbox" id="rulesExplain" checked> 💡 Explain simply (plain English + examples)
+    </label>
     <div class="rowbtn" style="margin-top:8px">
       <button class="btn gold" id="rulesGo" style="width:auto">Get the rules</button>
       <button class="btn alt" id="rulesClose" style="width:auto">Close</button>
@@ -4964,7 +4967,7 @@ $("#rulesGo").onclick = async () => {
   st.textContent = "reading the course materials…"; out.innerHTML = "";
   try {
     const r = await (await fetch("/api/rules", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, areas})})).json();
+      body: JSON.stringify({course: COURSE, areas, explain: $("#rulesExplain").checked})})).json();
     if (r.error) { st.textContent = "⚠️ " + r.error; }
     else {
       st.textContent = "";
