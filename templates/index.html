@@ -4974,8 +4974,10 @@ $("#rulesGo").onclick = async () => {
       body: JSON.stringify({course: COURSE, areas, detail: $("#rulesDetail").value})})).json();
     if (r.error) { st.textContent = "⚠️ " + r.error; }
     else {
-      st.textContent = "";
-      out.innerHTML = "<h4 style='margin:14px 0 4px'>📌 Rule sheet — " + esc(COURSE) + "</h4>"
+      const n = (r.areas || []).length;
+      st.textContent = "✅ covered " + n + " area(s)"
+        + (r.dropped ? " · ⚠ " + r.dropped + " beyond the 30-area limit were left out — run them separately" : "");
+      out.innerHTML = "<h4 style='margin:14px 0 4px'>📌 Rule sheet — " + esc(COURSE) + " <span style='font-size:11px;color:#8b93a7'>(" + n + " areas)</span></h4>"
         + "<div id='rulesDoc' style='white-space:normal'></div>";
       const doc = $("#rulesDoc"); doc.innerHTML = mdToHtml(r.markdown || "");
       renderExportBar(doc, r.markdown || "", COURSE + " — rule sheet", COURSE + " — Exam rule sheet");

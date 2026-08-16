@@ -7062,12 +7062,44 @@ RULES_PLAIN = (
 )
 
 
+def _parse_areas(raw):
+    """Turn the pasted focus-areas text into PRIMARY areas. If it has a numbered / lettered / ALL-CAPS
+    heading structure (a real outline), use those headings as the areas and keep each heading's
+    sub-points WITH it (so a pasted outline is covered whole, not chopped line-by-line). Otherwise every
+    non-empty line is its own area. Returns [{'title','detail'}]."""
+    lines = [ln.rstrip() for ln in (raw or "").splitlines()]
+    head_re = re.compile(r'^\s*(\d+\s*[\.\)]|[A-Za-z]\s*[\.\)])\s+\S')
+    def is_head(ln):
+        s = ln.strip()
+        if not s:
+            return False
+        if head_re.match(ln):
+            return True
+        letters = [c for c in s if c.isalpha()]
+        return len(letters) >= 4 and s == s.upper()          # ALL-CAPS heading line
+    heads = [i for i, ln in enumerate(lines) if is_head(ln)]
+    areas = []
+    if len(heads) >= 2:
+        for k, i in enumerate(heads):
+            end = heads[k + 1] if k + 1 < len(heads) else len(lines)
+            title = re.sub(r'^\s*(\d+\s*[\.\)]|[A-Za-z]\s*[\.\)])\s*', '', lines[i]).strip(" -•*·\t")
+            subs = [lines[j].strip(" -•*·\t") for j in range(i + 1, end) if lines[j].strip()]
+            if title:
+                areas.append({"title": title[:160], "detail": "; ".join(subs)[:700]})
+    else:
+        for ln in lines:
+            t = ln.strip(" -•*·\t")
+            if t:
+                areas.append({"title": t[:160], "detail": ""})
+    return areas
+
+
 @app.route("/api/rules", methods=["POST"])
 def api_rules():
-    """In-person exam 'rule sheet': the student drops focus AREAS; returns bullets — each a rule plus its
-    pinpoint source, grounded in the course. 'detail' = 'rules' (bare), 'plain' (rule + one plain line),
-    or 'full' (rule + What it means / Effect / Example). One grounded call → cheap. Metered as one
-    question."""
+    """In-person exam 'rule sheet': the student drops focus AREAS (or a whole outline); returns bullets —
+    each a rule plus its pinpoint source, grounded in the course. 'detail' = 'rules' (bare), 'plain'
+    (rule + one plain line), or 'full' (rule + What it means / Effect / Example). One grounded call.
+    Metered as one question."""
     body = request.json or {}
     course = safe_course(body.get("course", ""))
     if is_matter(course) and not owns_matter(current_user(), course):
@@ -7082,16 +7114,22 @@ def api_rules():
     if not ok:
         return jsonify({"error": msg}), 402
     consume("questions")
-    areas = [a.strip(" -•\t") for a in re.split(r'[\n;]+', areas_raw) if a.strip(" -•\t")][:25]
+    areas_p = _parse_areas(areas_raw)
+    MAXA = 30                                            # generous — real outlines fit; guards runaway
+    dropped = max(0, len(areas_p) - MAXA)
+    areas_p = areas_p[:MAXA]
+    if not areas_p:
+        return jsonify({"error": "Type at least one focus area."}), 400
     pdf_dir, _ = course_paths(course)
-    # Retrieval DEPTH is what decides whether a rule is "found": search() returns up to TOP_K (25)
-    # ranked, neighbour-completed chunks — take a healthy slice per area (more when few areas) so an
-    # uploaded provision isn't wrongly reported as "not covered". Total is capped to keep cost sane.
-    per_area = max(10, min(20, 140 // max(1, len(areas))))
+    # Retrieval DEPTH decides whether a rule is "found": search() returns up to TOP_K (25) ranked,
+    # neighbour-completed chunks — take a slice per area (more when few areas) so an uploaded provision
+    # isn't wrongly reported "not covered". Total capped to bound cost.
+    per_area = max(6, min(18, 170 // max(1, len(areas_p))))
     content, seen = [], set()
-    for a in areas:
-        for ch in search(course, a)[:per_area]:
-            if len(content) >= 130:                      # cap total context → bound the call cost
+    for a in areas_p:
+        q = (a["title"] + " " + a["detail"]).strip()     # search on the heading + its sub-points
+        for ch in search(course, q)[:per_area]:
+            if len(content) >= 150:                      # cap total context → bound the call cost
                 break
             key = (ch["doc"], ch["page"], ch["text"][:60])
             if key in seen:
@@ -7121,17 +7159,24 @@ def api_rules():
         ask = ("Produce the compact rule sheet — each rule + pinpoint source, then ONE short "
                "plain-English line (meaning + effect, tiny example only if it clarifies).")
         maxtok = 6000
+    outline = "\n".join(
+        "- " + a["title"] + (("  — cover: " + a["detail"]) if a["detail"] else "")
+        for a in areas_p)
     content.append({"type": "text", "text":
-        "AREAS TO COVER (in this order):\n" + "\n".join("- " + a for a in areas) + "\n\n" + ask})
+        "AREAS TO COVER — address EVERY one below, in the order given, and DO NOT skip any. If the "
+        "materials don't cover an area, still keep its '## ' heading and say so in one line rather than "
+        "omitting it, so nothing is silently left out:\n" + outline + "\n\n" + ask})
     try:
         # auto-continues if the sheet is long enough to hit the per-call token ceiling, so it never
-        # cuts off mid-area; per-leg cost is recorded (and attributed to the user).
+        # cuts off mid-area; per-leg cost is recorded (and attributed to the user). More areas → allow
+        # more continuation legs so a big outline is fully covered.
         md = _create_completing(c, ANSWER_MODEL, cached_system(system), content,
-                                max_tokens=maxtok).strip()
+                                max_tokens=maxtok,
+                                max_conts=(6 if len(areas_p) > 10 else 3)).strip()
     except Exception as e:
         app.logger.exception("rules error")
         return jsonify({"error": "The rule sheet failed — please try again."})
-    return jsonify({"markdown": md, "areas": areas})
+    return jsonify({"markdown": md, "areas": [a["title"] for a in areas_p], "dropped": dropped})
 
 
 @app.route("/api/primary/gaps", methods=["POST"])
