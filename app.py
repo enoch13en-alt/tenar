@@ -7043,11 +7043,31 @@ RULES_FRIENDLY = (
 )
 
 
+RULES_PLAIN = (
+    "You produce a COMPACT student-friendly exam rule sheet — know the rule, its source, AND understand "
+    "it, without bloat. Short and scannable.\n"
+    "STRUCTURE — follow strictly:\n"
+    "- One '## <Area>' heading per area, in the order given.\n"
+    "- Each rule is a bullet: **key term** — state the law accurately, then its PINPOINT SOURCE in "
+    "brackets (instrument + section/article, case + citation, or '(Title — p.N)'). Quote operative words "
+    "in single quotes only where the exact wording matters.\n"
+    "- Under each rule add EXACTLY ONE short sub-bullet '**In plain terms:**' — one or two short "
+    "sentences in very simple everyday English giving what the rule MEANS and its EFFECT (who it binds / "
+    "what it requires or forbids / the consequence), plus a tiny inline example ('e.g. …') ONLY where it "
+    "genuinely clarifies. No separate Example bullet, no legalese. Keep it tight.\n"
+    "- Exceptions / leading cases: a short sub-bullet with its own source and a few plain words.\n"
+    "GROUNDING: rules and sources ONLY from the materials provided, which are retrieved excerpts — read "
+    "across ALL of them before concluding anything is missing; never invent a rule, section, case or "
+    "pinpoint. The plain-English line is your own wording but adds no new law."
+)
+
+
 @app.route("/api/rules", methods=["POST"])
 def api_rules():
     """In-person exam 'rule sheet': the student drops focus AREAS; returns bullets — each a rule plus its
-    pinpoint source, grounded in the course. 'explain' adds plain-English glosses + simple examples; off
-    gives the bare terse version. One grounded call → cheap. Metered as one question."""
+    pinpoint source, grounded in the course. 'detail' = 'rules' (bare), 'plain' (rule + one plain line),
+    or 'full' (rule + What it means / Effect / Example). One grounded call → cheap. Metered as one
+    question."""
     body = request.json or {}
     course = safe_course(body.get("course", ""))
     if is_matter(course) and not owns_matter(current_user(), course):
@@ -7084,19 +7104,30 @@ def api_rules():
                 "title": f'{display_name(ch["doc"])} — p.{page}',
                 "citations": {"enabled": True},
             })
-    explain = bool(body.get("explain", True))
+    detail = (body.get("detail") or "").strip().lower()
+    if detail not in ("rules", "plain", "full"):
+        detail = "full" if body.get("explain", True) else "rules"   # back-compat with old checkbox
+    if detail == "rules":
+        system = RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY
+        ask = "Produce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source."
+        maxtok = 5000
+    elif detail == "full":
+        system = RULES_FRIENDLY
+        ask = ("Produce the student-friendly rule sheet — each rule + pinpoint source, then What it "
+               "means / Effect / Example in very simple plain English.")
+        maxtok = 8000
+    else:                                                            # 'plain' — the compact default
+        system = RULES_PLAIN
+        ask = ("Produce the compact rule sheet — each rule + pinpoint source, then ONE short "
+               "plain-English line (meaning + effect, tiny example only if it clarifies).")
+        maxtok = 6000
     content.append({"type": "text", "text":
-        "AREAS TO COVER (in this order):\n" + "\n".join("- " + a for a in areas)
-        + ("\n\nProduce the student-friendly rule sheet — rule + pinpoint source, plus plain-English "
-           "glosses and simple examples where they aid understanding."
-           if explain else
-           "\n\nProduce the exam-essentials rule sheet — terse bullets, each a rule + its pinpoint source.")})
-    system = RULES_FRIENDLY if explain else (RULES_ESSENTIALS + "\n\n" + VERBATIM_PRIORITY)
+        "AREAS TO COVER (in this order):\n" + "\n".join("- " + a for a in areas) + "\n\n" + ask})
     try:
         # auto-continues if the sheet is long enough to hit the per-call token ceiling, so it never
         # cuts off mid-area; per-leg cost is recorded (and attributed to the user).
         md = _create_completing(c, ANSWER_MODEL, cached_system(system), content,
-                                max_tokens=(8000 if explain else 5000)).strip()
+                                max_tokens=maxtok).strip()
     except Exception as e:
         app.logger.exception("rules error")
         return jsonify({"error": "The rule sheet failed — please try again."})
