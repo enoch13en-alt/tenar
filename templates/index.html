@@ -64,6 +64,11 @@
   .ans-p { margin: 11px 0; } .ans-ul { margin: 10px 0 10px 22px; padding-left: 4px; }
   .ans-ul li { margin: 7px 0; line-height: 1.6; padding-left: 3px; }
   .ans-hr { border: 0; border-top: 1px solid #e3e6ec; margin: 14px 0; }
+  .ans-table { border-collapse: collapse; margin: 12px 0; font-size: .95em; }
+  .ans-table th, .ans-table td { border: 1px solid #c7ccd6; padding: 5px 12px; vertical-align: top; }
+  .ans-table th { background: #eef1f6; font-weight: 700; text-align: left; }
+  .ans-table tr:last-child td { font-weight: 600; }   /* the total row usually reads bold */
+  .a .ans-table td, .a .ans-table th { color: #1a2230; }
   .sources { margin-top: 12px; border-top: 1px solid #e3e6ec; padding-top: 10px; }
   .sources h4 { margin: 0 0 6px; font-size: 12.5px; color: #3a4250;
                 text-transform: uppercase; letter-spacing: .05em; }
@@ -943,9 +948,44 @@ function mdToHtml(raw){
   const supMark = (h) => inNotes ? h : h.replace(/(\S)[ \t]?((?:\[\d{1,3}\])+)/g,
     (m, pre, marks) => pre === '[' ? m : pre + marks.replace(/\[(\d{1,3})\]/g, '<sup>$1</sup>'));
   const nStyle = () => inNotes ? " style='font-size:.85em;color:#aab4c6'" : "";
-  for (const ln of lines){
+  // GitHub-style pipe tables: a header row, a |---|---| separator, then body rows. Rendered as a real
+  // <table> (used a lot by calculation answers — tax/royalty computation schedules).
+  const tableSep = s => /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(s);
+  const splitRow = s => { let x = s.trim(); if (x[0]==='|') x = x.slice(1); if (x[x.length-1]==='|') x = x.slice(0,-1); return x.split('|').map(c=>c.trim()); };
+  const numCell = v => /^[-(]?\s*(GH₵|₵)?\s*[\d,]+(\.\d+)?\s*%?\s*\)?$/.test((v||"").trim());
+  const renderTable = (headers, rows) => {
+    let h = "<table class='ans-table'><thead><tr>";
+    headers.forEach((c,ci) => h += "<th"+(ci>0?" style='text-align:right'":"")+">"+mdInline(c)+"</th>");
+    h += "</tr></thead><tbody>";
+    rows.forEach(r => {
+      h += "<tr>";
+      headers.forEach((_,ci) => {
+        const v = r[ci]!=null ? r[ci] : "";
+        const ra = ci>0 || numCell(v);
+        h += "<td"+(ra?" style='text-align:right'":"")+">"+mdInline(v)+"</td>";
+      });
+      h += "</tr>";
+    });
+    return h + "</tbody></table>";
+  };
+  for (let i = 0; i < lines.length; i++){
+    const ln = lines[i];
     const t = ln.trim();
     if (!t){ closeList(); continue; }
+    // table block: current line has pipes and the next line is a |---| separator
+    if (!inNotes && t.indexOf('|') >= 0 && i+1 < lines.length && tableSep(lines[i+1].trim())){
+      closeList();
+      const headers = splitRow(t); const rows = [];
+      let j = i + 2;
+      while (j < lines.length){
+        const tj = lines[j].trim();
+        if (!tj || tj.indexOf('|') < 0 || /^#{1,6}\s/.test(tj) || /^([-*_]\s*){3,}$/.test(tj)) break;
+        rows.push(splitRow(tj)); j++;
+      }
+      html += renderTable(headers, rows);
+      i = j - 1;
+      continue;
+    }
     if (/^([-*_]\s*){3,}$/.test(t)){ closeList(); html += "<hr class='ans-hr'>"; continue; }
     // Notes label emitted as plain/bold text (not a '#' heading) — open the notes zone anyway.
     const labelOnly = t.replace(/^[*_]+/,'').replace(/[*_]+$/,'').trim();

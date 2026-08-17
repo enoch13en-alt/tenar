@@ -10037,12 +10037,16 @@ CALC_AWARE = (
     "written-down value, government/contractor take, chargeable income, gain, etc., or figures/rates are "
     "given to apply), keep **Issue** (what must be computed) and **Rule** (the governing formula/rule + "
     "its SOURCE, operative words where they matter) as normal — but make the **Application** the "
-    "STEP-BY-STEP WORKED CALCULATION, WELL EXPLAINED: first a short 'Given' list (amounts from the "
-    "question; rates/thresholds from the materials, each labelled); then numbered steps, each showing the "
-    "WORKING (the arithmetic with the numbers substituted — a small markdown table where items are summed) "
-    "AND, right under it, a VERY, VERY simple plain-English line saying why that step follows from the "
-    "Rule. Carry each sub-result forward and label it. Then **Conclusion** states the final figure(s) "
-    "clearly, with units (GH₵).\n"
+    "STEP-BY-STEP WORKED CALCULATION, WELL EXPLAINED and laid out MATHEMATICALLY IN TABLES, not prose. "
+    "First a short 'Given' list (amounts from the question; rates/thresholds from the materials, each "
+    "labelled). Then set the computation out as a MARKDOWN TABLE in proper accounting form — a header "
+    "row (e.g. | Item | Working | GH₵ |), one row per line-item with its figure in the right-hand amount "
+    "column, sub-total rows, and a BOLD final total row; show deductions/negatives in brackets "
+    "(e.g. (1,200)); put the arithmetic in the 'Working' column. Number the steps, and under each step "
+    "(or under the table) add a VERY, VERY simple plain-English line saying why that line follows from "
+    "the Rule. Use one table per computation or per part; carry every sub-result forward and label it. "
+    "Then **Conclusion** states the final figure(s) clearly, with units (GH₵). (Markdown pipe tables "
+    "render as real tables on screen and in the Word/PDF export — always use them for the figures.)\n"
     "- If the issue is THEORY / DISCUSSION (explain, discuss, advise, compare, 'what is', 'distinguish', "
     "'state the law'), use ordinary IRAC — the Application applies the law to the facts in prose as "
     "usual.\n"
@@ -11021,6 +11025,46 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     return bio
 
 
+_TBL_SEP = re.compile(r'^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$')
+_TBL_NUM = re.compile(r'^[-(]?\s*(?:GH₵|₵)?\s*[\d,]+(?:\.\d+)?\s*%?\s*\)?$')
+
+
+def _tbl_split_row(s):
+    x = s.strip()
+    if x.startswith('|'):
+        x = x[1:]
+    if x.endswith('|'):
+        x = x[:-1]
+    return [c.strip() for c in x.split('|')]
+
+
+def _docx_add_table(d, headers, rows):
+    """Render a markdown pipe-table as a real Word table (Table Grid, bold header, numeric columns
+    right-aligned) — used by calculation answers' computation schedules."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    ncol = len(headers)
+    if ncol < 1:
+        return
+    table = d.add_table(rows=1, cols=ncol)
+    try:
+        table.style = "Table Grid"
+    except Exception:
+        pass
+    def _put(cell, val, bold, right):
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(re.sub(r'\*\*|__|`|\*', '', val or ''))
+        run.bold = bold
+        if right:
+            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for ci in range(ncol):
+        _put(table.rows[0].cells[ci], headers[ci], True, ci > 0)
+    for r in rows:
+        cells = table.add_row().cells
+        for ci in range(ncol):
+            v = r[ci] if ci < len(r) else ""
+            _put(cells[ci], v, False, ci > 0 or bool(_TBL_NUM.match((v or '').strip())))
+
+
 def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     import io
     import docx
@@ -11058,9 +11102,25 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     _note_head = re.compile(r"^(foot ?notes|end ?notes|bibliography|table of )", re.I)
     # tolerate one space before the marker (see _docx_with_footnotes) so spaced [n] still superscripts
     _mark = re.compile(r"(?<=\S)[ \t]?(\[\d{1,3}\])")
-    for raw in text.split("\n"):
-        line = raw.rstrip()
+    _lines = text.split("\n")
+    _i = 0
+    while _i < len(_lines):
+        line = _lines[_i].rstrip()
         if not line.strip():
+            _i += 1
+            continue
+        # markdown pipe-table → real Word table (header row + |---| separator + body rows)
+        if not in_notes and '|' in line and _i + 1 < len(_lines) and _TBL_SEP.match(_lines[_i + 1].strip()):
+            headers = _tbl_split_row(line)
+            rows, j = [], _i + 2
+            while j < len(_lines):
+                tj = _lines[j].strip()
+                if not tj or '|' not in tj or re.match(r'^#{1,6}\s', tj) or re.match(r'^([-*_]\s*){3,}$', tj):
+                    break
+                rows.append(_tbl_split_row(tj))
+                j += 1
+            _docx_add_table(d, headers, rows)
+            _i = j
             continue
         m = re.match(r"^(#{1,4})\s+(.*)", line)
         if m:
@@ -11068,6 +11128,7 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
             if _note_head.match(head):
                 in_notes = True
             d.add_heading(head, level=min(len(m.group(1)), 4))
+            _i += 1
             continue
         p = d.add_paragraph()
         for seg, bold, ital in _md_runs(line):
@@ -11083,6 +11144,7 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
                     r.font.superscript = True
                 elif in_notes:
                     r.font.size = Pt(notes_pt)
+        _i += 1
     bio = io.BytesIO()
     d.save(bio)
     bio.seek(0)
@@ -11113,8 +11175,32 @@ def api_export():
 # cover page, numbered/heading paragraphs, superscript markers with true
 # page-bottom footnotes, and a sectioned bibliography — via reportlab (pure
 # Python, no system typesetting engine needed).
+def _md_tables_to_text(doc):
+    """The PDF builder has no table flowable (and strips stray pipes), so convert markdown pipe-tables
+    into readable aligned text lines — 'cell  ·  cell  ·  cell' — dropping the |---| separator, so a
+    computation schedule still reads cleanly in the PDF."""
+    out, lines, i = [], (doc or "").split("\n"), 0
+    while i < len(lines):
+        line = lines[i]
+        if '|' in line and i + 1 < len(lines) and _TBL_SEP.match(lines[i + 1].strip()):
+            out.append(" · ".join(_tbl_split_row(line)))
+            j = i + 2
+            while j < len(lines):
+                tj = lines[j].strip()
+                if not tj or '|' not in tj or re.match(r'^#{1,6}\s', tj) or re.match(r'^([-*_]\s*){3,}$', tj):
+                    break
+                out.append(" · ".join(_tbl_split_row(tj)))
+                j += 1
+            i = j
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
 def _exam_pdf_parse(doc):
     doc = _xml_safe(doc)   # strip XML-illegal chars (from injected facts) that make the .docx unreadable
+    doc = _md_tables_to_text(doc)   # PDF has no table flowable → render tables as aligned text lines
     # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
     # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
     doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
