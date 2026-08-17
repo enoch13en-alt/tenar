@@ -10181,12 +10181,24 @@ def api_exam_breakdown():
     try:
         data = _parse_json(txt)
     except Exception:
-        # don't strand the UI with an empty result — say what happened
-        if getattr(resp, "stop_reason", None) == "max_tokens":
-            return jsonify({"error": "The breakdown was too long to finish. Try a "
-                            "shorter question, or fewer focus areas, and retry."})
-        return jsonify({"error": "Couldn't read the breakdown this time — please "
-                        "click 'Break it down' again."})
+        # tolerate a reply wrapped in fences or with a stray line of prose around the JSON —
+        # extract the first balanced {...} object rather than stranding the UI
+        try:
+            data = _first_json_obj(txt)
+        except Exception:
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                return jsonify({"error": "The breakdown was too long to finish. Try a "
+                                "shorter question, or fewer focus areas, and retry."})
+            if getattr(resp, "stop_reason", None) == "refusal":
+                return jsonify({"error": "The model declined to break this one down. Rephrase "
+                                "the question and retry."})
+            app.logger.warning("breakdown parse failed; stop=%s; head=%r",
+                               getattr(resp, "stop_reason", None), (txt or "")[:200])
+            return jsonify({"error": "Couldn't read the breakdown this time — please "
+                            "click 'Break it down' again."})
+    if not isinstance(data, dict):
+        return jsonify({"error": "Couldn't read the breakdown this time — please click "
+                        "'Break it down' again."})
     data["cost"] = cost
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
