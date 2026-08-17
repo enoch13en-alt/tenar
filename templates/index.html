@@ -5036,7 +5036,7 @@ $("#rulesGo").onclick = async () => {
   st.textContent = "reading the course materials…"; out.innerHTML = "";
   try {
     const r = await (await fetch("/api/rules", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, areas, detail: $("#rulesDetail").value})})).json();
+      body: JSON.stringify({course: COURSE, areas, detail: $("#rulesDetail").value, pinned: getPinned()})})).json();
     if (r.error) { st.textContent = "⚠️ " + r.error; }
     else {
       const n = (r.areas || []).length;

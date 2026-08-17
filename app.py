@@ -7204,6 +7204,20 @@ def api_rules():
     # isn't wrongly reported "not covered". Total capped to bound cost.
     per_area = max(6, min(18, 170 // max(1, len(areas_p))))
     content, seen = [], set()
+    # PINNED docs: force their relevant chunks in first, so a pinned Act's provisions are guaranteed
+    # into the rule sheet regardless of ranking (same as the ask / Exam Coach).
+    for ch in search_in_docs(course, areas_raw, (body.get("pinned") or []), k_per=8):
+        key = (ch["doc"], ch["page"], ch["text"][:60])
+        if key in seen:
+            continue
+        seen.add(key)
+        page = page_label(os.path.join(pdf_dir, ch["doc"]), ch["doc"], ch["page"])
+        content.append({
+            "type": "document",
+            "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
+            "title": f'{display_name(ch["doc"])} — p.{page}',
+            "citations": {"enabled": True},
+        })
     for a in areas_p:
         q = (a["title"] + " " + a["detail"]).strip()     # search on the heading + its sub-points
         for ch in search(course, q)[:per_area]:
