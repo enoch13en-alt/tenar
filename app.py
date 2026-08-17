@@ -3897,11 +3897,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # Focused issue-gather: a DIRECT, law-backed answer to ONE issue — never an
         # essay. Lean grounding stack + a direct-answer directive; short by design so
         # it completes and reads as an answer, not a lecture.
-        system = (CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
+        system = (CALC_AWARE + "\n\n"
+                  + CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
                   + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + GATHER_CALIBRATION + "\n\n"
-                  "FOCUSED ISSUE ANSWER — IRAC, DIRECT AND LAW-BACKED, never an essay. Answer "
+                  "FOCUSED ISSUE ANSWER (this applies to a THEORY / DISCUSSION issue — see ANSWER FORM "
+                  "above; if THIS issue is a COMPUTATION, give the step-by-step worked solution instead of "
+                  "IRAC) — IRAC, DIRECT AND LAW-BACKED, never an essay. Answer "
                   "this ONE issue in the four IRAC moves, each under its own bold header, in the "
                   "fewest words that fully carry the point. A student should read it and know the "
                   "answer, the law behind it, and how it lands on these facts.\n"
@@ -9996,71 +9999,29 @@ def api_exam_cues():
     return jsonify({"cues": cues})
 
 
-CALC_MODE = (
-    "You are an exam coach solving a CALCULATION / COMPUTATION question (e.g. petroleum or mining tax, "
-    "royalties, capital allowances, government take, income-tax computations). Produce a clean, "
-    "STEP-BY-STEP WORKED SOLUTION — NOT an essay, NOT IRAC.\n"
-    "FORMAT — follow strictly, nicely laid out:\n"
-    "- Open with '## Answer' and one line saying what is being computed. If the question has several "
-    "parts, solve each in its own clearly-headed section.\n"
-    "- Add a short '### Given' list of the figures and rates you will use — the amounts taken FROM THE "
-    "QUESTION and the rates/thresholds taken FROM THE COURSE MATERIALS — each labelled.\n"
-    "- Then numbered steps, each headed '### Step N — <what this step finds>'. In EVERY step give, in "
-    "this order:\n"
-    "   • **Rule:** the governing rule or formula and its SOURCE (statute + section, or a course-material "
-    "pinpoint) — quote the operative words where they matter.\n"
-    "   • **Working:** the actual arithmetic with the numbers substituted, on its own line(s), leading to "
-    "the sub-result. Use a simple markdown table when several items are added up.\n"
-    "   • **Why:** explain in VERY, VERY SIMPLE plain English WHY this step is done and why that rule "
-    "applies here — as if teaching a beginner with no background. Go DEEP on the reasoning, but keep the "
-    "words simple and the sentences short.\n"
-    "- Carry each sub-result forward correctly and label every intermediate figure.\n"
-    "- Finish with '## Final Answer' stating the figure(s) clearly, with units / currency (GH₵ where "
-    "relevant).\n"
-    "NUMBERS & GROUNDING: use the figures GIVEN in the question EXACTLY; take rates, thresholds, formulae "
-    "and rules ONLY from the course materials provided — NEVER invent a rate or a rule. If a rate/rule the "
-    "computation needs is not in the materials, say so and mark it '【FILL: rate/rule】' rather than "
-    "guessing. Do the arithmetic carefully, show every line, and DOUBLE-CHECK each computation before "
-    "carrying it forward."
+# Auto-detected answer FORM: the pipeline itself decides, per question/issue, whether the task is a
+# computation (→ worked solution) or theory (→ normal law answer). Rides the gather + assemble stacks so
+# no toggle/button is needed; a mixed question gets both.
+CALC_AWARE = (
+    "ANSWER FORM — DECIDE BY THE TASK ITSELF (do this FIRST, before anything about IRAC/essay below):\n"
+    "- If the task requires a NUMERICAL COMPUTATION — you must WORK OUT a figure (a tax, royalty, capital "
+    "allowance, written-down value, government/contractor take, chargeable income, gain, etc.), or it "
+    "gives figures/rates to apply — then DO NOT use IRAC or essay prose for that part. Give a clean "
+    "STEP-BY-STEP WORKED SOLUTION: a short 'Given' list (amounts from the question; rates/thresholds from "
+    "the materials, each labelled); then numbered steps, each with **Rule:** the formula/rule + its "
+    "SOURCE (statute+section or course pinpoint), **Working:** the arithmetic with the numbers "
+    "substituted (a small markdown table where items are summed), and **Why:** a VERY, VERY simple "
+    "plain-English explanation of why this step and rule apply (deep reasoning, simple words, short "
+    "sentences); then a clear **Final Answer** with units (GH₵). Use the question's figures EXACTLY; take "
+    "rates/rules ONLY from the materials — never invent one (flag a missing rate '【FILL: rate】'); "
+    "double-check every calculation before carrying it forward.\n"
+    "- If the task is THEORY / DISCUSSION (explain, discuss, advise, compare, 'what is', 'distinguish', "
+    "'state the law'), answer it in the normal law-answer / IRAC way described elsewhere.\n"
+    "- If a question MIXES both (e.g. 'explain X and compute Y'), DO BOTH — discuss the theory part, then "
+    "give the worked solution for the computation part. Let the WORDING and the presence of figures pick "
+    "the form; never force a computation into essay prose, and never turn a discussion into a "
+    "calculation."
 )
-
-
-@app.route("/api/exam/calc", methods=["POST"])
-def api_exam_calc():
-    """Exam Coach CALCULATION mode: a grounded, step-by-step WORKED SOLUTION for computation questions
-    (rule + working + very-simple 'why' at each step) instead of an IRAC essay. One grounded call,
-    auto-continuing so long computations finish. Metered as one question."""
-    body = request.json or {}
-    course = safe_course(body.get("course", ""))
-    q = (body.get("question") or "").strip()
-    if len(q) < 10:
-        return jsonify({"error": "Paste the calculation question first."}), 400
-    courses = _exam_courses(body, course)
-    if not any(_may_read_course(cc) for cc in courses):
-        return jsonify({"error": "You don't have access to that course."}), 403
-    c = _client()
-    if not c:
-        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
-    ok, msg = can_consume("questions")
-    if not ok:
-        return jsonify({"error": msg, "limit": True}), 402
-    consume("questions")
-    ctx = course_context_multi(courses, q, 30)
-    if not ctx.strip():
-        return jsonify({"error": "The selected course(s) have no materials. Pick a course with the "
-                        "rates/rules (or upload them) before a calculation answer."})
-    system = CALC_MODE + "\n\n" + PRECISION_DISCIPLINE
-    content = [{"type": "text", "text":
-                "COURSE MATERIALS (the only rates / rules / formulae you may rely on):\n" + ctx
-                + "\n\nCALCULATION QUESTION:\n" + q
-                + "\n\nProduce the step-by-step worked solution."}]
-    try:
-        md = _create_completing(c, ANSWER_MODEL, cached_system(system), content,
-                                max_tokens=8000, max_conts=4).strip()
-    except Exception as e:
-        app.logger.exception("calc error")
-        return jsonify({"error": "The worked solution failed — please try again."})
-    return jsonify({"markdown": md})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
@@ -10547,7 +10508,8 @@ def api_exam_assemble():
     src_text = "\n".join(src_lines)
 
     system = (
-        CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
+        CALC_AWARE + "\n\n"
+        + CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
         + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
