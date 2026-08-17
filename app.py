@@ -9996,6 +9996,73 @@ def api_exam_cues():
     return jsonify({"cues": cues})
 
 
+CALC_MODE = (
+    "You are an exam coach solving a CALCULATION / COMPUTATION question (e.g. petroleum or mining tax, "
+    "royalties, capital allowances, government take, income-tax computations). Produce a clean, "
+    "STEP-BY-STEP WORKED SOLUTION — NOT an essay, NOT IRAC.\n"
+    "FORMAT — follow strictly, nicely laid out:\n"
+    "- Open with '## Answer' and one line saying what is being computed. If the question has several "
+    "parts, solve each in its own clearly-headed section.\n"
+    "- Add a short '### Given' list of the figures and rates you will use — the amounts taken FROM THE "
+    "QUESTION and the rates/thresholds taken FROM THE COURSE MATERIALS — each labelled.\n"
+    "- Then numbered steps, each headed '### Step N — <what this step finds>'. In EVERY step give, in "
+    "this order:\n"
+    "   • **Rule:** the governing rule or formula and its SOURCE (statute + section, or a course-material "
+    "pinpoint) — quote the operative words where they matter.\n"
+    "   • **Working:** the actual arithmetic with the numbers substituted, on its own line(s), leading to "
+    "the sub-result. Use a simple markdown table when several items are added up.\n"
+    "   • **Why:** explain in VERY, VERY SIMPLE plain English WHY this step is done and why that rule "
+    "applies here — as if teaching a beginner with no background. Go DEEP on the reasoning, but keep the "
+    "words simple and the sentences short.\n"
+    "- Carry each sub-result forward correctly and label every intermediate figure.\n"
+    "- Finish with '## Final Answer' stating the figure(s) clearly, with units / currency (GH₵ where "
+    "relevant).\n"
+    "NUMBERS & GROUNDING: use the figures GIVEN in the question EXACTLY; take rates, thresholds, formulae "
+    "and rules ONLY from the course materials provided — NEVER invent a rate or a rule. If a rate/rule the "
+    "computation needs is not in the materials, say so and mark it '【FILL: rate/rule】' rather than "
+    "guessing. Do the arithmetic carefully, show every line, and DOUBLE-CHECK each computation before "
+    "carrying it forward."
+)
+
+
+@app.route("/api/exam/calc", methods=["POST"])
+def api_exam_calc():
+    """Exam Coach CALCULATION mode: a grounded, step-by-step WORKED SOLUTION for computation questions
+    (rule + working + very-simple 'why' at each step) instead of an IRAC essay. One grounded call,
+    auto-continuing so long computations finish. Metered as one question."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    q = (body.get("question") or "").strip()
+    if len(q) < 10:
+        return jsonify({"error": "Paste the calculation question first."}), 400
+    courses = _exam_courses(body, course)
+    if not any(_may_read_course(cc) for cc in courses):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True}), 402
+    consume("questions")
+    ctx = course_context_multi(courses, q, 30)
+    if not ctx.strip():
+        return jsonify({"error": "The selected course(s) have no materials. Pick a course with the "
+                        "rates/rules (or upload them) before a calculation answer."})
+    system = CALC_MODE + "\n\n" + PRECISION_DISCIPLINE
+    content = [{"type": "text", "text":
+                "COURSE MATERIALS (the only rates / rules / formulae you may rely on):\n" + ctx
+                + "\n\nCALCULATION QUESTION:\n" + q
+                + "\n\nProduce the step-by-step worked solution."}]
+    try:
+        md = _create_completing(c, ANSWER_MODEL, cached_system(system), content,
+                                max_tokens=8000, max_conts=4).strip()
+    except Exception as e:
+        app.logger.exception("calc error")
+        return jsonify({"error": "The worked solution failed — please try again."})
+    return jsonify({"markdown": md})
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,

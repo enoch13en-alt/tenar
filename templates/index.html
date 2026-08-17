@@ -568,6 +568,7 @@
       </details>
       <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">⚡ Auto-run (skips your review)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
+      <button class="btn gold" id="examCalc" style="width:auto" title="For CALCULATION questions (tax/royalty/capital-allowance/government-take computations). Skips IRAC and gives a step-by-step worked solution — each step states the rule + source, shows the working, and explains WHY in very simple English. Export to Word/PDF.">🧮 Calculation answer</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
     <details id="ctxWrap" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:8px">
@@ -2274,6 +2275,29 @@ async function runBreakdown() {
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
 }
 $("#examBreak").onclick = runBreakdown;
+
+// CALCULATION mode: step-by-step worked solution (rule + working + very-simple 'why'), not IRAC.
+async function runCalc() {
+  const q = $("#examQ").value.trim();
+  if (!q) { $("#examStatus").textContent = "Paste the calculation question first."; return; }
+  const btn = $("#examCalc"), lbl = btn.textContent; btn.disabled = true; btn.textContent = "🧮 Working it out…";
+  $("#examStatus").textContent = "reading the course materials & computing… (30–90s)";
+  $("#examOut").innerHTML = "";
+  try {
+    const r = await (await fetch("/api/exam/calc", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, courses: examCourses(), question: q})})).json();
+    if (r.error) { $("#examStatus").textContent = "⚠️ " + r.error; }
+    else {
+      $("#examStatus").textContent = "✅ worked solution ready — check the arithmetic before you rely on it.";
+      const out = $("#examOut");
+      out.innerHTML = "<h4 style='margin:14px 0 4px'>🧮 Worked solution</h4><div id='calcDoc' style='white-space:normal'></div>";
+      const doc = $("#calcDoc"); doc.innerHTML = mdToHtml(r.markdown || "");
+      renderExportBar(doc, r.markdown || "", COURSE + " — worked solution", "Worked solution");
+    }
+  } catch (e) { $("#examStatus").textContent = "Error — try again."; }
+  btn.disabled = false; btn.textContent = lbl;
+}
+$("#examCalc").onclick = runCalc;
 
 // ONE-CLICK: run the whole Exam Coach pipeline end to end → break down, gather
 // every issue, compile the final document, then Deepen it to top-band standard.
