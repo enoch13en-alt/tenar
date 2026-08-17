@@ -11007,13 +11007,31 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
         built.append((uid, fmap[src_n]))
 
     def render_block(txt, small=False):
-        for raw in (txt or "").split("\n"):
-            line = raw.rstrip()
+        lines = (txt or "").split("\n")
+        i = 0
+        while i < len(lines):
+            line = lines[i].rstrip()
             if not line.strip():
+                i += 1
+                continue
+            # markdown pipe-table → real Word table (computation schedules in calc answers)
+            if '|' in line and i + 1 < len(lines) and _TBL_SEP.match(lines[i + 1].strip()):
+                headers = _tbl_split_row(line)
+                rows, j = [], i + 2
+                while j < len(lines):
+                    tj = lines[j].strip()
+                    if not tj or '|' not in tj or re.match(r'^#{1,6}\s', tj) or re.match(r'^([-*_]\s*){3,}$', tj):
+                        break
+                    rows.append(_tbl_split_row(tj))
+                    j += 1
+                _docx_add_table(d, headers, rows)
+                i = j
                 continue
             m = re.match(r"^(#{1,4})\s+(.*)", line)
             if m:
-                d.add_heading(m.group(2).strip(), level=min(len(m.group(1)), 4)); continue
+                d.add_heading(m.group(2).strip(), level=min(len(m.group(1)), 4))
+                i += 1
+                continue
             p = d.add_paragraph()
             for seg, bold, ital in _md_runs(line):
                 for part in mark_re.split(seg):
@@ -11026,6 +11044,7 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
                         r = p.add_run(part); r.bold, r.italic = bold, ital
                         if small:
                             r.font.size = Pt(notes_pt)
+            i += 1
 
     render_block(body)
     for name, content in (sections or []):
@@ -11280,7 +11299,8 @@ def _md_tables_to_text(doc):
 
 def _exam_pdf_parse(doc):
     doc = _xml_safe(doc)   # strip XML-illegal chars (from injected facts) that make the .docx unreadable
-    doc = _md_tables_to_text(doc)   # PDF has no table flowable → render tables as aligned text lines
+    # NB: table markdown is left INTACT here — the Word path (_docx_with_footnotes) renders real tables
+    # from it. The PDF builder flattens tables itself (it has no table flowable).
     # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
     # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
     doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
@@ -11390,6 +11410,10 @@ def _build_exam_pdf(meta, doc):
         return t
 
     body, fmap, sections = _exam_pdf_parse(doc)
+    # PDF has no table flowable → flatten any markdown tables to aligned 'cell · cell' text lines
+    # (the Word path keeps them as real tables; only the PDF renderer needs this).
+    body = _md_tables_to_text(body)
+    sections = [(nm, _md_tables_to_text(ct)) for nm, ct in (sections or [])]
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
 
