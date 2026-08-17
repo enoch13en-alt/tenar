@@ -3342,12 +3342,40 @@ def expand_queries(client, question):
     return []
 
 
+def _anchor_queries(question):
+    """Deterministic retrieval anchors so a specifically-NAMED instrument and the issue's key subject
+    are searched directly — even if the LLM query-expansion misses them. This is the recurring cause of
+    'the provision of Act NNN is not before me' when the Act IS in the corpus: the section ranks just
+    below the cutoff, so we pull it in on a targeted query."""
+    anchors, insts = [], []
+    for m in re.finditer(r'\b(?:Act|L\.?\s?I\.?|NRCD|PNDCL|C\.?I\.?|Regulations?|Schedule)\s*,?\s*\d{1,4}\b',
+                         question, re.I):
+        insts.append(re.sub(r'\s+', ' ', m.group(0)).strip())
+    for m in re.finditer(r'\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,5}\s+Act,?\s+\d{4})', question):
+        insts.append(m.group(1).strip())
+    # quoted phrases and 'the X fund/allowance/interest' style noun phrases carry the subject wording
+    subjects = [m.group(1).strip() for m in
+                re.finditer(r'[\"“\'‘]([^\"”\'’]{4,60})[\"”\'’]', question)]
+    for m in re.finditer(r'\b((?:[a-z]+\s+){0,3}(?:fund|allowance|royalty|interest|deduction|expenditure|'
+                         r'relief|exemption|cost[s]?|take|income))\b', question, re.I):
+        subjects.append(m.group(1).strip())
+    anchors += insts
+    # pair each named instrument with each subject so the exact provision (subject wording present in
+    # the section text) ranks high even in a large multi-Act corpus
+    for i in insts[:3]:
+        for s in subjects[:4]:
+            anchors.append((i + " " + s).strip())
+    anchors += subjects
+    return list(dict.fromkeys(a for a in anchors if a))[:8]
+
+
 def retrieve_expanded(client, courses, question, multi, k=TOP_K):
     """Multi-query retrieval: search on the original question PLUS targeted sub-queries for
     the operative provisions, then UNION the results (dedup by doc+page) so numbered
     articles surface alongside the framing chunks. Falls back to plain single-query search
     if expansion yields nothing."""
-    queries = [question] + expand_queries(client, question)
+    queries = [question] + expand_queries(client, question) + _anchor_queries(question)
+    queries = list(dict.fromkeys(q for q in queries if q))
     per = 15 if len(queries) > 1 else k
     merged, seen = [], set()
     for q in queries:
@@ -3360,7 +3388,7 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
             if key not in seen:
                 seen.add(key)
                 merged.append(h)
-    return merged[:max(k, 45)]
+    return merged[:max(k, 60)]
 
 # ---------------------------------------------------------------- AI name extraction
 def first_pages_text(path, n=2, limit=3500):
