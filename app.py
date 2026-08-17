@@ -4311,14 +4311,16 @@ def _create_final(client, **kwargs):
     raise last
 
 
-def _create_completing(client, model, system, content, max_tokens, max_conts=3):
-    """Non-streaming create that AUTO-CONTINUES if the model stops on 'max_tokens', so a long
-    answer (e.g. a rule sheet over many areas) is never left truncated mid-sentence. Records cost on
-    every leg (per-user spend attributed). Returns the full concatenated text."""
+def _create_completing(client, model, system, content, max_tokens, max_conts=3, **extra):
+    """Non-streaming create that AUTO-CONTINUES if the model stops on 'max_tokens', so a long output
+    (a rule sheet over many areas, or reproducing a whole document to audit/calibrate) is never left
+    truncated mid-sentence. Records cost on every leg (per-user spend attributed). Extra kwargs (e.g.
+    output_config) pass straight to _create_final. Returns the full concatenated text."""
     msgs = [{"role": "user", "content": content}]
     full = ""
     for _ in range(max_conts + 1):
-        r, m = _create_final(client, model=model, max_tokens=max_tokens, system=system, messages=msgs)
+        r, m = _create_final(client, model=model, max_tokens=max_tokens, system=system,
+                             messages=msgs, **extra)
         record_cost(r, m)
         piece = _text_of(r)
         full += piece
@@ -4326,8 +4328,8 @@ def _create_completing(client, model, system, content, max_tokens, max_conts=3):
             break
         msgs.append({"role": "assistant", "content": piece})
         msgs.append({"role": "user", "content":
-                     "Continue the rule sheet EXACTLY where you stopped — pick up mid-list if needed, "
-                     "do NOT repeat any bullet or heading already written, and add no preface."})
+                     "Continue EXACTLY where you stopped — pick up mid-sentence / mid-line / mid-table "
+                     "if you were, do NOT repeat anything already written, and add no preface."})
     return full
 
 
@@ -5945,14 +5947,13 @@ def api_audit():
                        "conclusion and the style verbatim. Do NOT add new authorities. Return ONLY "
                        "the corrected answer text — no preamble, no notes.\n\n" + KEEP_LAW_MARKERS)
             try:
-                cor, _ = _create_final(
-                    c, model=ANSWER_MODEL, max_tokens=8000,
-                    system=sys_fix,
-                    messages=[{"role": "user", "content":
-                               "ANSWER:\n" + answer + "\n\nFIX (correct these):\n"
-                               + json.dumps(fixes) + "\n\nREMOVE (cut these):\n"
-                               + json.dumps(drops)}])
-                corrected = _text_of(cor).strip()
+                # auto-continue: a long (calc-heavy) answer must be reproduced WHOLE, or the truncated
+                # 'corrected' text cascades into the calibrate step as a cut-off document.
+                corrected = _create_completing(
+                    c, ANSWER_MODEL, sys_fix,
+                    "ANSWER:\n" + answer + "\n\nFIX (correct these):\n"
+                    + json.dumps(fixes) + "\n\nREMOVE (cut these):\n" + json.dumps(drops),
+                    max_tokens=8000, max_conts=4).strip()
             except Exception:
                 corrected = None
         result["corrected"] = corrected
@@ -7990,15 +7991,13 @@ def api_issue_calibrate():
            + KEEP_LAW_MARKERS)
     try:
         # calibration is a careful proposition-by-proposition review, where deeper reasoning
-        # genuinely helps — run at high effort with generous room so the full calibrated answer
-        # (plus the change list) can't truncate behind the thinking budget.
-        r, _m = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=16000, output_config={"effort": "high"},
-            system=cached_system(sys),
-            messages=[{"role": "user", "content":
-                       (("Problem: " + context[:900] + "\n\n") if context else "")
-                       + "ISSUE: " + issue + "\n\nANSWER TO CALIBRATE:\n" + answer}])
-        out = (_text_of(r) or "").strip()
+        # genuinely helps — run at high effort. AUTO-CONTINUE so reproducing a long (calc-heavy)
+        # document plus the change list can't truncate mid-computation behind the thinking budget.
+        out = _create_completing(
+            c, ANSWER_MODEL, cached_system(sys),
+            (("Problem: " + context[:900] + "\n\n") if context else "")
+            + "ISSUE: " + issue + "\n\nANSWER TO CALIBRATE:\n" + answer,
+            max_tokens=16000, max_conts=4, output_config={"effort": "high"}).strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
     parts = out.split("===CHANGES===")
