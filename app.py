@@ -11304,13 +11304,18 @@ def _exam_pdf_parse(doc):
     # The model sometimes wraps footnotes in <sub>/<small> to shrink them — that would print the
     # tags literally / subscript the notes. Strip them (footnotes are styled small on their own).
     doc = re.sub(r'</?(sub|small)\b[^>]*>', '', doc or '', flags=re.I)
-    # Strip stray pipe artifacts (a lone '|' left over from a broken table/placeholder) that print
-    # as a floating '|' between footnotes; keep genuine 'a | b' inline text intact.
-    doc = re.sub(r'(?m)^[ \t>*_-]*\|[ \t>*_-]*$', '', doc)   # pipe-only lines
-    doc = re.sub(r'(?<=\s)\|(?=\s)', '', doc)                 # isolated space-surrounded pipe
-    # normalise run-on structure: put '##' headings and '---' rules on their own
-    # lines so an inline '… Rep 14 ## Table of Legislation …' is still found
-    doc = re.sub(r'[ \t]*-{3,}[ \t]*', '\n\n', doc)
+    # Clean prose artifacts (stray pipes, '---' rules) WITHOUT touching genuine MARKDOWN TABLE rows —
+    # a table row/separator has 2+ '|' and must survive intact for the table renderer (Word/PDF).
+    _out = []
+    for _ln in doc.split("\n"):
+        if _ln.count("|") >= 2:                              # a real table row / separator → leave alone
+            _out.append(_ln)
+            continue
+        _ln = re.sub(r'^[ \t>*_-]*\|[ \t>*_-]*$', '', _ln)   # pipe-only line → blank
+        _ln = re.sub(r'(?<=\s)\|(?=\s)', '', _ln)            # stray space-surrounded pipe
+        _ln = re.sub(r'[ \t]*-{3,}[ \t]*', '\n\n', _ln)      # '---' rule → paragraph break
+        _out.append(_ln)
+    doc = "\n".join(_out)
     # Put ATX headings on their own line. Match the FULL run of hashes (the
     # lookbehind anchors to the first '#'), so a '### II. …' h3 is normalised
     # whole — the old '##' pattern matched the last two of three hashes and
