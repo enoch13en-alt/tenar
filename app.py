@@ -3390,6 +3390,36 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
                 merged.append(h)
     return merged[:max(k, 60)]
 
+
+def search_in_docs(course, query, docs, k_per=8):
+    """Retrieve the best-matching chunks FROM SPECIFIC documents only (the user's PINNED docs), so a
+    named Act's relevant provisions are GUARANTEED into the answer even if they'd rank below the global
+    cut-off. Neighbour-completed so split provisions come through whole. Returns [] on any miss."""
+    if not docs:
+        return []
+    ensure_loaded(course)
+    idx = INDEXES.get(course)
+    if not idx or not idx.get("chunks"):
+        return []
+    want = set(docs)
+    pos = [i for i, ch in enumerate(idx["chunks"]) if ch.get("doc") in want]
+    if not pos:
+        return []
+    try:
+        qv = embed_texts([query])[0]
+        sims = idx["emb"] @ qv
+        pos.sort(key=lambda i: -float(sims[i]))
+    except Exception:
+        pass
+    keep, per = [], {}
+    for i in pos:
+        d = idx["chunks"][i].get("doc")
+        if per.get(d, 0) >= k_per:
+            continue
+        per[d] = per.get(d, 0) + 1
+        keep.append(i)
+    return _with_neighbors(idx["chunks"], keep)
+
 # ---------------------------------------------------------------- AI name extraction
 def first_pages_text(path, n=2, limit=3500):
     ext = path.lower().rsplit(".", 1)[-1]
@@ -3815,7 +3845,8 @@ ISSUE_SCOPE = (
 
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
-                    extract_model=None, simple=False, siblings=None, issue_index=None):
+                    extract_model=None, simple=False, siblings=None, issue_index=None,
+                    pinned=None):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -3844,6 +3875,21 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                                       k=60 if mode == "gather" else TOP_K)
     else:
         retrieved = search_multi(courses, question) if multi else search(courses[0], question)
+    # PINNED documents: force each pinned doc's best chunks into context, FIRST, so a named Act the
+    # student pinned is never lost to ranking. Dedup against what retrieval already found.
+    if pinned:
+        pin_hits, seen = [], set(
+            (h.get("_course", ""), h.get("doc"), h.get("page"), (h.get("text") or "")[:60])
+            for h in retrieved)
+        for cc in courses:
+            for h in search_in_docs(cc, question, pinned, k_per=8):
+                hh = dict(h)
+                hh.setdefault("_course", cc)
+                key = (hh.get("_course", ""), hh.get("doc"), hh.get("page"), (hh.get("text") or "")[:60])
+                if key not in seen:
+                    seen.add(key)
+                    pin_hits.append(hh)
+        retrieved = pin_hits + retrieved
     # case-finder can run on the web alone; a normal answer needs the corpus
     if not retrieved and mode != "cases":
         return {"answer": "No documents indexed in the selected course(s) yet. Add "
@@ -5270,7 +5316,8 @@ def api_ask():
                                    extract_model=(body.get("extract_model") or None),
                                    simple=bool(body.get("simple")),
                                    siblings=body.get("siblings"),
-                                   issue_index=body.get("issue_index")))
+                                   issue_index=body.get("issue_index"),
+                                   pinned=body.get("pinned")))
 
 
 @app.route("/api/cases", methods=["POST"])
@@ -10084,6 +10131,18 @@ def api_exam_breakdown():
 
     courses = _exam_courses(body, course)
     ctx = course_context_multi(courses, q, 25 if len(courses) <= 1 else 32)
+    # PINNED docs: force their relevant text into the breakdown context too, so issues form around the
+    # provisions the student insists on (never lost to ranking).
+    pinned = body.get("pinned") or []
+    if pinned:
+        extra = []
+        for cc in courses:
+            for ch in search_in_docs(cc, q, pinned, k_per=6):
+                pd, _ = course_paths(cc)
+                pg = page_label(os.path.join(pd, ch["doc"]), ch["doc"], ch["page"])
+                extra.append(f'[{display_name(ch["doc"])} — p.{pg}]\n{ch["text"]}')
+        if extra:
+            ctx = ctx + "\n\n=== PINNED DOCUMENTS (always take into account) ===\n" + "\n\n".join(extra)
     if not ctx.strip():
         return jsonify({"error": "The selected course(s) have no documents. Pick a course "
                         "with materials (or upload PDFs and Re-index) before using Exam Coach."})

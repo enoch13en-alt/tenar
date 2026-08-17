@@ -1157,13 +1157,21 @@ async function refresh() {
   if (r.auth) { location.href = "/"; return; }   // session dropped → login
   // Owner/admin (or a matter's owner) may delete a source — same gate as the /api/doc/delete route.
   const canDelete = r.plan && (r.plan.is_admin || (COURSE || "").startsWith("mtr-"));
+  const pinned = getPinned();
   $("#docs").innerHTML = r.docs.length
-    ? r.docs.map(d => "<div style='display:flex;align-items:center;gap:6px'>"
-        + "<span style='flex:1'>" + tag(d.type) + esc(d.name) + "</span>"
-        + (canDelete
-            ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
-            : "")
-        + "</div>").join("") : "none yet";
+    ? r.docs.map(d => {
+        const isPin = pinned.indexOf(d.file) >= 0;
+        return "<div style='display:flex;align-items:center;gap:5px'>"
+          + "<button type='button' class='pinDoc' data-file=\"" + esc(d.file) + "\" style='width:auto;padding:0 3px;background:none;border:0;cursor:pointer;font-size:13px;flex:none;"
+            + (isPin ? "" : "filter:grayscale(1);opacity:.4") + "' title='"
+            + (isPin ? "Pinned — always included in answers &amp; Exam Coach. Click to unpin."
+                     : "Pin: always include this document (forces it into context regardless of ranking).") + "'>📌</button>"
+          + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tag(d.type) + esc(d.name) + "</span>"
+          + (canDelete
+              ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
+              : "")
+          + "</div>";
+      }).join("") : "none yet";
   $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
     ? Object.entries(r.mix).sort((a,b)=>b[1]-a[1]).map(([t,n]) => tag(t)+n).join(" ") : "";
   // The 2.5s poller must NOT clobber a live upload/indexing message with the server's
@@ -1179,6 +1187,19 @@ async function refresh() {
 
 // Delete a single source from the current course (owner/admin gated server-side too). Removes the
 // file and its indexed chunks; the 2.5s refresh redraws the list.
+// Pinned documents (per course, in localStorage): force-included in every answer + Exam Coach so a
+// named Act is never lost to retrieval ranking. Pin as many as you like.
+function getPinned() {
+  try { return JSON.parse(localStorage.getItem("pinned_" + COURSE) || "[]") || []; } catch (e) { return []; }
+}
+function togglePin(file) {
+  if (!file) return;
+  const s = new Set(getPinned());
+  s.has(file) ? s.delete(file) : s.add(file);
+  localStorage.setItem("pinned_" + COURSE, JSON.stringify([...s]));
+  refresh();
+}
+
 async function deleteSource(btn) {
   const file = btn.getAttribute("data-file"), name = btn.getAttribute("data-name") || file;
   if (!file) return;
@@ -1219,6 +1240,8 @@ function applyPlan(p) {
 // Delegated so the handler survives the 2.5s rebuild of #docs (no inline onclick — matches the
 // rest of the app, and works regardless of how the list is redrawn).
 document.getElementById("docs").addEventListener("click", e => {
+  const p = e.target.closest(".pinDoc");
+  if (p) { togglePin(p.dataset.file); return; }
   const b = e.target.closest(".delSource");
   if (b) deleteSource(b);
 });
@@ -1234,7 +1257,7 @@ async function ask() {
   try {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question: q, course: COURSE, web, format: "chat"})})).json();
+      body: JSON.stringify({question: q, course: COURSE, web, format: "chat", pinned: getPinned()})})).json();
     const askFmt = "chat";
     let html;
     if (r.segments && r.segments.length) {
@@ -2303,6 +2326,7 @@ async function runBreakdown() {
     const r = await (await fetch("/api/exam/breakdown", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, courses: examCourses(), question: q, focus,
+        pinned: getPinned(),
         assumptions: !!($("#examAssume") && $("#examAssume").checked)})})).json();
     if (r.error) { $("#examStatus").textContent = r.error; return false; }
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
@@ -2819,6 +2843,7 @@ async function gatherIssue(i) {
     const r = await (await fetch("/api/ask", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
+        pinned: getPinned(),
         prior: priorRulesLedger(i),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
