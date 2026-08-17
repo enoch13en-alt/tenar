@@ -10178,31 +10178,39 @@ def api_exam_breakdown():
     # Stream (the breakdown can take 30-60s and the enlarged prompt produces a
     # lot of JSON) with a generous cap so the issue list is never truncated —
     # truncation used to yield unparseable JSON and a silently empty breakdown.
-    resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
-                                      messages=[{"role": "user", "content": user}])
-    txt = _text_of(resp)
-    cost = record_cost(resp)
-    try:
-        data = _parse_json(txt)
-    except Exception:
-        # tolerate a reply wrapped in fences or with a stray line of prose around the JSON —
-        # extract the first balanced {...} object rather than stranding the UI
+    # Try up to TWICE: a transient reply (empty text, a stray prose line, or a fenced block) shouldn't
+    # make the student re-click. On a retry, nudge harder for pure JSON. Distinct handling for a genuine
+    # truncation (max_tokens) or a refusal — those won't be fixed by retrying.
+    data, cost, last_txt, last_stop = None, 0, "", None
+    for attempt in range(2):
+        umsg = user if attempt == 0 else (
+            user + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
+            "fences, nothing before '{' or after '}'.")
+        resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
+                                          messages=[{"role": "user", "content": umsg}])
+        last_txt = _text_of(resp)
+        last_stop = getattr(resp, "stop_reason", None)
+        cost = record_cost(resp)
+        if last_stop == "max_tokens":
+            return jsonify({"error": "The breakdown was too long to finish. Try a "
+                            "shorter question, or fewer focus areas, and retry."})
+        if last_stop == "refusal":
+            return jsonify({"error": "The model declined to break this one down. Rephrase "
+                            "the question and retry."})
         try:
-            data = _first_json_obj(txt)
+            data = _parse_json(last_txt)
+            break
         except Exception:
-            if getattr(resp, "stop_reason", None) == "max_tokens":
-                return jsonify({"error": "The breakdown was too long to finish. Try a "
-                                "shorter question, or fewer focus areas, and retry."})
-            if getattr(resp, "stop_reason", None) == "refusal":
-                return jsonify({"error": "The model declined to break this one down. Rephrase "
-                                "the question and retry."})
-            app.logger.warning("breakdown parse failed; stop=%s; head=%r",
-                               getattr(resp, "stop_reason", None), (txt or "")[:200])
-            return jsonify({"error": "Couldn't read the breakdown this time — please "
-                            "click 'Break it down' again."})
+            try:
+                data = _first_json_obj(last_txt)   # tolerate fences / a stray prose line
+                break
+            except Exception:
+                continue                            # transient — loop and try once more
     if not isinstance(data, dict):
-        return jsonify({"error": "Couldn't read the breakdown this time — please click "
-                        "'Break it down' again."})
+        app.logger.warning("breakdown parse failed after retry; stop=%s; head=%r",
+                           last_stop, (last_txt or "")[:200])
+        return jsonify({"error": "Couldn't read the breakdown this time — please "
+                        "click 'Break it down' again."})
     data["cost"] = cost
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
