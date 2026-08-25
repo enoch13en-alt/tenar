@@ -790,6 +790,16 @@
       </label>
       <div id="acOut" style="font-size:12px;margin-top:6px"></div>
     </div>
+    <div id="adminCap" style="display:none;margin-top:14px;border-top:1px solid #2a3344;padding-top:12px">
+      <div style="font-size:12px;color:#8fb4ff;font-weight:600;margin-bottom:6px">💸 Monthly spend cap (kill-switch)</div>
+      <div style="font-size:12px;color:#cdd5e6;margin-bottom:6px">This month's API spend: <b id="capSpent">$0.00</b> <span id="capOfCap" style="color:#8b93a7"></span></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;color:#aab4c6">Cap $ <input id="capInput" type="number" min="0" step="10" placeholder="0 = off" style="width:90px;padding:5px;font-size:12px"></label>
+        <button class="btn gold mini" id="capSave" style="width:auto">Save cap</button>
+        <span id="capNote" style="font-size:11px;color:#8b93a7"></span>
+      </div>
+      <div style="font-size:11px;color:#6b7488;margin-top:4px">When this month's spend hits the cap, all paid calls stop with a clear message. 0 = no cap.</div>
+    </div>
     <div id="adminUsers" style="display:none;margin-top:14px;border-top:1px solid #2a3344;padding-top:12px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:12px;color:#8fb4ff;font-weight:600">👥 Users &amp; spend</div>
@@ -1218,6 +1228,7 @@ function applyPlan(p) {
   PLAN = p;
   const ac = $("#adminCreate"); if (ac) ac.style.display = p.is_admin ? "block" : "none";
   const au = $("#adminUsers"); if (au) au.style.display = p.is_admin ? "block" : "none";
+  const acap = $("#adminCap"); if (acap) acap.style.display = p.is_admin ? "block" : "none";
   // Owner-only surfaces: global spend and the system-prompt editor are hidden from normal users.
   const cost = $("#cost"); if (cost) cost.style.display = p.is_admin ? "block" : "none";
   const setBtn = $("#openSettings"); if (setBtn) setBtn.style.display = p.is_admin ? "block" : "none";
@@ -2148,7 +2159,7 @@ function saveExam() {
       facts: EXAM.facts || [], assumptions: EXAM.assumptions || [], focus: EXAM.focus || [],
       cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
       issues: (EXAM.issues || []).map(it => ({
-        n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link,
+        n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link, weight: it.weight,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
         _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
@@ -2591,11 +2602,18 @@ function renderExam() {
       else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
       const link = (it.link && it.link.toLowerCase() !== 'standalone')
         ? '<div class="why" style="color:#c9a86a;margin-top:2px">↳ '+esc(it.link)+'</div>' : '';
-      return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+'</h5>'
+      const _wt = (it.weight||'').toLowerCase();
+      const _wb = _wt==='core'
+        ? " <span style='font-size:10px;background:#7a2f2f;color:#ffdada;padding:1px 6px;border-radius:8px;margin-left:5px' title='Core, mark-heavy issue'>CORE</span>"
+        : _wt==='minor'
+        ? " <span style='font-size:10px;background:#2a3344;color:#9fb0c6;padding:1px 6px;border-radius:8px;margin-left:5px' title='Minor / low-mark point'>minor</span>" : "";
+      return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+'</h5>'
         + '<div class="why">'+esc(it.why||'')+(it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
         + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
+      + ((EXAM.issues||[]).some(x => (x.weight||'').toLowerCase()==='core' && !x.done)
+          ? '<button class="btn alt" id="gatherCore" style="width:auto" title="Gather only the CORE (mark-heavy) issues — a lean, cheaper draft. Add the minor ones before you finalise.">⭐ Gather core only</button>' : '')
       + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Reconcile all issues</button>'
       + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button></div>';
     h += '<div id="examConsistencyOut" style="margin-top:6px"></div><div id="examDocWrap"></div>';
@@ -2647,6 +2665,7 @@ function renderExam() {
       else renderExam();     // show/hide the cue block, keep the dropdown state
     });
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
+  const gc = $("#gatherCore"); if (gc) gc.onclick = gatherCore;
   const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
   const cs = $("#examConsistency"); if (cs) cs.onclick = runConsistency;
   scheduleSave();                 // persist the run after every render (debounced)
@@ -3411,6 +3430,14 @@ async function gatherAll() {
   for (let i = 0; i < EXAM.issues.length; i++)
     if (!EXAM.issues[i].done) await gatherIssue(i);
   $("#examStatus").textContent = "All issues gathered. Ready to compile.";
+}
+// Lean/cheaper draft: gather ONLY the core (mark-heavy) issues; add the minor ones later.
+async function gatherCore() {
+  const core = EXAM.issues.map((it,i)=>i).filter(i => (EXAM.issues[i].weight||'').toLowerCase()==='core' && !EXAM.issues[i].done);
+  if (!core.length) { $("#examStatus").textContent = "No core issues left to gather."; return; }
+  $("#examStatus").textContent = "Gathering the " + core.length + " core issue(s)…";
+  for (const i of core) await gatherIssue(i);
+  $("#examStatus").textContent = "Core issues gathered. Add the minor ones before finalising, or compile a lean draft.";
 }
 // Cross-issue consistency sweep: reconcile any later issue that contradicts an earlier issue's
 // conclusion (the earlier-decided point governs). Fixes the issue answers themselves — best run
@@ -4441,9 +4468,30 @@ function renderPlanUsage(p) {
 async function openPlan() {
   const p = await (await fetch("/api/plan")).json();
   renderPlanUsage(p); applyPlan(p); $("#planModal").style.display = "flex";
-  if (p.is_admin) loadUsers();
+  if (p.is_admin) { loadUsers(); loadCap(); }
 }
 $("#openPlan").onclick = openPlan;
+// Admin: monthly spend kill-switch
+async function loadCap() {
+  try {
+    const r = await (await fetch("/api/admin/cap")).json();
+    if (r.error) return;
+    $("#capSpent").textContent = "$" + (r.spent || 0).toFixed(2);
+    $("#capOfCap").textContent = r.cap > 0 ? ("of $" + r.cap.toFixed(2) + " cap · " + r.month) : "· no cap set · " + r.month;
+    if ($("#capInput") && !$("#capInput").value) $("#capInput").value = r.cap || "";
+  } catch (e) {}
+}
+$("#capSave").onclick = async () => {
+  const v = parseFloat($("#capInput").value) || 0;
+  $("#capNote").textContent = "saving…";
+  try {
+    const r = await (await fetch("/api/admin/cap", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({cap: v})})).json();
+    if (r.error) { $("#capNote").textContent = "⚠️ " + r.error; return; }
+    $("#capNote").textContent = r.cap > 0 ? "✓ cap set to $" + r.cap.toFixed(2) : "✓ cap off";
+    loadCap();
+  } catch (e) { $("#capNote").textContent = "Error — try again."; }
+};
 // Admin: list every account with its plan, questions used, and total $ spent.
 async function loadUsers() {
   const host = $("#usersList"); if (!host) return;

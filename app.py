@@ -2144,6 +2144,77 @@ def save_config(cfg):
 
 CONFIG = load_config()
 
+# ---------------------------------------------------------------- rule-extraction cache
+# The Fable rule-extraction (Phase 1 of the gather) is the biggest single cost. Re-running the
+# SAME issue over the SAME retrieved passages re-pays it for an identical result — so cache the
+# extracted rule and reuse it for free. Correctness-safe: the key includes the actual retrieved
+# chunk identities, so any change to the corpus, question, pins or issue position re-extracts.
+RULE_EXTRACT_VERSION = "1"          # bump when the extraction PROMPT changes, to invalidate old rules
+RULE_CACHE_FILE = os.path.join(DATA, "rule_cache.json")
+RULE_CACHE = {}
+
+
+def _load_rule_cache():
+    global RULE_CACHE
+    try:
+        RULE_CACHE = json.load(open(RULE_CACHE_FILE)) or {}
+    except Exception:
+        RULE_CACHE = {}
+
+
+def _save_rule_cache():
+    try:
+        _write_json(RULE_CACHE_FILE, RULE_CACHE)
+    except Exception:
+        pass
+
+
+def _rule_cache_key(courses, question, retrieved, extract_model, prior):
+    sig = [RULE_EXTRACT_VERSION, sorted(courses), (question or "").strip(),
+           [(c.get("_course", ""), c.get("doc"), c.get("page"), (c.get("text") or "")[:80])
+            for c in retrieved],
+           (extract_model or "fable"), (prior or "")[:2000]]
+    return hashlib.sha256(json.dumps(sig, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _rule_cache_get(key):
+    hit = RULE_CACHE.get(key)
+    return hit.get("rule") if isinstance(hit, dict) else None
+
+
+def _rule_cache_put(key, rule):
+    RULE_CACHE[key] = {"rule": rule, "t": time.time()}
+    if len(RULE_CACHE) > 1200:          # evict the oldest ~200 so the file can't grow unbounded
+        for k in sorted(RULE_CACHE, key=lambda k: (RULE_CACHE[k] or {}).get("t", 0))[:200]:
+            RULE_CACHE.pop(k, None)
+    _save_rule_cache()
+
+
+# ---------------------------------------------------------------- monthly spend kill-switch
+# A hard ceiling so a runaway (or one big exam) can't silently drain the Anthropic balance.
+# CONFIG['spend_cap_usd'] == 0 means OFF. period_spend accumulates and resets each calendar month.
+def _spend_note(cost):
+    """Add an API $ to the rolling monthly total; reset it on a new calendar month."""
+    import datetime
+    mon = datetime.date.today().strftime("%Y-%m")
+    if CONFIG.get("cap_month") != mon:
+        CONFIG["cap_month"] = mon
+        CONFIG["period_spend_usd"] = 0.0
+    CONFIG["period_spend_usd"] = round(CONFIG.get("period_spend_usd", 0.0) + (cost or 0), 6)
+
+
+def spend_gate():
+    """(ok, message). Blocks new paid work once this month's API spend hits the cap."""
+    cap = float(CONFIG.get("spend_cap_usd", 0) or 0)
+    if cap <= 0:
+        return True, ""
+    spent = float(CONFIG.get("period_spend_usd", 0.0) or 0)
+    if spent >= cap:
+        return False, ("Monthly spend cap reached ($%.2f of $%.2f). Raise it in ⚙ Plan & usage "
+                       "(admin), or wait for next month." % (spent, cap))
+    return True, ""
+
+
 # ---------------------------------------------------------------- users / auth
 # Multi-tenant foundation: accounts, hashed passwords, sessions. Course packs
 # stay SHARED (the reusable-inventory model); what's per-user is auth, plan,
@@ -2321,6 +2392,9 @@ def _limit_message(kind):
 
 def can_consume(kind):
     """(ok, message) — check a cap without consuming."""
+    _sg, _sm = spend_gate()             # hard monthly $ ceiling gates ALL paid work
+    if not _sg:
+        return False, _sm
     _maybe_reset_period()
     m = _meter()
     lim = plan_limits()
@@ -4138,18 +4212,25 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     + ("NEW-to-this-issue Rule" if prior else "Rule")
                     + " for this issue: " + question}]
         try:
-            # rule-extraction model is Fable by default; overridable (A/B: Opus is far cheaper and
-            # extraction is a faithful-reproduction task, so it may match Fable at ~half the cost).
-            _xm = ANSWER_MODEL if extract_model in ("opus", "opus_x") else FABLE_MODEL
-            r1, m1 = _create_final(client, model=_xm, max_tokens=max_out,
-                                   output_config={"effort": "high"},
-                                   system=rule_sys,
-                                   messages=[{"role": "user", "content": rule_msg}])
-            rule_text = (_text_of(r1) or "").strip()
-            c1, i1, o1 = _usage_cost(r1.usage, m1 or _xm)
-            pre_cost += c1
-            CONFIG["total_input_tokens"] += i1
-            CONFIG["total_output_tokens"] += o1
+            # CACHE: the extracted rule for the SAME issue over the SAME passages is identical, so
+            # reuse it for free — the biggest cost cut, and lossless (key includes the retrieved
+            # chunk identities, so any change re-extracts). Re-runs of an exam pay Fable once.
+            _ck = _rule_cache_key(courses, question, retrieved, extract_model, prior)
+            rule_text = _rule_cache_get(_ck)
+            if rule_text is None:
+                # rule-extraction model is Fable by default (most accurate faithful reproduction).
+                _xm = ANSWER_MODEL if extract_model in ("opus", "opus_x") else FABLE_MODEL
+                r1, m1 = _create_final(client, model=_xm, max_tokens=max_out,
+                                       output_config={"effort": "high"},
+                                       system=rule_sys,
+                                       messages=[{"role": "user", "content": rule_msg}])
+                rule_text = (_text_of(r1) or "").strip()
+                c1, i1, o1 = _usage_cost(r1.usage, m1 or _xm)
+                pre_cost += c1
+                CONFIG["total_input_tokens"] += i1
+                CONFIG["total_output_tokens"] += o1
+                if rule_text:
+                    _rule_cache_put(_ck, rule_text)
             if rule_text and not rule_text.upper().startswith("NO NEW LAW"):
                 content = list(content) + [{"type": "text", "text":
                     "GOVERNING LAW ALREADY EXTRACTED FROM THE MATERIALS ABOVE (treat this as the "
@@ -4246,6 +4327,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     CONFIG["total_input_tokens"] += in_tok
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
+    _spend_note(cost)                          # roll into the monthly cap counter
     save_config(CONFIG)
     _bill_user(cost, in_tok, out_tok)          # per-user spend tracking
     _final_answer = "".join(s["text"] for s in segments).strip()
@@ -4402,6 +4484,7 @@ def record_cost(resp, model=None):
     CONFIG["total_input_tokens"] += in_tok
     CONFIG["total_output_tokens"] += out_tok
     CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + cost, 6)
+    _spend_note(cost)                          # roll into the monthly cap counter
     save_config(CONFIG)
     _bill_user(cost, in_tok, out_tok)
     return {"this_usd": round(cost, 5),
@@ -5274,7 +5357,7 @@ def api_ask():
     fmt = body.get("format", "essay")
     if not q:
         return jsonify({"error": "empty question"}), 400
-    # metering: check caps before doing any paid work
+    # metering: check caps before doing any paid work (can_consume also enforces the $ cap)
     if include_web:
         ok, msg = can_consume("comparative")
         if not ok:
@@ -10206,10 +10289,14 @@ def api_exam_breakdown():
         "those are the evidentiary record — accept them. DO NOT emit 'Limitation' items or "
         "generic assumptions for stated facts. If the facts raise no genuine outcome-changing "
         "omission and no uncertain background, return an EMPTY array.\n"
-        '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\", \"link\"} — n is '
+        '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\", \"link\", \"weight\"} — n is '
         "the order number, issue is a sub-question to answer, why ties it to the "
         "specific facts, law briefly names the relevant rule/source from the "
-        "materials, and LINK states how this issue CONNECTS to the others — which it "
+        "materials. WEIGHT is 'core' or 'minor': 'core' = a central, mark-heavy issue the answer must "
+        "resolve fully (the examiner's main targets, including threshold/gateway issues that decide "
+        "others); 'minor' = a peripheral, low-mark or quickly-disposed point. Be honest — most problems "
+        "have a few core issues and several minor ones; do NOT mark everything core. "
+        "LINK states how this issue CONNECTS to the others — which it "
         "is a threshold/gateway to, which it depends on the outcome of, or which its "
         "finding feeds into (e.g. 'threshold to issues 3-6', 'only reached if issue 2 "
         "succeeds', 'its finding drives quantum in issue 7'); use 'standalone' only if "
@@ -11826,6 +11913,29 @@ def api_admin_user_enroll_all():
     return jsonify({"ok": True, "email": email, "count": len(u["courses"])})
 
 
+@app.route("/api/admin/cap", methods=["GET", "POST"])
+def api_admin_cap():
+    """Admin-only: get / set the monthly spend kill-switch (USD). 0 = off. Also reports this
+    month's API spend so the owner can watch the balance burn."""
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Admins only."}), 403
+    import datetime
+    if request.method == "POST":
+        try:
+            cap = float((request.json or {}).get("cap") or 0)
+        except Exception:
+            cap = 0.0
+        CONFIG["spend_cap_usd"] = max(0.0, round(cap, 2))
+        save_config(CONFIG)
+    mon = datetime.date.today().strftime("%Y-%m")
+    if CONFIG.get("cap_month") != mon:                  # show a fresh month as 0 spent
+        CONFIG["cap_month"] = mon
+        CONFIG["period_spend_usd"] = 0.0
+    return jsonify({"cap": float(CONFIG.get("spend_cap_usd", 0) or 0),
+                    "spent": round(float(CONFIG.get("period_spend_usd", 0.0) or 0), 4),
+                    "month": mon})
+
+
 @app.route("/api/admin/user/reset", methods=["POST"])
 def api_admin_user_reset():
     """Admin-only: reset ONE account's usage counts AND attributed spend to zero (e.g. to refund a
@@ -12035,6 +12145,7 @@ def init_app():
     load_doctypes()
     load_meta()
     load_weeks()
+    _load_rule_cache()
     if not USERS:                                   # first run → seed owner admin
         create_user("owner@local", "letmein", plan="full_llm", is_admin=True)
         print("\n  Owner account created →  owner@local  /  letmein   (change it)\n")
