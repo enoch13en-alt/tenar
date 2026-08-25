@@ -10258,8 +10258,15 @@ def api_exam_breakdown():
         umsg = user if attempt == 0 else (
             user + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
             "fences, nothing before '{' or after '}'.")
-        resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
-                                          messages=[{"role": "user", "content": umsg}])
+        try:
+            resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
+                                              messages=[{"role": "user", "content": umsg}])
+        except Exception as e:
+            emsg = str(getattr(e, "message", "") or e).lower()
+            if "credit balance" in emsg or "insufficient" in emsg or "quota" in emsg:
+                return jsonify({"error": "The AI account is out of credits — top up in the "
+                                "Anthropic console."})
+            raise
         last_txt = _text_of(resp)
         last_stop = getattr(resp, "stop_reason", None)
         cost = record_cost(resp)
