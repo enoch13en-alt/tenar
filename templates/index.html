@@ -2378,6 +2378,18 @@ async function runFullPipeline() {
       $("#examStatus").textContent = "⚖️ Finding & pre-applying cases per issue…";
       await precomputeCases();
     }
+    // CHECKPOINT — gather is the cheap part; Compile + verify is the pricier step. Pause here, show
+    // the cost so far, and let the user decide — a kill point so a run can never climb unwatched.
+    const _nDone = EXAM.issues.filter(i => i.done).length;
+    const _admin = PLAN && PLAN.is_admin;
+    const _spentTxt = _admin ? (" — cost so far ≈ $" + (EXAM.cost || 0).toFixed(2)) : "";
+    if (!confirm("✅ Gathered " + _nDone + " issue(s)" + _spentTxt + ".\n\n"
+        + "Next is Compile + verify citations — the pricier step. Compile now?\n\n"
+        + "Cancel = stop here. Your gathered issues are saved; click 🧬 Synthesise to compile whenever you're ready.")) {
+      $("#examStatus").textContent = "⏸ Stopped after gather" + (_admin ? (" (≈ $" + (EXAM.cost || 0).toFixed(2) + ")") : "")
+        + " — issues saved. Click 🧬 Synthesise to compile when ready.";
+      return;
+    }
     // ③ compile the answer
     stage("③ Compiling…");
     await finishPipeline();
@@ -2400,8 +2412,9 @@ $("#examAuto").onclick = () => {
   const q = ($("#examQ").value||"").trim();
   const n = (EXAM.issues && EXAM.question === q) ? EXAM.issues.length : 0;
   if (!confirm("Run the lean answer pipeline" + (n ? (" on " + n + " issues") : "") + "?\n\n"
-      + "Paid steps: break down → gather each issue → compile → verify citations once.\n"
+      + "Steps: break down → gather each issue → ⏸ PAUSE to show cost → (you approve) compile → verify citations.\n"
       + (($("#autoCases")||{}).checked ? "Cases: ON (a web search per issue).\n" : "")
+      + "It stops after the cheap gather and asks before the pricier compile, so it can't run away.\n"
       + "Calibrate, page-fit and Final check are NOT included — run them yourself when finalising.\n\nContinue?")) return;
   runFullPipeline();
 };
