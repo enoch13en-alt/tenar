@@ -2871,24 +2871,45 @@ async function gatherIssue(i) {
       + 'Analyse this specific issue in depth: "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
-    const r = await (await fetch("/api/ask", {method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
+    const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
         prior: priorRulesLedger(i),
         use_context: !!($("#examUseContext") && $("#examUseContext").checked),
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),
         issue_index: i,
-        siblings: (EXAM.issues || []).map((x, k) => (k + 1) + ". " + ((x.issue || "").split("\n")[0].slice(0, 150)))})})).json();
-    it.answer = r.answer || r.error || "";
-    it._audited = false;                        // fresh answer — not yet audited
-    it.answer_annotated = r.answer_annotated || "";
-    it.sources = r.sources || [];
-    EXAM.cost = (EXAM.cost || 0) + (r.cost ? (r.cost.this_query_usd || 0) : 0);
-    $("#examStatus").textContent = "Exam session cost so far $" + EXAM.cost.toFixed(4);
-  } catch (e) { it.answer = "Error gathering: " + e; }
-  it.done = true; it.loading = false; renderExam();
+        siblings: (EXAM.issues || []).map((x, k) => (k + 1) + ". " + ((x.issue || "").split("\n")[0].slice(0, 150)))});
+    // A slow gather can time out on the wire and return a non-JSON error page (the SyntaxError you
+    // saw). Read as text, and if it isn't JSON, treat it as a transient timeout and RETRY once — a
+    // gather that finished server-side is now cached, so the retry returns instantly and free.
+    const call = async () => {
+      const resp = await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body});
+      const txt = await resp.text();
+      if (!resp.ok) throw new Error("server " + resp.status + ([502,503,504].includes(resp.status) ? " (timed out)" : ""));
+      try { return JSON.parse(txt); }
+      catch (e) { throw new Error("non-JSON response (likely a timeout)"); }
+    };
+    let r;
+    try { r = await call(); }
+    catch (e1) {
+      $("#examStatus").textContent = "Issue " + (it.n||i+1) + " hiccuped — retrying (free if it already finished)…";
+      r = await call();                          // second try; hits the answer cache if the first completed
+    }
+    if (r.error) { it.answer = "⚠ " + r.error; }
+    else {
+      it.answer = r.answer || "";
+      it._audited = false;                       // fresh answer — not yet audited
+      it.answer_annotated = r.answer_annotated || "";
+      it.sources = r.sources || [];
+      it.done = !!it.answer.trim();              // only 'done' on a real answer
+      if (r.cost && !r.cost.cached) EXAM.cost = (EXAM.cost || 0) + (r.cost.this_query_usd || 0);
+      $("#examStatus").textContent = "Exam session cost so far $" + (EXAM.cost || 0).toFixed(4);
+    }
+  } catch (e) {
+    it.answer = "Error gathering (click to try this issue again): " + (e.message || e);
+    it.done = false;                             // leave it re-gatherable
+  }
+  it.loading = false; renderExam();
 }
 // Find leading / locus classicus cases that strengthen an issue. Web-grounded candidates
 // are shown for the STUDENT to verify (open the source) before any is woven into the answer.
