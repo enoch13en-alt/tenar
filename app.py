@@ -2201,7 +2201,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "2"
+ANSWER_CACHE_VERSION = "3"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3980,10 +3980,14 @@ SOURCE_COVERAGE = (
     "rule/holding/point + its pinpoint), NOT a paragraph per source. Bring in each source type, then "
     "STOP — the compile expands it into prose later. A gather that runs to essay length is wasted work "
     "the compile just rewrites, so keep every issue lean.\n"
-    "CASE LAW and COMPARATIVE material come FROM THE CORPUS whenever it holds them — many course packs "
-    "include decided cases and foreign-jurisdiction / other-country chapters, and the retrieved passages "
-    "surface them, so USE them (cite the case; name the country and its rule). Do not treat case law or "
-    "comparative as 'web-only'.\n"
+    "CASE LAW and COMPARATIVE material come FROM THE CORPUS whenever it holds them — so USE them (cite "
+    "the case; name the country and its rule). Do not treat them as 'web-only'.\n"
+    "MINE THE SECONDARY SOURCES FOR CASES: case law is often NOT a standalone report but is cited or "
+    "discussed INSIDE the articles, reports and textbooks in the materials — a scholar naming a decided "
+    "case and what it held. Pull those out and cite each case (name + citation exactly as the source "
+    "gives it, e.g. 'as discussed in <author>'). A case a corpus article cites IS available to you — do "
+    "not say 'no case law' merely because there is no separate case document. Where the source names a "
+    "case but not its full citation, cite what is given and do NOT invent the missing citation.\n"
     "GROUNDING IS ABSOLUTE: draw ONLY on what the corpus / verified web results actually contain — NEVER "
     "invent a case, author, article, citation or foreign rule to fill a slot; a fabricated source is a "
     "worse failure than a missing one. Only where a source type is GENUINELY ABSENT from the materials "
