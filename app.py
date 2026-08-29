@@ -3964,11 +3964,12 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
     multi = len(courses) > 1
-    # TWO-PHASE gather: Phase 1 (below) extracts the RULE on Fable 5 at deep effort — all its
-    # reasoning goes into getting the law right, with nothing competing for the token budget.
-    # The WRITER here (Phase 2) then applies that locked-in law, so it's the cheaper Opus by
-    # default (Max quality upgrades the writer to Fable too). For a plain essay/answer, same rule.
-    primary_model = FABLE_MODEL if max_quality else ANSWER_MODEL
+    # TWO-PHASE gather: Phase 1 extracts the RULE on Haiku (reproduction, cheap); Phase 2 (the WRITER
+    # here) applies it on Opus. Max quality (Fable) may upgrade the writer for a plain essay/answer —
+    # but NEVER for the per-issue GATHER: gathering runs many times, so a Fable writer there is a 10x
+    # cost leak (it was un-metered too). Gather writer is ALWAYS Opus; Fable is reserved for the final
+    # compile, which is a separate, metered opt-in.
+    primary_model = FABLE_MODEL if (max_quality and mode != "gather") else ANSWER_MODEL
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
