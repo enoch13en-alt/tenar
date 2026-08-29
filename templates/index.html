@@ -2416,15 +2416,11 @@ async function finishPipeline() {
   if (b) { b.disabled = true; b.textContent = "④ Compiling…"; }
   try {
     await compileExam();
-    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish — stopping before the final check."; return; }
-    if (b) b.textContent = "⑤ Final check…";
-    // Deepen retired (works now carry their own counterarguments): compile → Final check directly.
-    const de = $("#examDoc"), bar = de && de.nextElementSibling;
-    const fBtn = bar && bar.querySelector(".bFinalChk");
-    if (bar && fBtn) {
-      $("#examStatus").textContent = "🔒 Auto-verifying the final document (audit + quote check + calibrate)…";
-      try { await finalCheckDoc(bar, de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90), fBtn); } catch (e) {}
-    } else { $("#examStatus").textContent = "Compiled."; }
+    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish."; return; }
+    // Final check is NO LONGER automatic — it re-reads + rewrites the whole document (audit +
+    // calibrate) and was a big silent per-run cost. Run it yourself with 🔒 Final check when you're
+    // finalising a real answer.
+    $("#examStatus").textContent = "✅ Compiled. Run 🔒 Final check yourself before submitting (it verifies authorities + calibrates — costs extra, so only when finalising).";
   } finally {
     if (b) { b.disabled = false; b.textContent = "⚡ Auto-run (skips your review)"; }
   }
@@ -3637,29 +3633,19 @@ async function compileExam() {
     : "Compiled.";
   renderExportBar(docEl, document, "Exam answer",
     EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "");
-  // If a page/word target was set, the COMPILE itself should land it — auto-fit the synthesised
-  // document to the target now (measure-and-correct loop), in place, so no separate Fit step is
-  // needed. Only runs when a target exists; otherwise the compile stands as-is.
+  // Page/word feedback ONLY — no automatic reshape (that was a silent per-run cost). If a target was
+  // set, show the estimated page count so you can decide whether to click 🎚️ Fit yourself.
   const _pg = parseInt(($("#pageLimit")||{}).value) || 0;
   const _wd = parseInt(($("#wordLimit")||{}).value) || 0;
   if (_pg || _wd) {
-    // words-per-page at the export settings (font size + spacing aware)
     const _size = parseInt(($("#docFontSize")||{}).value) || 12, _sp = parseFloat(($("#docSpacing")||{}).value) || 1.5;
     const _base = _sp >= 2 ? 280 : _sp >= 1.5 ? 350 : 500;
     const _wpp = Math.max(120, Math.round(_base * Math.pow(12/_size, 2)));
-    const targetW = _wd || (_pg * _wpp);
-    // rough body word count (drop a Footnotes/Bibliography tail) to decide whether a fit is needed
     const bodyOnly = document.split(/\n\s*#*\s*(?:Footnotes|Endnotes|Bibliography|Table of)/i)[0];
     const bodyW = bodyOnly.split(/\s+/).filter(Boolean).length;
-    if (Math.abs(bodyW - targetW) / targetW <= 0.07) {
-      $("#examStatus").textContent = "Compiled ≈ " + (bodyW/_wpp).toFixed(1) + " pages (on your "
-        + (_pg ? (_pg + "-page") : (_wd + "-word")) + " target).";
-    } else {
-      $("#examStatus").textContent = "Landing on your " + (_pg ? (_pg + "-page") : (_wd + "-word")) + " target…";
-      const bar = docEl.nextElementSibling;                    // the export bar just rendered
-      const dt = EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "";
-      reshapeDoc(bar, docEl, document, "Exam answer", dt, (_pg ? (_pg + " pages") : (_wd + " words")), true);
-    }
+    const estP = (bodyW/_wpp).toFixed(1), tgtP = _pg || (_wd/_wpp).toFixed(1);
+    $("#examStatus").textContent = "Compiled ≈ " + estP + " pages (target " + tgtP + "). "
+      + (Math.abs(estP - tgtP) > 0.6 ? "Click 🎚️ Fit to land the target exactly." : "On target.");
   }
 }
 
