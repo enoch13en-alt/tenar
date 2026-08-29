@@ -306,6 +306,7 @@
     <button class="btn alt" id="logoutBtn" style="font-size:12px">Log out</button>
     <div id="cost"></div>
     <button class="btn alt" id="openSettings">⚙ Edit how it answers</button>
+    <div id="buildTag" title="The deployed build. Compare it to the commit shown when a new version is pushed — if it matches, you're on the latest. Hard-refresh (Cmd/Ctrl-Shift-R) if it looks stale." style="font-size:10px;color:#5a6373;text-align:center;margin-top:2px">build …</div>
   </div>
 </div>
 
@@ -4928,6 +4929,8 @@ $("#pwSave").onclick = async () => {
   try {
     const me = await (await fetch("/api/me")).json();
     if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
+    const bt = $("#buildTag");
+    if (bt && me.build) bt.textContent = "build " + me.build + " · " + (me.started || "");
     applyRole(me.role || "student", !!me.is_admin);
   } catch (e) {}
 })();

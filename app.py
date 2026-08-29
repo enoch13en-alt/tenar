@@ -76,6 +76,11 @@ CONFIG_FILE = os.path.join(DATA, "config.json")
 SOURCES_FILE = os.path.join(DATA, "sources.json")
 os.makedirs(COURSES_DIR, exist_ok=True)
 
+# Build identity — the deployed git commit (Render sets RENDER_GIT_COMMIT) + when this process
+# started (≈ deploy time). Shown in the UI so you can confirm you're on the latest push.
+BUILD_SHA = (os.environ.get("RENDER_GIT_COMMIT") or "").strip()[:7] or "dev"
+STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
 ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
 HAIKU_MODEL = "claude-haiku-4-5"      # cheapest — for RULE EXTRACTION (faithful reproduction, not reasoning)
@@ -12049,7 +12054,8 @@ def api_me():
         return jsonify({"error": "not logged in"}), 401
     return jsonify({"email": session.get("email"), "is_admin": u.get("is_admin", False),
                     "plan": u.get("plan", "free"),
-                    "role": u.get("role", "student")})
+                    "role": u.get("role", "student"),
+                    "build": BUILD_SHA, "started": STARTED_AT})
 
 
 @app.route("/api/admin/grounding")
