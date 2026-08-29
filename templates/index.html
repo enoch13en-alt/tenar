@@ -305,6 +305,7 @@
     <button class="btn alt" id="viewToggle" style="font-size:12px; display:none"></button>
     <button class="btn alt" id="logoutBtn" style="font-size:12px">Log out</button>
     <div id="cost"></div>
+    <div id="capWarn" style="display:none;font-size:11px;font-weight:600;color:#fff;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
     <button class="btn alt" id="openSettings">⚙ Edit how it answers</button>
     <div id="buildTag" title="The deployed build. Compare it to the commit shown when a new version is pushed — if it matches, you're on the latest. Hard-refresh (Cmd/Ctrl-Shift-R) if it looks stale." style="font-size:10px;color:#5a6373;text-align:center;margin-top:2px">build …</div>
   </div>
@@ -1233,6 +1234,19 @@ function applyPlan(p) {
   // Owner-only surfaces: global spend and the system-prompt editor are hidden from normal users.
   const cost = $("#cost"); if (cost) cost.style.display = p.is_admin ? "block" : "none";
   const setBtn = $("#openSettings"); if (setBtn) setBtn.style.display = p.is_admin ? "block" : "none";
+  // Early spend-cap WARNING (admins) — surfaces at 75% so the hard block never blindsides you mid-work.
+  const cw = $("#capWarn");
+  if (cw) {
+    const capV = p.cap_usd || 0, spent = p.period_spend_usd || 0, pct = capV > 0 ? spent / capV : 0;
+    if (p.is_admin && capV > 0 && pct >= 0.75) {
+      cw.style.display = "block";
+      cw.style.background = pct >= 0.95 ? "#7a1f1f" : pct >= 0.88 ? "#8a5a12" : "#6a5a12";
+      cw.innerHTML = (pct >= 0.95 ? "⛔ " : "⚠ ") + "Spend $" + spent.toFixed(2) + " of $" + capV.toFixed(2)
+        + " cap (" + Math.round(pct * 100) + "%). " + (pct >= 0.95
+          ? "About to block — raise the cap in ⚙ Plan &amp; usage to keep working."
+          : "Raise the cap in ⚙ Plan &amp; usage before it blocks you mid-work.");
+    } else cw.style.display = "none";
+  }
   const u = p.usage, l = p.limits, c = p.credits;
   const cap = (k, credit) => l[k] + (credit ? (c[k] || 0) : 0);
   $("#planLine").innerHTML =

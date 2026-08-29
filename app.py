@@ -2472,6 +2472,9 @@ def plan_status():
         "web": lim["web"], "exam": lim["exam"], "courses": lim["courses"],
         "pdf": lim.get("pdf", True), "practitioner": practitioner,
         "is_admin": bool(m.get("is_admin")),
+        # spend cap + this month's spend (admins only) so the UI can WARN before the hard block
+        "cap_usd": (float(CONFIG.get("spend_cap_usd", 0) or 0) if m.get("is_admin") else 0),
+        "period_spend_usd": (round(float(CONFIG.get("period_spend_usd", 0.0) or 0), 2) if m.get("is_admin") else 0),
         "matters": lim.get("matters", 0), "matters_used": len(user_matters(m)),
         "period_start": m.get("period_start", ""),
         "limits": {k: lim.get(k, 0) for k in _keys},
