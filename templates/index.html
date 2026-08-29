@@ -571,7 +571,7 @@
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
       </details>
-      <button class="btn gold" id="examAuto" style="width:auto" title="Runs the whole pipeline hands-off: break down → gather every issue → AUDIT & fix authorities → CALIBRATE each issue → (if ⚖️ on) find & pre-apply cases → compile → auto FINAL CHECK (re-audit + verbatim-quote check + calibrate the whole document). The only thing left for you: open the final document's ⚖️ 'Cases from run' button to verify and weave the found cases in.">⚡ Auto-run (skips your review)</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="LEAN hands-off run (cost-cut): break down → gather every issue (cheap Haiku extraction + Opus writer) → (if ⚖️ on) find & pre-apply cases → compile → verify every citation against the corpus ONCE. That's the whole quality guarantee: a grounded answer with checked authorities. Calibrate, page-fit and Final check are NOT run automatically — do them yourself when finalising (they cost extra). Asks before it starts.">⚡ Auto-run (lean)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
@@ -2365,65 +2365,67 @@ async function runFullPipeline() {
       if (!(await runBreakdown())) return;                 // status already set
     }
     if (!EXAM.issues.length) { $("#examStatus").textContent = "No issues to work on."; return; }
-    // ② gather the law for every issue
+    // ② gather the law for every issue (Haiku extraction + Opus writer — the answer itself)
     stage("② Gathering the law…");
     await gatherAll();
     if (!EXAM.issues.some(it => it.done && it.answer)) {
-      $("#examStatus").textContent = "Couldn't gather any issue — check your plan limits."; return;
+      $("#examStatus").textContent = "Couldn't gather any issue — check your plan / spend cap."; return;
     }
-    // ②½ audit every issue's authorities against the corpus and fix them AT SOURCE
-    //    — before they can propagate into the compiled document
-    stage("③ Auditing authorities…");
-    $("#examStatus").textContent = "🔍 Auditing every issue's authorities against the corpus…";
-    const auRes = await auditFixAll();
-    const nFixed = auRes.fixed || 0, nRemoved = auRes.removed || 0;
-    renderExam();
-    let auPassed = 0, auFlag = 0;
-    EXAM.issues.forEach(it => (it._audit || []).forEach(x => {
-      if (x.verdict === "supported") auPassed++; else if (x.verdict === "unverified") auFlag++;
-    }));
-    auFlag = Math.max(0, auFlag - nRemoved);   // strict already cut the still-ungrounded ones
-    $("#examStatus").textContent = "🔍 Audit done — ✅ " + auPassed + " passed"
-      + (nFixed ? (" · 🔧 " + nFixed + " corrected") : "")
-      + (nRemoved ? (" · 🗑️ " + nRemoved + " ungrounded cut") : "")
-      + (auFlag ? (" · ❓ " + auFlag + " left to verify") : "")
-      + " (details under each issue). Calibrating…";
-    // ③¾ Calibrate every issue's language — AFTER audit, so it calibrates VERIFIED law.
-    stage("③¾ Calibrating…");
-    $("#examStatus").textContent = "🎚 Calibrating each issue's language (absolutes, qualifiers, scope)…";
-    const calRes = await calibrateAll();
-    renderExam();
-    if (calRes.calibrated) $("#examStatus").textContent = "🎚 Calibrated " + calRes.calibrated + " issue(s). Continuing…";
-    // ③½ Find + PRE-WORK cases per issue NOW (in focused context), but DON'T pause the run.
-    //     Selection + weaving happens at the END, on the final document's ⚖️ button.
+    // Cases: opt-in only (web searches per issue). Weaving happens on the final doc's ⚖️ button.
     if ($("#autoCases") && $("#autoCases").checked) {
-      stage("③½ Finding cases…");
-      $("#examStatus").textContent = "⚖️ Finding & pre-applying cases for each issue (you'll weave them into the final answer at the end)…";
+      stage("Finding cases…");
+      $("#examStatus").textContent = "⚖️ Finding & pre-applying cases per issue…";
       await precomputeCases();
     }
-    await finishPipeline();                     // ④ compile + ⑤ deepen — uninterrupted
+    // ③ compile the answer
+    stage("③ Compiling…");
+    await finishPipeline();
+    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish."; return; }
+    // ④ ONE citation audit on the COMPILED document — verify every authority against the corpus and
+    //    fix/cut anything ungrounded. This is the grounding guarantee that actually matters; it
+    //    replaces the old per-issue audit (16 calls → 1) and we dropped the redundant calibrate pass.
+    stage("④ Verifying citations…");
+    $("#examStatus").textContent = "🔍 Verifying every authority in the final document against the corpus…";
+    await auditCompiled();
+    $("#examStatus").textContent = "✅ Done — answer compiled and its citations verified against your materials."
+      + " Optional finishing (extra cost): 🎚️ Fit to page target · 🔒 Final check (calibrate) · ⚖️ weave cases.";
   } catch (e) {
     $("#examStatus").textContent = "Auto-run stopped: " + e;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "⚡ Auto-run (skips your review)"; }
+    if (btn) { btn.disabled = false; btn.textContent = "⚡ Auto-run (lean)"; }
   }
 }
-$("#examAuto").onclick = runFullPipeline;
+$("#examAuto").onclick = () => {
+  const q = ($("#examQ").value||"").trim();
+  const n = (EXAM.issues && EXAM.question === q) ? EXAM.issues.length : 0;
+  if (!confirm("Run the lean answer pipeline" + (n ? (" on " + n + " issues") : "") + "?\n\n"
+      + "Paid steps: break down → gather each issue → compile → verify citations once.\n"
+      + (($("#autoCases")||{}).checked ? "Cases: ON (a web search per issue).\n" : "")
+      + "Calibrate, page-fit and Final check are NOT included — run them yourself when finalising.\n\nContinue?")) return;
+  runFullPipeline();
+};
+// ONE citation audit on the compiled document (fix/remove ungrounded authorities). No per-issue
+// audit, no calibrate — those were redundant expensive passes. Best-effort; grounding is the point.
+async function auditCompiled() {
+  const de = $("#examDoc"); if (!de || !EXAM.doc) return;
+  try {
+    const aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({answer: EXAM.doc, courses: examCourses(), fix: true, strict: true})})).json();
+    if (aud && aud.corrected) {
+      EXAM.doc = aud.corrected; try { saveExam(); } catch (e) {}
+      de.style.whiteSpace = "normal"; de.innerHTML = mdToHtml(EXAM.doc);
+      const bar = de.nextElementSibling; if (bar) bar.remove();
+      renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90));
+    }
+  } catch (e) { /* audit is best-effort — never block the answer over it */ }
+}
 
 // ④ compile + ⑤ deepen — the tail of the pipeline (also called after the case step)
 async function finishPipeline() {
-  const b = $("#examAuto");
-  if (b) { b.disabled = true; b.textContent = "④ Compiling…"; }
-  try {
-    await compileExam();
-    if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish."; return; }
-    // Final check is NO LONGER automatic — it re-reads + rewrites the whole document (audit +
-    // calibrate) and was a big silent per-run cost. Run it yourself with 🔒 Final check when you're
-    // finalising a real answer.
-    $("#examStatus").textContent = "✅ Compiled. Run 🔒 Final check yourself before submitting (it verifies authorities + calibrates — costs extra, so only when finalising).";
-  } finally {
-    if (b) { b.disabled = false; b.textContent = "⚡ Auto-run (skips your review)"; }
-  }
+  // Compile only. Button state is managed by the caller (runFullPipeline) so it stays disabled
+  // through the citation-verify step that follows.
+  await compileExam();
+  if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish."; return; }
 }
 
 // ③½ Pipeline case step (NO pause): find leading cases/incidents for each gathered issue and
