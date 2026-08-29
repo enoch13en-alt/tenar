@@ -3919,6 +3919,27 @@ ISSUE_SCOPE = (
 )
 
 
+SOURCE_COVERAGE = (
+    "SOURCE COVERAGE — build each issue on the FULL RANGE of authority the materials support. Aim to "
+    "engage, under EVERY issue, as many of these FIVE as the materials (and any verified web results) "
+    "actually provide — target AT LEAST 4 of 5 (80%):\n"
+    "  1. PRIMARY LAW — constitution, statutes, legislation (quoted with pinpoints);\n"
+    "  2. SECONDARY LEGISLATION — regulations, L.I.s, rules, statutory instruments;\n"
+    "  3. SCHOLARLY WRITING — textbooks and journal articles, ATTRIBUTED to the author by name;\n"
+    "  4. CASE LAW — decided cases applying the rule, with citation;\n"
+    "  5. COMPARATIVE MATERIAL — another country's law/practice on the same point.\n"
+    "WEAVE them into ONE argued analysis (primary law is the spine; scholarship and cases interpret and "
+    "apply it; comparative illuminates) — do NOT just list them, and never let a source type sit "
+    "unused if the materials contain it.\n"
+    "GROUNDING IS ABSOLUTE: draw ONLY on what the corpus / verified web results actually contain — NEVER "
+    "invent a case, author, article, citation or foreign rule to fill a slot; a fabricated source is a "
+    "worse failure than a missing one. Where a source type is GENUINELY ABSENT from the materials for an "
+    "issue, add ONE short flag naming what is missing so the student can supply it — e.g. '⚠ no case law "
+    "in the materials on this point — add a decided case' or '⚠ comparative material needs the 🌐 web "
+    "option / upload a foreign source'. Hitting 80% honestly (with flags for the rest) beats faking 100%."
+)
+
+
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
@@ -4150,6 +4171,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if mode == "gather":
         system = system + "\n\n" + ISSUE_SCOPE  # answer THIS issue only; defer downstream matters
+        system = system + "\n\n" + SOURCE_COVERAGE   # primary+secondary law, books, cases, comparative
         if siblings and isinstance(siblings, list):
             n = (issue_index + 1) if isinstance(issue_index, int) else "?"
             system = system + (
@@ -10314,16 +10336,20 @@ def api_exam_breakdown():
         "jurisdiction, applicable law, capacity/standing, limitation/time-bars, "
         "arbitrability, conditions precedent or other procedural bars the matter "
         "engages — before the merits issues.\n"
-        "CAPTURE EVERY SIGNPOSTED REQUIREMENT as its own issue — split out each "
-        "explicit sub-question, bracketed note, parenthetical cue, and every item "
-        "of any PAIRED requirement (e.g. if the prompt says 'liability AND "
-        "emergency-response arrangements', make liability one issue and emergency "
-        "response a separate issue). Do not merge two signposted requirements into "
-        "one issue and do not drop any; a requirement the question names must "
-        "appear as an issue. Also add an issue for descending into the scenario's "
-        "concrete conditions where the facts signpost them (a specific figure to "
-        "analyse quantitatively, or the host state's actual security/governance/"
-        "stability context) rather than leaving them abstract.\n"
+        "COVER EVERY SIGNPOSTED REQUIREMENT — but GROUP related ones under UMBRELLA ISSUES; do NOT "
+        "fragment into one-per-line. Sub-questions that share the SAME governing instrument, theme or "
+        "line of analysis belong together as ONE umbrella issue that addresses each sub-part in turn — "
+        "name the sub-parts inside the 'issue' text, e.g. 'Mineral title: (a) who owns the minerals; "
+        "(b) how rights are allocated; (c) parliamentary ratification'. Make a SEPARATE issue only where "
+        "a requirement turns on genuinely DIFFERENT governing law or a different analytical question. "
+        "A paired requirement on the SAME regime (e.g. 'liability AND emergency-response under the same "
+        "Act') is ONE umbrella issue with two sub-parts; on DIFFERENT regimes it is two issues. Fold the "
+        "scenario's concrete conditions (a figure to compute, the host state's context) INTO the issue "
+        "they inform as a sub-part, not a standalone abstract issue. RULE: every named requirement must "
+        "be COVERED — as its own issue or a sub-part of an umbrella — and none dropped; but AIM FOR A "
+        "COHERENT SET OF UMBRELLA ISSUES (typically 4-9 for a problem question), never a long list of "
+        "fragments. When two candidate issues would rest on the same authorities and analysis, MERGE "
+        "them.\n"
         "BUT DO NOT MANUFACTURE A COMPLIANCE ISSUE FOR AN UNCHALLENGED STATUTORY "
         "PARAMETER. A figure or status the facts merely STATE (a concession area, a "
         "shareholding, a company's incorporation, a granted lease) is presumed regular "
@@ -10813,6 +10839,7 @@ def api_exam_assemble():
     if FORMATS.get(length):
         system = system + "\n\n" + FORMATS[length]
     system = system + "\n\n" + VERBATIM_PRIORITY   # quoted law stays word-for-word in the final document
+    system = system + "\n\n" + SOURCE_COVERAGE     # keep primary+secondary law, books, cases, comparative per issue
     if bool(body.get("simple")):
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if word_limit:
