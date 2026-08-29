@@ -2201,7 +2201,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "3"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "4"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4142,12 +4142,12 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + GATHER_CALIBRATION + "\n\n"
-                  "FOCUSED ISSUE ANSWER — IRAC, DIRECT AND LAW-BACKED, never an essay. (If THIS issue is a "
-                  "COMPUTATION, keep IRAC but make the APPLICATION the step-by-step worked calculation — "
-                  "see COMPUTATION-AWARE IRAC above.) Answer "
-                  "this ONE issue in the four IRAC moves, each under its own bold header, in the "
-                  "fewest words that fully carry the point. A student should read it and know the "
-                  "answer, the law behind it, and how it lands on these facts.\n"
+                  "THIS IS A DATA SHEET FOR THE ISSUE, NOT THE FINISHED ANSWER. Your job here is to "
+                  "GATHER the verified raw material — the governing LAW (verbatim) and the CASES and "
+                  "sources — that the COMPILE stage will later use to write the substantive analysis. "
+                  "So be SHORT and DIRECT: set out the law and cases cleanly, and DO NOT write a full "
+                  "Application or a developed argument — that is the compile's job, and duplicating it "
+                  "here is wasted work. Use these headers:\n"
                   "**Issue** — one line: the precise legal question these facts raise. No preamble.\n"
                   "**Rule** — DIRECT BY DEFAULT, with the full law ONE CLICK AWAY. Format EACH "
                   "governing provision as ONE bullet ('- ') in two parts on the SAME line: (i) a "
@@ -4196,24 +4196,19 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "NOT reproduce its wording or section number from memory — say the precise wording "
                   "is unconfirmed on the materials, then CONTINUE the analysis on the governing "
                   "PRINCIPLE; do not stop, do not defer, and do not invent the wording.)\n"
-                  "**Application** — apply the reproduced words of each rule to THIS problem's facts, "
-                  "directly: take the actual parties and events and run them through the rule's "
-                  "operative terms, step by step, to the result. USE THE LAW'S OWN WORDS — carry the "
-                  "exact statutory terms you set out in the Rule straight into the Application; do "
-                  "NOT paraphrase them or swap them for looser synonyms. If the Act says 'engage in "
-                  "a commercial activity in the downstream industry', write that CLIENT does or does "
-                  "not 'engage in a commercial activity in the downstream industry' — not 'does "
-                  "business in fuel'. Matching the statutory language is what shows the element is "
-                  "met. This is where you reason — not recite. Distinguish materially different "
-                  "facts (e.g. stool land vs family land) rather than treating them alike.\n"
-                  "**Conclusion** — one or two lines: the direct answer to the issue and the "
-                  "concrete consequence for the party, stated in the SAME statutory words used in "
-                  "the Rule and Application (do not restyle the test into looser language at the "
-                  "last step). Where a single further fact would flip the outcome, name it in a "
-                  "final short clause; otherwise stop.\n"
-                  "Be plain and direct throughout — no intro, no background lecture, no restating "
-                  "the facts before the Application, no 'further facts would sharpen this' "
-                  "digression, no essay prose. The four headers are mandatory and in order.")
+                  "**Cases & sources** — list the CASES that bear on this issue (name + citation exactly "
+                  "as the corpus/articles give it; one short line on what each HELD), and the key "
+                  "scholarly / comparative / report points (attributed). These are DATA the compile "
+                  "will apply — cite them, do not argue them out here.\n"
+                  "**How it applies (brief)** — for THIS issue, ONE or TWO short lines only: the hook "
+                  "the compile will develop — which operative words of the rule the facts turn on, and "
+                  "the likely holding. This is a POINTER for the compile, NOT the analysis: do NOT run "
+                  "the facts through the rule step by step, do NOT write paragraphs — a sentence or two "
+                  "of direction is all that belongs here.\n"
+                  "KEEP IT LEAN: the value of this sheet is VERIFIED LAW + CASES, stated once and "
+                  "accurately, plus a one-line direction — not prose. No intro, no background, no "
+                  "restating the facts, no developed Application or Conclusion; the compile writes all "
+                  "of that from your data.")
         if prior:
             system = system + "\n\n" + (
                 "ISSUE CONTINUITY — these issues are parts of ONE continuous piece of work (a single "
@@ -4225,7 +4220,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "FULL only where it is NEW to this issue (not already established). Never repeat a "
                 "full rule statement the reader has already been given — it wastes the piece's word "
                 "budget. If this issue is governed ENTIRELY by already-established law, keep the Rule "
-                "to a one-line cross-reference and spend the words on the Application.")
+                "to a one-line cross-reference and gather only what is NEW here.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -10845,10 +10840,14 @@ def api_exam_assemble():
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
-        "ASSEMBLY TASK — apply ALL the rules above to the final document, and: "
-        "synthesise the per-issue analyses into ONE coherent, well-structured "
-        "legal answer that applies the law to the scenario's facts and flows as "
-        "a single argued piece (not stapled blocks; remove repetition). "
+        "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
+        "are given is GATHERED DATA — verified law (verbatim, with pinpoints), cases and sources, plus "
+        "a one-line pointer per issue — NOT a finished analysis. YOUR JOB IS THE SUBSTANTIVE WRITING: "
+        "take that data and WRITE the full analysis — apply the law's operative words to the scenario's "
+        "facts step by step, develop the reasoning, deploy the cases and comparative material, and "
+        "reach conclusions. Do NOT merely stitch the gathered notes together; expand them into ONE "
+        "coherent, well-structured, argued legal answer that flows as a single piece (not stapled "
+        "blocks; remove repetition). "
         "MODEL THE FLOW BETWEEN ISSUES — they are NOT independent. Resolve any "
         "threshold/gateway issue first and CARRY ITS OUTCOME FORWARD so it gates "
         "what follows ('the lease being valid, the royalty question arises…'; 'if "
