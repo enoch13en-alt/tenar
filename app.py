@@ -3451,6 +3451,13 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
     articles surface alongside the framing chunks. Falls back to plain single-query search
     if expansion yields nothing."""
     queries = [question] + expand_queries(client, question) + _anchor_queries(question)
+    # Also pull the corpus's COMPARATIVE (other-jurisdiction) and CASE-LAW material on this topic — a
+    # Ghana-framed query buries the comparative chapter and the case reports even when they ARE in the
+    # corpus, so search for them explicitly and union them in.
+    _b = (question or "").strip()
+    if _b:
+        queries += [_b + " in other countries — comparative law and practice in other jurisdictions",
+                    _b + " decided cases case law court held judgment ruling"]
     queries = list(dict.fromkeys(q for q in queries if q))
     per = 15 if len(queries) > 1 else k
     merged, seen = [], set()
@@ -3931,12 +3938,16 @@ SOURCE_COVERAGE = (
     "WEAVE them into ONE argued analysis (primary law is the spine; scholarship and cases interpret and "
     "apply it; comparative illuminates) — do NOT just list them, and never let a source type sit "
     "unused if the materials contain it.\n"
+    "CASE LAW and COMPARATIVE material come FROM THE CORPUS whenever it holds them — many course packs "
+    "include decided cases and foreign-jurisdiction / other-country chapters, and the retrieved passages "
+    "surface them, so USE them (cite the case; name the country and its rule). Do not treat case law or "
+    "comparative as 'web-only'.\n"
     "GROUNDING IS ABSOLUTE: draw ONLY on what the corpus / verified web results actually contain — NEVER "
     "invent a case, author, article, citation or foreign rule to fill a slot; a fabricated source is a "
-    "worse failure than a missing one. Where a source type is GENUINELY ABSENT from the materials for an "
-    "issue, add ONE short flag naming what is missing so the student can supply it — e.g. '⚠ no case law "
-    "in the materials on this point — add a decided case' or '⚠ comparative material needs the 🌐 web "
-    "option / upload a foreign source'. Hitting 80% honestly (with flags for the rest) beats faking 100%."
+    "worse failure than a missing one. Only where a source type is GENUINELY ABSENT from the materials "
+    "for an issue, add ONE short flag naming what is missing so the student can supply it — e.g. '⚠ no "
+    "case law in the materials on this point' or '⚠ no comparative material in the corpus — turn on 🌐 or "
+    "upload a foreign source'. Hitting 80% honestly (with flags for the rest) beats faking 100%."
 )
 
 
