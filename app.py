@@ -78,6 +78,7 @@ os.makedirs(COURSES_DIR, exist_ok=True)
 
 ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
+HAIKU_MODEL = "claude-haiku-4-5"      # cheapest — for RULE EXTRACTION (faithful reproduction, not reasoning)
 EXPAND_MODEL = "claude-haiku-4-5"     # cheap/fast model for retrieval query expansion
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 # Chunks embedded per call. Bigger batches are faster but spike memory — 128 can OOM-kill
@@ -97,6 +98,7 @@ PRICE_OUT = 25.0 / 1_000_000
 MODEL_PRICES = {
     "claude-opus-4-8": (5.0 / 1_000_000, 25.0 / 1_000_000),
     "claude-fable-5":  (10.0 / 1_000_000, 50.0 / 1_000_000),
+    "claude-haiku-4-5": (1.0 / 1_000_000, 5.0 / 1_000_000),   # extraction runs here — 10x cheaper than Fable
 }
 
 DEFAULT_PROMPT = (
@@ -4218,12 +4220,18 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             _ck = _rule_cache_key(courses, question, retrieved, extract_model, prior)
             rule_text = _rule_cache_get(_ck)
             if rule_text is None:
-                # rule-extraction model is Fable by default (most accurate faithful reproduction).
-                _xm = ANSWER_MODEL if extract_model in ("opus", "opus_x") else FABLE_MODEL
-                r1, m1 = _create_final(client, model=_xm, max_tokens=max_out,
-                                       output_config={"effort": "high"},
+                # Rule extraction is FAITHFUL REPRODUCTION, not reasoning — quoting the governing
+                # provision verbatim from the retrieved passage. So run the CHEAPEST model (Haiku) by
+                # default; reasoning is reserved for the WRITER (application) phase. Overridable to
+                # Opus/Fable via extract_model for a topic that genuinely needs it. The verbatim-quote
+                # check + citation audit downstream catch any slip.
+                _xm = (ANSWER_MODEL if extract_model in ("opus", "opus_x")
+                       else FABLE_MODEL if extract_model == "fable" else HAIKU_MODEL)
+                # deep effort only helps the reasoning models; extraction on Haiku needs none
+                _xkw = {"output_config": {"effort": "high"}} if _xm in (ANSWER_MODEL, FABLE_MODEL) else {}
+                r1, m1 = _create_final(client, model=_xm, max_tokens=min(max_out, 8000),
                                        system=rule_sys,
-                                       messages=[{"role": "user", "content": rule_msg}])
+                                       messages=[{"role": "user", "content": rule_msg}], **_xkw)
                 rule_text = (_text_of(r1) or "").strip()
                 c1, i1, o1 = _usage_cost(r1.usage, m1 or _xm)
                 pre_cost += c1
