@@ -10914,6 +10914,16 @@ def api_exam_assemble():
         system = system + "\n\n" + FORMATS[length]
     system = system + "\n\n" + VERBATIM_PRIORITY   # quoted law stays word-for-word in the final document
     system = system + "\n\n" + SOURCE_COVERAGE     # keep primary+secondary law, books, cases, comparative per issue
+    system = system + "\n\n" + (
+        "ENGAGE EVERY CASE AND SCHOLAR — do NOT name-drop. For EACH case the gathered data provides, do "
+        "BOTH, explicitly: (1) state its RATIO — the principle it decided — in a line; (2) APPLY it to "
+        "THESE facts — analogise where the facts are alike, distinguish where they differ and say why "
+        "that changes the result ('because the court in X held Y on facts like these, the same reasoning "
+        "means Z here'). A case cited without that worked link is a defect: either apply it, or — if it "
+        "genuinely bears on NO issue — drop it rather than mention it in passing. NEVER apply some cases "
+        "while leaving others as bare citations. Same discipline for SCHOLARSHIP: where a scholar's view "
+        "is used, state WHAT they argue and WHY it bears here, attributed by name — not a bare footnote. "
+        "Keep each to the narrow point it supports (a sentence or two); do not overstate a holding.")
     if bool(body.get("simple")):
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if word_limit:
