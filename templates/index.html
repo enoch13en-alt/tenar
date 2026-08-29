@@ -3637,6 +3637,30 @@ async function compileExam() {
     : "Compiled.";
   renderExportBar(docEl, document, "Exam answer",
     EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "");
+  // If a page/word target was set, the COMPILE itself should land it — auto-fit the synthesised
+  // document to the target now (measure-and-correct loop), in place, so no separate Fit step is
+  // needed. Only runs when a target exists; otherwise the compile stands as-is.
+  const _pg = parseInt(($("#pageLimit")||{}).value) || 0;
+  const _wd = parseInt(($("#wordLimit")||{}).value) || 0;
+  if (_pg || _wd) {
+    // words-per-page at the export settings (font size + spacing aware)
+    const _size = parseInt(($("#docFontSize")||{}).value) || 12, _sp = parseFloat(($("#docSpacing")||{}).value) || 1.5;
+    const _base = _sp >= 2 ? 280 : _sp >= 1.5 ? 350 : 500;
+    const _wpp = Math.max(120, Math.round(_base * Math.pow(12/_size, 2)));
+    const targetW = _wd || (_pg * _wpp);
+    // rough body word count (drop a Footnotes/Bibliography tail) to decide whether a fit is needed
+    const bodyOnly = document.split(/\n\s*#*\s*(?:Footnotes|Endnotes|Bibliography|Table of)/i)[0];
+    const bodyW = bodyOnly.split(/\s+/).filter(Boolean).length;
+    if (Math.abs(bodyW - targetW) / targetW <= 0.07) {
+      $("#examStatus").textContent = "Compiled ≈ " + (bodyW/_wpp).toFixed(1) + " pages (on your "
+        + (_pg ? (_pg + "-page") : (_wd + "-word")) + " target).";
+    } else {
+      $("#examStatus").textContent = "Landing on your " + (_pg ? (_pg + "-page") : (_wd + "-word")) + " target…";
+      const bar = docEl.nextElementSibling;                    // the export bar just rendered
+      const dt = EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "";
+      reshapeDoc(bar, docEl, document, "Exam answer", dt, (_pg ? (_pg + " pages") : (_wd + " words")), true);
+    }
+  }
 }
 
 // cover-page defaults persist across exports (so you set your name once)
@@ -4025,7 +4049,7 @@ async function reshapeDoc(barEl, anchorEl, doc, wordName, defaultTitle, autoInst
     + "</div>";
   barEl.insertAdjacentElement("afterend", panel);
   const input = panel.querySelector(".reshapeIn"), go = panel.querySelector(".reshapeGo");
-  if (autoInstruction) input.value = autoInstruction; else input.focus();
+  if (autoInstruction) { input.value = autoInstruction; panel.style.display = "none"; } else input.focus();
   // Words per page at the CURRENT export settings (font size + line spacing aware) — this is what
   // makes "12 pages" land: a 14pt page holds far fewer words than 11pt, so we scale by (12/size)^2.
   function docWpp() {
