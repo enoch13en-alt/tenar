@@ -2197,6 +2197,42 @@ def _rule_cache_put(key, rule):
     _save_rule_cache()
 
 
+# Full-answer cache: caches the WHOLE gathered/answered result (not just the extraction), so re-running
+# the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
+# is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
+# (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
+ANSWER_CACHE_VERSION = "2"
+ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
+ANSWER_CACHE = {}
+
+
+def _load_answer_cache():
+    global ANSWER_CACHE
+    try:
+        ANSWER_CACHE = json.load(open(ANSWER_CACHE_FILE)) or {}
+    except Exception:
+        ANSWER_CACHE = {}
+
+
+def _answer_cache_key(courses, question, retrieved, mode, fmt, simple, prior, include_web):
+    sig = [ANSWER_CACHE_VERSION, sorted(courses), (question or "").strip(),
+           [(c.get("_course", ""), c.get("doc"), c.get("page"), (c.get("text") or "")[:80]) for c in retrieved],
+           mode, fmt, bool(simple), (prior or "")[:2000], bool(include_web)]
+    return hashlib.sha256(json.dumps(sig, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _answer_cache_put(key, result):
+    keep = {k: result.get(k) for k in ("answer", "answer_annotated", "segments", "sources")}
+    ANSWER_CACHE[key] = {"r": keep, "t": time.time()}
+    if len(ANSWER_CACHE) > 600:
+        for k in sorted(ANSWER_CACHE, key=lambda k: (ANSWER_CACHE[k] or {}).get("t", 0))[:120]:
+            ANSWER_CACHE.pop(k, None)
+    try:
+        _write_json(ANSWER_CACHE_FILE, ANSWER_CACHE)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------- monthly spend kill-switch
 # A hard ceiling so a runaway (or one big exam) can't silently drain the Anthropic balance.
 # CONFIG['spend_cap_usd'] == 0 means OFF. period_spend accumulates and resets each calendar month.
@@ -3940,9 +3976,10 @@ SOURCE_COVERAGE = (
     "  3. SCHOLARLY WRITING — textbooks and journal articles, ATTRIBUTED to the author by name;\n"
     "  4. CASE LAW — decided cases applying the rule, with citation;\n"
     "  5. COMPARATIVE MATERIAL — another country's law/practice on the same point.\n"
-    "WEAVE them into ONE argued analysis (primary law is the spine; scholarship and cases interpret and "
-    "apply it; comparative illuminates) — do NOT just list them, and never let a source type sit "
-    "unused if the materials contain it.\n"
+    "BE TIGHT — this is a GATHER, not an essay: cite each source in a phrase or a short bullet (the "
+    "rule/holding/point + its pinpoint), NOT a paragraph per source. Bring in each source type, then "
+    "STOP — the compile expands it into prose later. A gather that runs to essay length is wasted work "
+    "the compile just rewrites, so keep every issue lean.\n"
     "CASE LAW and COMPARATIVE material come FROM THE CORPUS whenever it holds them — many course packs "
     "include decided cases and foreign-jurisdiction / other-country chapters, and the retrieved passages "
     "surface them, so USE them (cite the case; name the country and its rule). Do not treat case law or "
@@ -4008,6 +4045,17 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     if not retrieved and mode != "cases":
         return {"answer": "No documents indexed in the selected course(s) yet. Add "
                 "PDFs and click Re-index.", "sources": [], "cost": None}
+    # FULL-ANSWER CACHE: if this exact question over these exact passages was answered before, reuse it
+    # for FREE — skips the Opus writer entirely (the biggest re-run cost). Correctness-safe: any change
+    # to the question/pins/corpus changes the retrieved chunks, so the key misses and it re-generates.
+    _acache_key = None
+    if mode in ("gather", "answer") and retrieved and not include_web:
+        _acache_key = _answer_cache_key(courses, question, retrieved, mode, fmt, simple, prior, include_web)
+        _hit = ANSWER_CACHE.get(_acache_key)
+        if _hit and isinstance(_hit.get("r"), dict) and (_hit["r"].get("answer") or "").strip():
+            res = dict(_hit["r"])
+            res["cost"] = {"this_query_usd": 0.0, "cached": True}
+            return res
     content = []
     for ch in retrieved:
         # resolve the PDF folder per chunk — in multi-course search each chunk
@@ -4382,12 +4430,18 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     _final_answer, retrieved, path=mode)
     reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
                         _final_answer, mode)
-    return {"answer": _final_answer,
-            "answer_annotated": annotated,
-            "segments": segments, "sources": sources,
-            "cost": {"this_query_usd": round(cost, 5),
-                     "total_usd": round(CONFIG["total_cost_usd"], 4),
-                     "input_tokens": in_tok, "output_tokens": out_tok}}
+    result = {"answer": _final_answer,
+              "answer_annotated": annotated,
+              "segments": segments, "sources": sources,
+              "cost": {"this_query_usd": round(cost, 5),
+                       "total_usd": round(CONFIG["total_cost_usd"], 4),
+                       "input_tokens": in_tok, "output_tokens": out_tok}}
+    if _acache_key and _final_answer.strip():        # cache the full result for free re-runs
+        try:
+            _answer_cache_put(_acache_key, result)
+        except Exception:
+            pass
+    return result
 
 # ---------------------------------------------------------------- shared helpers
 def _client():
@@ -5419,10 +5473,10 @@ def api_ask():
     # essay — so it stays short and completes. report needs the most room for a full
     # pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
-        # rule extraction runs Fable at HIGH effort — thinking tokens count toward the budget,
-        # so give generous room for deep thinking + a full Rule/Application/Conclusion. 16k is
-        # an accepted ceiling here (32k was rejected) and completes with effort=high.
-        max_out = 16000
+        # The gather is TIGHT law-gathering — Rule + direct Application + its sources — NOT an essay
+        # (the compile writes the prose). A big ceiling let each issue balloon to a 17k-char essay, so
+        # every issue cost ~2x and the compile then re-wrote it all. Cap it so gathers stay lean.
+        max_out = 6000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
@@ -10978,7 +11032,9 @@ def api_exam_assemble():
     def _worker():
         pieces, this_usd, total_usd = [], 0.0, None
         used_fallback = False
-        MAX_ROUNDS = 4
+        # 2 rounds (up to 48k output) is ample for a compiled answer; 4 let a runaway keep re-rounding
+        # at 24k output each — a real cost tail. Lean gathers keep the compile short too.
+        MAX_ROUNDS = 2
         try:
             import anthropic
             def _round_fallback(start_model):
@@ -12199,6 +12255,7 @@ def init_app():
     load_meta()
     load_weeks()
     _load_rule_cache()
+    _load_answer_cache()
     if not USERS:                                   # first run → seed owner admin
         create_user("owner@local", "letmein", plan="full_llm", is_admin=True)
         print("\n  Owner account created →  owner@local  /  letmein   (change it)\n")
