@@ -10671,12 +10671,12 @@ def api_exam_assemble():
     page_limit = int(body.get("page_limit") or 0)
     footnotes_inclusive = bool(body.get("footnotes_inclusive"))
     line_spacing = float(body.get("line_spacing") or 0)
-    # convert a page target to a word target — words/page depend on 12pt line spacing
+    font_size = int(body.get("font_size") or 0) or 12
+    # convert a page target to a word target — words/page depend on spacing AND font size (a 14pt
+    # page holds far fewer words than 11pt), so scale by (12/size)^2. The reshape loop then lands it.
     if not word_limit and page_limit:
-        if line_spacing >= 2:      wpp = 280
-        elif line_spacing >= 1.5:  wpp = 350
-        elif line_spacing:         wpp = 500
-        else:                      wpp = 300
+        base = 280 if line_spacing >= 2 else 350 if line_spacing >= 1.5 else 500 if line_spacing else 350
+        wpp = max(120, int(base * (12.0 / font_size) ** 2))
         word_limit = page_limit * wpp
     c = _client()
     if not c:
