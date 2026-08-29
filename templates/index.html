@@ -2215,6 +2215,7 @@ function resumeExam(snap) {
   EXAM.question = snap.question || ""; EXAM.focus = snap.focus || []; EXAM.cost = snap.cost || 0;
   EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
   if ($("#examQ")) $("#examQ").value = snap.question || "";
+  const _unstuck = unstickBlockedIssues();     // any issue stuck on a cap/error message → re-gatherable
   renderExam();
   if (EXAM.doc) {
     $("#examDocWrap").innerHTML = "<h4 style='margin:14px 0 4px'>Final document (restored)</h4><div id='examDoc' style='white-space:normal'></div>";
@@ -2261,6 +2262,7 @@ $("#openExam").onclick = () => {
   focusUserTouched = false;
   lastFocusQ = "";
   $("#examModal").style.display = "flex";
+  if (EXAM && EXAM.issues && EXAM.issues.length) unstickBlockedIssues();  // free any cap/error-stuck issues
   maybeOfferResume();                  // offer to restore a saved run (survives crash/power cut)
   // if a question is already sitting in the box, fill focus areas right away
   if ($("#examQ").value.trim().length >= 30) autoFillFocus();
@@ -2909,8 +2911,14 @@ async function gatherIssue(i) {
       $("#examStatus").textContent = "Issue " + (it.n||i+1) + " hiccuped — retrying (free if it already finished)…";
       r = await call();                          // second try; hits the answer cache if the first completed
     }
-    if (r.error) { it.answer = "⚠ " + r.error; }
-    else {
+    if (r.error || r.limit) {
+      // Blocked (spend cap / plan limit) or a real error — NOT a real answer. Leave the issue
+      // re-gatherable so a resume continues from HERE (do not mark it done and skip it).
+      it.answer = "⚠ " + (r.error || r.answer || "blocked — raise the spend cap and gather again");
+      it.done = false;
+      if (r.limit) $("#examStatus").textContent = "⛔ " + (r.answer || r.error || "Spend cap reached")
+        + " — raise it in ⚙ Plan & usage, then click Gather on this issue to continue.";
+    } else {
       it.answer = r.answer || "";
       it._audited = false;                       // fresh answer — not yet audited
       it.answer_annotated = r.answer_annotated || "";
@@ -2924,6 +2932,20 @@ async function gatherIssue(i) {
     it.done = false;                             // leave it re-gatherable
   }
   it.loading = false; renderExam();
+  try { saveExam(); } catch (e) {}              // persist so a refresh/resume keeps the done-states
+}
+// An issue whose 'answer' is really a block/error message (spend cap, limit, timeout) is NOT done —
+// mark it re-gatherable so Resume + 'Gather all remaining' continue from it. Fixes runs stuck by the cap.
+function unstickBlockedIssues() {
+  let n = 0;
+  (EXAM.issues || []).forEach(it => {
+    const a = (it.answer || "").trim();
+    if (it.done && (/^⚠|spend cap|Monthly spend cap|plan this period|out of credits|Error gathering/i.test(a) || a.length < 8)) {
+      it.done = false; it.answer = ""; n++;
+    }
+  });
+  if (n) { renderExam(); try { saveExam(); } catch (e) {} }
+  return n;
 }
 // Find leading / locus classicus cases that strengthen an issue. Web-grounded candidates
 // are shown for the STUDENT to verify (open the source) before any is woven into the answer.
