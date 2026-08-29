@@ -2201,7 +2201,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "4"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "5"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4013,7 +4013,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # but NEVER for the per-issue GATHER: gathering runs many times, so a Fable writer there is a 10x
     # cost leak (it was un-metered too). Gather writer is ALWAYS Opus; Fable is reserved for the final
     # compile, which is a separate, metered opt-in.
-    primary_model = FABLE_MODEL if (max_quality and mode != "gather") else ANSWER_MODEL
+    # The GATHER is data collection (verified law + cases + a one-line pointer) — reproduction, not
+    # reasoning — so its writer runs on HAIKU too (both phases cheap). The reasoning/writing spend is
+    # reserved for the COMPILE. A plain answer/essay stays on Opus (or Fable if max quality).
+    primary_model = (HAIKU_MODEL if mode == "gather"
+                     else FABLE_MODEL if max_quality else ANSWER_MODEL)
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -10453,7 +10457,9 @@ def api_exam_breakdown():
             user + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
             "fences, nothing before '{' or after '}'.")
         try:
-            resp, _model_used = _stream_final(c, ANSWER_MODEL, max_tokens=8000, system=system,
+            # Breakdown is structured decomposition (issue-spotting + grouping), not deep reasoning —
+            # run it on Haiku too. Everything before the compile is cheap; the compile does the writing.
+            resp, _model_used = _stream_final(c, HAIKU_MODEL, max_tokens=8000, system=system,
                                               messages=[{"role": "user", "content": umsg}])
         except Exception as e:
             emsg = str(getattr(e, "message", "") or e).lower()
@@ -11019,8 +11025,12 @@ def api_exam_assemble():
     def _stream_round(mdl, emit):
         """Run one streaming round. `emit(text)` receives each live text delta
         (web off only). Returns (resp, streamed_any)."""
-        kwargs = dict(model=mdl, max_tokens=24000,
-                      thinking={"type": "adaptive"}, system=cached_sys,
+        # BOUND THE THINKING. Unbounded adaptive thinking on a dense multi-issue synthesis can produce
+        # a huge chain of thought — billed at the OUTPUT rate — which is what made one compile cost $58.
+        # 'medium' effort keeps enough reasoning to write well from the gathered data while capping the
+        # thinking spend. max_tokens 16k (was 24k) bounds the visible output too.
+        kwargs = dict(model=mdl, max_tokens=16000,
+                      output_config={"effort": "medium"}, system=cached_sys,
                       messages=messages)
         if include_web:
             kwargs["tools"] = [{"type": "web_search_20260209",
