@@ -4066,10 +4066,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # 400 "prompt is too long" (this is the gather failure the user hit after we moved gather to
     # Haiku — on Opus/Fable's 1M window the same prompt fit). Trim the LOWEST-ranked passages to
     # fit; pins and top-ranked chunks (retrieved is already ordered best-first) are kept.
-    _ctx_limit = 200_000 if primary_model == HAIKU_MODEL else 1_000_000
-    _reserve_tok = max_out + 24_000                       # system + prior + question + safety
-    _char_budget = max(40_000, int((_ctx_limit - _reserve_tok) * 3.0))   # ~3 chars/token, conservative
-    _per_chunk_cap = 60_000                               # no single chunk may swallow the window
+    # Hard, conservative CHARACTER caps (not a token estimate — dense legal text tokenises at
+    # ~2.4 chars/token, so an optimistic estimate overflowed twice). At a worst-case 2.0 chars/token
+    # these caps guarantee the PASSAGES stay well under the window, leaving ~50K tokens of headroom
+    # for the system prompt, prior ledger, extracted rule, question and the model's output:
+    #   Haiku 200K window -> 280K chars (<=140K tok)   |   Opus/Fable 1M window -> 2.4M chars.
+    _char_budget = 280_000 if primary_model == HAIKU_MODEL else 2_400_000
+    _per_chunk_cap = 50_000                               # no single chunk may swallow the window
     _kept, _used, _dropped = [], 0, 0
     for _ch in retrieved:
         _t = _ch.get("text") or ""
@@ -4407,7 +4410,26 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     kwargs["system"] = cached_system(system)   # prompt-cache the big system block
     # The GATHER must never escalate to a premium model (Haiku-only, per the cost rule); a normal
     # answer/essay keeps the standard fallback chain. This is the fix for the $4 gather.
-    resp, _model_used = _create_final(client, fallbacks=([] if mode == "gather" else None), **kwargs)
+    _fb = [] if mode == "gather" else None
+    # SAFETY NET: if the prompt STILL overflows the window (char-cap is an estimate; some content
+    # tokenises denser than expected), drop the lowest-ranked half of the document passages and
+    # retry — up to twice. Guarantees a gather never dies on "prompt is too long".
+    import anthropic as _an
+    for _attempt in range(3):
+        try:
+            resp, _model_used = _create_final(client, fallbacks=_fb, **kwargs)
+            break
+        except _an.BadRequestError as _bre:
+            if "prompt is too long" not in str(_bre).lower() or _attempt == 2:
+                raise
+            docs = [i for i, b in enumerate(content) if isinstance(b, dict) and b.get("type") == "document"]
+            if len(docs) <= 1:
+                raise
+            drop = set(docs[len(docs) // 2:])          # drop the lower-ranked half (kept order = rank)
+            content = [b for i, b in enumerate(content) if i not in drop]
+            kwargs["messages"] = [{"role": "user", "content": content}]
+            app.logger.warning("prompt too long — retrying with %d of %d passages dropped",
+                               len(drop), len(docs))
 
     # The real answer is the text AFTER the last tool call. Everything the model
     # emits during the search/code phase ('let me retry', 'r2 is a string',
