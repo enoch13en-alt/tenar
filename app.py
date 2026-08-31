@@ -4774,8 +4774,14 @@ def _api_json_errors(e):
         friendly = "The AI is temporarily overloaded — please retry shortly."
     elif "api key" in low or "authentication" in low or "401" in low:
         friendly = "The AI API key is missing or invalid — check the server .env."
+    elif any(t in low for t in ("connection", "timeout", "timed out", "502", "503", "504",
+                                "internal server", "temporarily unavailable", "apiconnection",
+                                "remote", "reset by peer", "eof occurred")):
+        # Transient network / server blip (incl. a deploy restart) — safe to just retry.
+        friendly = "The connection hiccuped (often a brief server restart) — click again and it should go through."
     else:
-        friendly = "Something went wrong handling that request. Please try again."
+        friendly = ("That request didn't complete — this is almost always a temporary blip. "
+                    "Please click again; if it keeps happening, tell me what you were doing.")
     app.logger.exception("API error on %s", request.path)
     return jsonify({"error": friendly}), 200
 
