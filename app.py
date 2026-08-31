@@ -2201,7 +2201,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "5"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "6"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4141,20 +4141,20 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
                   + DOCTRINAL_PRECISION + "\n\n" + TEMPORAL_SUCCESSION)
     elif mode == "gather":
-        # Focused issue-gather: a DIRECT, law-backed answer to ONE issue — never an
-        # essay. Lean grounding stack + a direct-answer directive; short by design so
-        # it completes and reads as an answer, not a lecture.
-        system = (CALC_AWARE + "\n\n"
-                  + CONFIG["system_prompt"] + "\n\n" + LEGAL_METHOD + "\n\n"
-                  + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n"
+        # DATA-SHEET gather: GROUNDING modules ONLY — deliberately NO analysis modules (no LEGAL_METHOD,
+        # CASE_APPLICATION, DOCTRINAL_PRECISION, CALC_AWARE), because those tell the model to REASON and
+        # it then writes a long analytical answer. The gather just collects verified law + cases; the
+        # COMPILE does all the reasoning/writing.
+        system = (CONFIG["system_prompt"] + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
-                  + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + GATHER_CALIBRATION + "\n\n"
-                  "THIS IS A DATA SHEET FOR THE ISSUE, NOT THE FINISHED ANSWER. Your job here is to "
-                  "GATHER the verified raw material — the governing LAW (verbatim) and the CASES and "
-                  "sources — that the COMPILE stage will later use to write the substantive analysis. "
-                  "So be SHORT and DIRECT: set out the law and cases cleanly, and DO NOT write a full "
-                  "Application or a developed argument — that is the compile's job, and duplicating it "
-                  "here is wasted work. Use these headers:\n"
+                  + PRECISION_DISCIPLINE + "\n\n" + FACT_DISCIPLINE + "\n\n"
+                  "THIS IS A DATA SHEET FOR THE ISSUE — NOT AN ANSWER, NOT AN ESSAY, NOT ANALYSIS. You "
+                  "ONLY collect the verified raw material (law + cases + sources) that the COMPILE stage "
+                  "will use to write the answer. HARD RULES: output ONLY the sections below, in order; "
+                  "NO other headings; NO 'assessment', 'adequacy', 'analysis', 'discussion' or "
+                  "'conclusion' sections; NO developed argument; NO running the facts through the rule. "
+                  "If you are writing more than a line or two of your own prose between the quoted "
+                  "sources, STOP — that is the compile's job. Sections:\n"
                   "**Issue** — one line: the precise legal question these facts raise. No preamble.\n"
                   "**Rule** — DIRECT BY DEFAULT, with the full law ONE CLICK AWAY. Format EACH "
                   "governing provision as ONE bullet ('- ') in two parts on the SAME line: (i) a "
@@ -5490,7 +5490,7 @@ def api_ask():
         # The gather is TIGHT law-gathering — Rule + direct Application + its sources — NOT an essay
         # (the compile writes the prose). A big ceiling let each issue balloon to a 17k-char essay, so
         # every issue cost ~2x and the compile then re-wrote it all. Cap it so gathers stay lean.
-        max_out = 6000
+        max_out = 4000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
