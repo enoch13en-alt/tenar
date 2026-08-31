@@ -2205,7 +2205,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "9"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "10"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4203,7 +4203,12 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "crime' not 'constitutes an offence', 'the person holding the mining licence' not 'the "
                   "holder of a mineral right'. Keep it legally accurate but jargon-free; the EXACT legal "
                   "wording is preserved separately in the ⟦LAW⟧ drawer on line 2, so the bold line does "
-                  "not need the technical terms. NOTHING else on this line — do NOT put the quoted "
+                  "not need the technical terms. DO NOT use any of these words in the bold line — swap "
+                  "each for an everyday equivalent: abstract, divert, impound, convey, holder, mineral "
+                  "right (say 'mining licence'), provision, subject to, requisite, mandate, conditional, "
+                  "pursuant, notwithstanding, thereof, statutory, legislation, enactment, offence "
+                  "(say 'a crime' / 'against the law'), independent (say 'separate'). Aim for a sentence "
+                  "a non-lawyer would say out loud. NOTHING else on this line — do NOT put the quoted "
                   "statutory words here.\n"
                   "    · line 2 is the EXACT provision text wrapped in the markers ⟦LAW⟧ … ⟦/LAW⟧ (these "
                   "render as a collapsible 'show the law' the reader can expand). Inside: the quoted "
