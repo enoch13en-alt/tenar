@@ -4752,6 +4752,8 @@ app = Flask(__name__)
 _OPEN_ENDPOINTS = {"api_login", "api_signup", "static"}
 
 
+RECENT_ERRORS = []   # owner-only diagnostic ring buffer (no Render log access from the dev box)
+
 @app.errorhandler(Exception)
 def _api_json_errors(e):
     """Never let an /api/* route return an HTML 500 — the browser can't JSON.parse
@@ -4783,7 +4785,29 @@ def _api_json_errors(e):
         friendly = ("That request didn't complete — this is almost always a temporary blip. "
                     "Please click again; if it keeps happening, tell me what you were doing.")
     app.logger.exception("API error on %s", request.path)
+    try:
+        import traceback as _tb
+        RECENT_ERRORS.append({
+            "when": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "path": request.path,
+            "type": type(e).__name__,
+            "msg": msg[:400],
+            "tb": _tb.format_exc()[-2500:],
+        })
+        del RECENT_ERRORS[:-30]           # keep only the last 30
+    except Exception:
+        pass
     return jsonify({"error": friendly}), 200
+
+
+@app.route("/api/admin/errors", methods=["GET"])
+def api_admin_errors():
+    """Owner-only: the last few server exceptions with tracebacks. Lets me diagnose a
+    failure the user hit without Render log access — they reproduce, I read this."""
+    u = current_user()
+    if not u or not u.get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    return jsonify({"errors": RECENT_ERRORS[-30:]})
 
 
 @app.before_request
