@@ -2201,7 +2201,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "6"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "7"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4249,7 +4249,17 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     if simple and mode != "cases" and fmt != "chat":
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if mode == "gather":
-        system = system + "\n\n" + ISSUE_SCOPE  # answer THIS issue only; defer downstream matters
+        # NB: do NOT append ISSUE_SCOPE here — that is an ANSWER-mode module ("Keep the IRAC …
+        # this issue's conclusion is a building block"), and it was overriding the data-sheet
+        # directive and making the gather write a full Application + Conclusion. Use a gather-only
+        # scope note with NO IRAC/application/conclusion language instead.
+        system = system + "\n\n" + (
+            "GATHER SCOPE — collect the law + authorities for THIS issue ONLY. If material plainly "
+            "belongs to another issue in the set, do NOT gather it here — that issue carries it. Do "
+            "NOT re-state law already established under an earlier issue; note it in ONE line as a "
+            "cross-reference. This is DATA COLLECTION, not an answer: no IRAC, no application of the "
+            "law to the facts, no conclusion, no 'building block' reasoning — just the verified Rule, "
+            "Cases, Scholarly and Comparative material. The compile does all the reasoning later.")
         system = system + "\n\n" + SOURCE_COVERAGE   # primary+secondary law, books, cases, comparative
         if siblings and isinstance(siblings, list):
             n = (issue_index + 1) if isinstance(issue_index, int) else "?"
@@ -4440,6 +4450,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     save_config(CONFIG)
     _bill_user(cost, in_tok, out_tok)          # per-user spend tracking
     _final_answer = "".join(s["text"] for s in segments).strip()
+    if mode == "gather":
+        # Deterministic guarantee: a gather is a DATA SHEET. Even with the data-sheet prompt,
+        # the model sometimes still tacks on an Application/Conclusion section (strong IRAC prior).
+        # Cut everything from the first analysis heading onward — on BOTH the plain and the
+        # citation-annotated text — so an Application/Conclusion can never reach the page.
+        _final_answer = _strip_gather_analysis(_final_answer)
+        annotated = _strip_gather_analysis(annotated)
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
     reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
@@ -4456,6 +4473,24 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         except Exception:
             pass
     return result
+
+# A gather is a DATA SHEET (Issue · Rule · Cases · Scholarly · Comparative). If the model still
+# appends an IRAC Application/Conclusion, cut from that heading to the end. The heading must be a
+# WHOLE line equal to the banned word (+ optional colon) — so a legitimate Rule sub-heading like
+# "Application Procedure" (the statutory application process) is NOT matched and NOT cut.
+_GATHER_ANALYSIS_HEADING = re.compile(
+    r'(?im)^[ \t>]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*'
+    r'(?:application to the facts|application|conclusion|assessment|analysis|discussion|'
+    r'how (?:it|these|the law) applies?)'
+    r'[:*_ \t]*$'
+)
+def _strip_gather_analysis(text):
+    if not text:
+        return text
+    m = _GATHER_ANALYSIS_HEADING.search(text)
+    if not m:
+        return text
+    return text[:m.start()].rstrip()
 
 # ---------------------------------------------------------------- shared helpers
 def _client():
