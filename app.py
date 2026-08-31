@@ -104,6 +104,10 @@ MODEL_PRICES = {
     "claude-opus-4-8": (5.0 / 1_000_000, 25.0 / 1_000_000),
     "claude-fable-5":  (10.0 / 1_000_000, 50.0 / 1_000_000),
     "claude-haiku-4-5": (1.0 / 1_000_000, 5.0 / 1_000_000),   # extraction runs here — 10x cheaper than Fable
+    # Fallback targets MUST be priced too — otherwise a fallback bills at the blind $5/$25
+    # default below, which silently over-charges (this is how a $0.12 Haiku gather became $4).
+    "claude-opus-4-7":  (5.0 / 1_000_000, 25.0 / 1_000_000),
+    "claude-sonnet-4-6": (3.0 / 1_000_000, 15.0 / 1_000_000),
 }
 
 DEFAULT_PROMPT = (
@@ -4340,8 +4344,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                        else FABLE_MODEL if extract_model == "fable" else HAIKU_MODEL)
                 # deep effort only helps the reasoning models; extraction on Haiku needs none
                 _xkw = {"output_config": {"effort": "high"}} if _xm in (ANSWER_MODEL, FABLE_MODEL) else {}
+                # Haiku-only: NO premium fallback for the gather extraction (only escalate if the
+                # user explicitly asked for opus/fable extraction). Keeps a $0.12 gather from becoming $4.
+                _xfb = None if extract_model in ("opus", "opus_x", "fable") else []
                 r1, m1 = _create_final(client, model=_xm, max_tokens=min(max_out, 8000),
-                                       system=rule_sys,
+                                       system=rule_sys, fallbacks=_xfb,
                                        messages=[{"role": "user", "content": rule_msg}], **_xkw)
                 rule_text = (_text_of(r1) or "").strip()
                 c1, i1, o1 = _usage_cost(r1.usage, m1 or _xm)
@@ -4375,7 +4382,9 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search",
                             "max_uses": 6}]
     kwargs["system"] = cached_system(system)   # prompt-cache the big system block
-    resp, _model_used = _create_final(client, **kwargs)   # model fallback on overload
+    # The GATHER must never escalate to a premium model (Haiku-only, per the cost rule); a normal
+    # answer/essay keeps the standard fallback chain. This is the fix for the $4 gather.
+    resp, _model_used = _create_final(client, fallbacks=([] if mode == "gather" else None), **kwargs)
 
     # The real answer is the text AFTER the last tool call. Everything the model
     # emits during the search/code phase ('let me retry', 'r2 is a string',
@@ -4527,12 +4536,16 @@ def _stream_final(client, primary_model, **kwargs):
     raise last
 
 
-def _create_final(client, **kwargs):
+def _create_final(client, fallbacks=None, **kwargs):
     """Non-streaming create with model fallback on overload. `model` is read from
-    kwargs as the primary. Returns (resp, model_used); raises only if all failed."""
+    kwargs as the primary. Returns (resp, model_used); raises only if all failed.
+    Pass fallbacks=[] to FORBID escalation to a pricier model (used by the gather, which
+    must stay on Haiku — the client's own max_retries rides out transient Haiku overloads;
+    silently upgrading a gather to Opus is exactly the surprise billing we're killing)."""
     import anthropic
     primary = kwargs.pop("model", ANSWER_MODEL)
-    models = [primary] + [m for m in FALLBACK_MODELS if m != primary]
+    chain = FALLBACK_MODELS if fallbacks is None else fallbacks
+    models = [primary] + [m for m in chain if m != primary]
     last = None
     for m in models:
         try:
