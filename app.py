@@ -4203,19 +4203,27 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "NOT reproduce its wording or section number from memory — say the precise wording "
                   "is unconfirmed on the materials, then CONTINUE the analysis on the governing "
                   "PRINCIPLE; do not stop, do not defer, and do not invent the wording.)\n"
-                  "**Cases & sources** — list the CASES that bear on this issue (name + citation exactly "
-                  "as the corpus/articles give it; one short line on what each HELD), and the key "
-                  "scholarly / comparative / report points (attributed). These are DATA the compile "
-                  "will apply — cite them, do not argue them out here.\n"
-                  "**How it applies (brief)** — for THIS issue, ONE or TWO short lines only: the hook "
-                  "the compile will develop — which operative words of the rule the facts turn on, and "
-                  "the likely holding. This is a POINTER for the compile, NOT the analysis: do NOT run "
-                  "the facts through the rule step by step, do NOT write paragraphs — a sentence or two "
-                  "of direction is all that belongs here.\n"
-                  "KEEP IT LEAN: the value of this sheet is VERIFIED LAW + CASES, stated once and "
-                  "accurately, plus a one-line direction — not prose. No intro, no background, no "
-                  "restating the facts, no developed Application or Conclusion; the compile writes all "
-                  "of that from your data.")
+                  "**Cases** — the decided cases that bear on this issue (name + citation exactly as the "
+                  "corpus/articles give it; one short line on what each HELD). Mine the readings for "
+                  "cases they cite — a case named inside an article counts.\n"
+                  "**Scholarly & secondary** — the key academic points (textbooks, journal articles, "
+                  "reports), each ATTRIBUTED to its author/work by name and pinpoint (e.g. 'Ainuson "
+                  "argues… (p.28)', 'the NEA volume notes… (p.262)') — the analytical PROPOSITIONS the "
+                  "compile will draw on, not bare titles.\n"
+                  "**Comparative** — any other-jurisdiction law or practice on the SAME point that the "
+                  "materials hold (name the country and state its rule/authority).\n"
+                  "These three are DATA the compile will apply — gather and cite them here, do NOT argue "
+                  "them out. Include a heading only where the materials actually support it; where a "
+                  "source type is genuinely absent for this issue, add ONE short '⚠ none in the "
+                  "materials' flag rather than invent one.\n"
+                  "KEEP IT LEAN — GATHER ONLY, NO APPLICATION: the value of this sheet is VERIFIED LAW "
+                  "+ CASES, stated once and accurately. Produce ONLY the umbrella **Issue**, the "
+                  "governing **Rule** (verbatim), and the authorities as data — **Cases**, **Scholarly "
+                  "& secondary** and **Comparative**. Write NO Application "
+                  "and NO Conclusion here — not even a one-line 'how it applies' hook or a likely "
+                  "holding. Applying the operative words of the law to the facts, and reaching "
+                  "conclusions, is done ENTIRELY at the compile stage. No intro, no background, no "
+                  "restating the facts, no developed argument.")
         if prior:
             system = system + "\n\n" + (
                 "ISSUE CONTINUITY — these issues are parts of ONE continuous piece of work (a single "
@@ -6918,6 +6926,33 @@ WEEK_SUMMARY = (
     "about the length needed to teach well — sharper, not padded.")
 
 
+WEEK_SOURCE_FLOW = (
+    "SOURCE FLOW — teach each part of the week on the FULL RANGE of authority the "
+    "materials support, woven into the prose (never a bare checklist), in this order "
+    "of priority:\n"
+    "  1. PRIMARY LAW — the constitution, statute, treaty or decided case that governs "
+    "the point, quoted with its provision/section/article number;\n"
+    "  2. SECONDARY LEGISLATION — the regulations, L.I.s, rules or statutory "
+    "instruments made under it;\n"
+    "  3. CASE LAW — decided cases applying the rule, cited by name;\n"
+    "  4. SCHOLARLY WRITING — textbooks and journal articles, ATTRIBUTED to the author "
+    "by name, layered on top as the gloss on the law above;\n"
+    "  5. COMPARATIVE MATERIAL — another jurisdiction's rule on the same point, where "
+    "the materials hold it.\n"
+    "Lead each point with the PRIMARY authority, THEN bring the commentary in as "
+    "interpretation of it (see PRIMARY SOURCE FIRST). Bring in as many of these five "
+    "as the week's materials genuinely support — a rich answer shows the law, the "
+    "cases and the scholarship together, not scholarship alone.\n"
+    "MINE THE SECONDARY SOURCES FOR CASES: case law is often not a standalone report "
+    "but is named and discussed INSIDE the textbooks and articles — a scholar naming a "
+    "case and what it held. Pull those cases out and cite each (name + citation "
+    "exactly as the source gives it); do NOT say 'no cases' merely because there is no "
+    "separate case document. Never invent a case, citation, author or provision to "
+    "fill a slot; where a source type is genuinely absent for this week, add ONE short "
+    "honest flag (e.g. '⚠ no case law in the materials on this point') rather than "
+    "fabricate.")
+
+
 def _outline_doc(course, prefer=None):
     """Pick the outline/syllabus document for a course: an explicit choice, else
     the first doc whose FILENAME or human TITLE looks like an outline (titles
@@ -7041,10 +7076,25 @@ def api_week():
             "title": f'{display_name(ch["doc"])} — p.{page}',
             "citations": {"enabled": True},
         })
-    content.append({"type": "text", "text":
-        f"WEEK: {week}\nTOPIC: {topic}\n\nProduce the exam-standard study summary "
-        "for this week's topic, grounded in the course materials above. Open "
-        f"with a heading naming the week and topic."})
+    so_far = (body.get("so_far") or "").strip()
+    if so_far:
+        # Resume after a mid-answer interruption (e.g. the account ran out of credit):
+        # continue seamlessly from the partial the client already has, no repetition.
+        content.append({"type": "text", "text":
+            f"WEEK: {week}\nTOPIC: {topic}\n\nYou already began the study summary below "
+            "but were CUT OFF part-way (the account ran out of credit). CONTINUE it "
+            "seamlessly from EXACTLY where it stops — pick up mid-sentence if that is "
+            "where it ended, do NOT repeat any earlier sentence, do NOT restart, and do "
+            "NOT re-print the heading. Carry straight on in the same voice, depth and "
+            "citation style, and still finish with the required 'Why this matters', the "
+            "remember-these list and the Exam Insight box if they were not reached yet.\n\n"
+            "<<<PARTIAL SUMMARY SO FAR — continue immediately after this, do not echo it>>>\n"
+            + so_far[-6000:]})
+    else:
+        content.append({"type": "text", "text":
+            f"WEEK: {week}\nTOPIC: {topic}\n\nProduce the exam-standard study summary "
+            "for this week's topic, grounded in the course materials above. Open "
+            f"with a heading naming the week and topic."})
     # Weekly Update is a TEACHING pass, not an exam answer — the tutor brief carries
     # its own plain-English + inline-citation + no-fabrication rules. DEPTH,
     # LEGAL_METHOD and CITATION_INTEGRITY are left OUT on purpose: they push dense
@@ -7055,7 +7105,12 @@ def api_week():
     # PRECISION_DISCIPLINE IS added: a weekly summary is exactly where invented
     # section numbers / figures / areas creep in ("42.63 km²"), and the rule is plain
     # English, not dense styling — it fits the teaching voice.
-    system = WEEK_SUMMARY + "\n\n" + CASE_APPLICATION + "\n\n" + PRECISION_DISCIPLINE
+    # PRIMARY_FIRST + WEEK_SOURCE_FLOW are added so the notes lead with the primary
+    # instrument/case and layer secondary scholarship on top — the primary → secondary
+    # → cases flow — instead of citing readings alone. Both are substance/ordering
+    # rules (not OSCOLA styling), so they fit the plain teaching voice.
+    system = (WEEK_SUMMARY + "\n\n" + PRIMARY_FIRST + "\n\n" + WEEK_SOURCE_FLOW
+              + "\n\n" + CASE_APPLICATION + "\n\n" + PRECISION_DISCIPLINE)
     cached_sys = cached_system(system)
     DELIM = "\x1e\x1eMETA\x1e\x1e"
 

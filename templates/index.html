@@ -5359,30 +5359,64 @@ function renderWeeks(weeks) {
   });
 }
 
-async function loadWeekSummary(w) {
-  const out = $("#weeklyOut");
-  out.innerHTML = "<h4 style='margin:14px 0 4px'>" + esc(weekLabel(w)) + " — " + esc(w.topic)
-    + " <span id='wDot' style='color:#6fcf97;font-size:12px'>● writing…</span></h4>"
-    + "<div id='wDoc' style='white-space:pre-wrap'></div>";
-  out.scrollIntoView({block:"start"});
-  const wDoc = $("#wDoc"), DELIM = "\x1e\x1eMETA\x1e\x1e";
+// Show a "continue from here" panel that KEEPS the partial answer (never discards it)
+// so the student can top up credit and resume exactly where it stopped.
+function weekCutOff(w, md, errMsg) {
+  const wDoc = $("#wDoc"); if (!wDoc) return;
+  wDoc.style.whiteSpace = "normal";
+  wDoc.innerHTML = mdToHtml(md || "");
+  const credit = String(errMsg || "").toLowerCase().includes("credit");
+  const note = credit
+    ? "⚠️ The AI account ran out of credit, so this stopped part-way. Top up in the Anthropic console, then tap <b>Continue</b> — everything above is kept and it picks up exactly where it left off."
+    : ("⚠️ " + esc(errMsg || "This stopped part-way.") + " Tap <b>Continue</b> to resume from where it left off.");
+  const box = document.createElement("div");
+  box.style.cssText = "margin-top:12px;padding:12px 14px;border:1px solid #b9791f;background:#2a2118;border-radius:10px;color:#e8d9b0;font-size:13px";
+  box.innerHTML = "<div style='margin-bottom:10px'>" + note + "</div>";
+  const btn = document.createElement("button");
+  btn.className = "btn gold"; btn.style.width = "auto"; btn.textContent = "▶ Continue from here";
+  btn.onclick = () => { box.remove(); loadWeekSummary(w, {continueFrom: md}); };
+  box.appendChild(btn);
+  wDoc.insertAdjacentElement("afterend", box);
+  try { saveWeekly(md, weekLabel(w) + " — " + w.topic, "week"); } catch (e) {}   // survives a refresh
+}
+
+async function loadWeekSummary(w, opts) {
+  opts = opts || {};
+  const out = $("#weeklyOut"), DELIM = "\x1e\x1eMETA\x1e\x1e";
+  const priorMd = (opts.continueFrom || "").trim();     // already-accepted text when resuming
+  if (!priorMd) {
+    out.innerHTML = "<h4 style='margin:14px 0 4px'>" + esc(weekLabel(w)) + " — " + esc(w.topic)
+      + " <span id='wDot' style='color:#6fcf97;font-size:12px'>● writing…</span></h4>"
+      + "<div id='wDoc' style='white-space:pre-wrap'></div>";
+    out.scrollIntoView({block:"start"});
+  } else {
+    const h = out.querySelector("h4");
+    if (h && !$("#wDot")) h.insertAdjacentHTML("beforeend", " <span id='wDot' style='color:#6fcf97;font-size:12px'>● continuing…</span>");
+  }
+  const wDoc = $("#wDoc");
   let buf = "", meta = {};
+  const paint = () => { wDoc.style.whiteSpace = "pre-wrap"; wDoc.textContent = (priorMd ? priorMd + "\n" : "") + buf.split(DELIM)[0]; };
   try {
     const resp = await fetch("/api/week", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic})});
+      body: JSON.stringify({course: COURSE, week: w.week, topic: w.topic, so_far: priorMd || undefined})});
     if (!resp.ok) { const er = await resp.json().catch(()=>({})); throw new Error(er.error||"failed"); }
     const reader = resp.body.getReader(), dec = new TextDecoder();
     while (true) {
       const {done, value} = await reader.read(); if (done) break;
       buf += dec.decode(value, {stream:true});
-      wDoc.textContent = buf.split(DELIM)[0];
+      paint();
     }
-  } catch (e) { const d=$("#wDot"); if(d) d.remove(); wDoc.textContent = "Error: " + e.message; return; }
+  } catch (e) {
+    const d=$("#wDot"); if(d) d.remove();
+    weekCutOff(w, ((priorMd ? priorMd + "\n" : "") + buf.split(DELIM)[0]).trim(), e.message);
+    return;
+  }
   const parts = buf.split(DELIM);
   try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) { meta = {}; }
   const d=$("#wDot"); if(d) d.remove();
-  if (meta.error) { wDoc.textContent = meta.error; return; }
-  let finalMd = parts[0].trim();
+  const combined = ((priorMd ? priorMd + "\n" : "") + (parts[0] || "")).trim();
+  if (meta.error) { weekCutOff(w, combined, meta.error); return; }   // keep the partial + offer Continue
+  let finalMd = combined;
   wDoc.style.whiteSpace = "normal";
   wDoc.innerHTML = mdToHtml(finalMd);
   // Optionally append reputable educational video links (web-searched, real URLs only).
