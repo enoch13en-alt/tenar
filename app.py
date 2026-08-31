@@ -4060,6 +4060,29 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     if not retrieved and mode != "cases":
         return {"answer": "No documents indexed in the selected course(s) yet. Add "
                 "PDFs and click Re-index.", "sources": [], "cost": None}
+    # CONTEXT BUDGET — keep the passages inside the writer model's context window. Haiku is 200K;
+    # Opus/Fable are 1M. A pile of PINNED docs (search_in_docs is uncapped) or one oversized chunk
+    # can push a gather past Haiku's 200K limit and the API rejects the whole request with a hard
+    # 400 "prompt is too long" (this is the gather failure the user hit after we moved gather to
+    # Haiku — on Opus/Fable's 1M window the same prompt fit). Trim the LOWEST-ranked passages to
+    # fit; pins and top-ranked chunks (retrieved is already ordered best-first) are kept.
+    _ctx_limit = 200_000 if primary_model == HAIKU_MODEL else 1_000_000
+    _reserve_tok = max_out + 24_000                       # system + prior + question + safety
+    _char_budget = max(40_000, int((_ctx_limit - _reserve_tok) * 3.0))   # ~3 chars/token, conservative
+    _per_chunk_cap = 60_000                               # no single chunk may swallow the window
+    _kept, _used, _dropped = [], 0, 0
+    for _ch in retrieved:
+        _t = _ch.get("text") or ""
+        if len(_t) > _per_chunk_cap:
+            _ch = dict(_ch); _t = _t[:_per_chunk_cap] + " …[truncated to fit context]"; _ch["text"] = _t
+        if _used + len(_t) > _char_budget:
+            _dropped += 1
+            continue                                      # skip this one, try to pack smaller later chunks
+        _used += len(_t); _kept.append(_ch)
+    if _dropped:
+        retrieved = _kept
+        app.logger.warning("context budget: dropped %d passage(s) to fit the %s window (%d kept, ~%d chars)",
+                           _dropped, primary_model, len(_kept), _used)
     # FULL-ANSWER CACHE: if this exact question over these exact passages was answered before, reuse it
     # for FREE — skips the Opus writer entirely (the biggest re-run cost). Correctness-safe: any change
     # to the question/pins/corpus changes the retrieved chunks, so the key misses and it re-generates.
