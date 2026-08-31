@@ -2205,7 +2205,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "7"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "8"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4180,24 +4180,36 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + PRECISION_DISCIPLINE + "\n\n" + FACT_DISCIPLINE + "\n\n"
                   "THIS IS A DATA SHEET FOR THE ISSUE — NOT AN ANSWER, NOT AN ESSAY, NOT ANALYSIS. You "
                   "ONLY collect the verified raw material (law + cases + sources) that the COMPILE stage "
-                  "will use to write the answer. HARD RULES: output ONLY the sections below, in order; "
-                  "NO other headings; NO 'assessment', 'adequacy', 'analysis', 'discussion' or "
-                  "'conclusion' sections; NO developed argument; NO running the facts through the rule. "
-                  "If you are writing more than a line or two of your own prose between the quoted "
-                  "sources, STOP — that is the compile's job. Sections:\n"
-                  "**Issue** — one line: the precise legal question these facts raise. No preamble.\n"
-                  "**Rule** — DIRECT BY DEFAULT, with the full law ONE CLICK AWAY. Format EACH "
-                  "governing provision as ONE bullet ('- ') in two parts on the SAME line: (i) a "
-                  "DIRECT one-line proposition — the operative rule in the fewest words — then its "
-                  "pinpoint in bold, e.g. '- **A mining lease gives access for operations, not "
-                  "exclusive possession of the surface** — s.46, Act 703'; (ii) immediately after, "
-                  "the EXACT PROVISION TEXT plus a one-line gloss, wrapped between the literal markers "
-                  "⟦LAW⟧ and ⟦/LAW⟧ and kept on ONE line (these render as a collapsible 'show the law' "
-                  "dropdown — the reader sees the direct rule first and expands for the exact words). "
-                  "Inside the markers put the exact quoted provision text with its verbatim flag, then "
-                  "' — Why it matters: ' and ONE short clause. So a provision reads: "
-                  "'- **Direct rule** — pinpoint ⟦LAW⟧\"exact statutory words\" [verbatim] — Why it "
-                  "matters: one line⟦/LAW⟧'.\n"
+                  "will use to write the answer. NO 'assessment', 'adequacy', 'analysis', 'discussion' "
+                  "or 'conclusion'; NO developed argument; NO running the facts through the rule. If you "
+                  "are writing more than a line or two of your own prose between the quoted sources, "
+                  "STOP — that is the compile's job.\n\n"
+                  "FORMATTING — FOLLOW EXACTLY so the sheet renders clean and is easy to read:\n"
+                  "- Use these FIVE section headings, each written as a Markdown H2 on ITS OWN LINE, in "
+                  "this order: '## Issue', '## Rule', '## Cases', '## Scholarly & secondary', "
+                  "'## Comparative'. Put a BLANK LINE after each heading and a BLANK LINE between items. "
+                  "NEVER put any text on the same line as a heading. Do NOT invent extra sub-headings "
+                  "(no 'Primary Law — Operative Provisions', no 'Statutory Synthesis'), and do NOT use "
+                  "'---' divider lines.\n"
+                  "- '## Issue' — ONE line: the precise legal question these facts raise. No preamble.\n"
+                  "- '## Rule' — list each governing provision as a TWO-LINE block, blank line between "
+                  "provisions:\n"
+                  "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of the rule in plain "
+                  "words in **bold**, then ' — ' and the pinpoint (e.g. 's.17, Act 703'). NOTHING else "
+                  "on this line — do NOT put the quoted statutory words here.\n"
+                  "    · line 2 is the EXACT provision text wrapped in the markers ⟦LAW⟧ … ⟦/LAW⟧ (these "
+                  "render as a collapsible 'show the law' the reader can expand). Inside: the quoted "
+                  "words, the verbatim flag, then ' — Why it matters: ' and ONE short clause. The quoted "
+                  "statutory words appear ONLY inside these markers — NEVER inline next to the citation.\n"
+                  "  Worked example of ONE provision (copy this exact shape — two lines, then a blank "
+                  "line before the next '- '):\n"
+                  "    - **A mineral right gives no automatic water right — water use needs a separate "
+                  "WRC licence** — s.17, Act 703\n"
+                  "    ⟦LAW⟧\"a holder of a mineral right may, for purposes of or ancillary to the "
+                  "mineral operations and subject to obtaining the requisite approvals or licences under "
+                  "the Water Resources Commission Act 1996 (Act 522), obtain, divert, impound, convey "
+                  "and use water …\" [verbatim] — Why it matters: the lease enables water use only "
+                  "THROUGH Act 522; it does not grant it⟦/LAW⟧\n\n"
                   "REPRODUCE THE LAW VERBATIM INSIDE THE MARKERS, AND FLAG WHERE YOU CANNOT: quote each "
                   "governing provision's EXACT WORDS, from the retrieved passage in quotation marks, "
                   "with the pinpoint — never paraphrase, summarise, compress, modernise or re-order "
@@ -4214,10 +4226,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "via the pop-up (🎯 pin the document) and weave it in'. NEVER fill the gap from "
                   "memory, and never smooth a partial quote into a complete-looking one.\n"
                   "  - DO NOT DROP WORDS ONCE YOU HAVE THEM: when the verbatim text is available, "
-                  "carry EVERY word of it through the Application — qualifiers, thresholds and "
-                  "provisos included ('without delay', 'significant', 'all appropriate measures', 'in "
-                  "the absence of agreement', 'shall'/'may') — because dropping or smoothing even one "
-                  "can change the legal test; preserve the exact wording end to end.\n"
+                  "carry EVERY word of it INTO THE QUOTED LAW — qualifiers, thresholds and provisos "
+                  "included ('without delay', 'significant', 'all appropriate measures', 'in the "
+                  "absence of agreement', 'shall'/'may') — because dropping or smoothing even one can "
+                  "change the legal test; preserve the exact wording end to end.\n"
                   "  Naming 's.12 of Act "
                   "691' or 'the licensing provision' WITHOUT stating what it provides gives the "
                   "Application nothing to work with and reads as bare assertion — set out the rule's "
@@ -4233,26 +4245,20 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "NOT reproduce its wording or section number from memory — say the precise wording "
                   "is unconfirmed on the materials, then CONTINUE the analysis on the governing "
                   "PRINCIPLE; do not stop, do not defer, and do not invent the wording.)\n"
-                  "**Cases** — the decided cases that bear on this issue (name + citation exactly as the "
-                  "corpus/articles give it; one short line on what each HELD). Mine the readings for "
-                  "cases they cite — a case named inside an article counts.\n"
-                  "**Scholarly & secondary** — the key academic points (textbooks, journal articles, "
-                  "reports), each ATTRIBUTED to its author/work by name and pinpoint (e.g. 'Ainuson "
-                  "argues… (p.28)', 'the NEA volume notes… (p.262)') — the analytical PROPOSITIONS the "
-                  "compile will draw on, not bare titles.\n"
-                  "**Comparative** — any other-jurisdiction law or practice on the SAME point that the "
-                  "materials hold (name the country and state its rule/authority).\n"
-                  "These three are DATA the compile will apply — gather and cite them here, do NOT argue "
-                  "them out. Include a heading only where the materials actually support it; where a "
-                  "source type is genuinely absent for this issue, add ONE short '⚠ none in the "
-                  "materials' flag rather than invent one.\n"
-                  "KEEP IT LEAN — GATHER ONLY, NO APPLICATION: the value of this sheet is VERIFIED LAW "
-                  "+ CASES, stated once and accurately. Produce ONLY the umbrella **Issue**, the "
-                  "governing **Rule** (verbatim), and the authorities as data — **Cases**, **Scholarly "
-                  "& secondary** and **Comparative**. Write NO Application "
-                  "and NO Conclusion here — not even a one-line 'how it applies' hook or a likely "
-                  "holding. Applying the operative words of the law to the facts, and reaching "
-                  "conclusions, is done ENTIRELY at the compile stage. No intro, no background, no "
+                  "Under '## Cases' — ONE bullet per decided case that bears on this issue: '- **Case "
+                  "name** (citation exactly as the corpus/articles give it) — one line on what it HELD.' "
+                  "Mine the readings for cases they cite — a case named inside an article counts.\n"
+                  "Under '## Scholarly & secondary' — ONE bullet per academic point, each ATTRIBUTED to "
+                  "its author/work by name and pinpoint: '- Ainuson argues … (p.28)'. Give the analytical "
+                  "PROPOSITION the compile will draw on, not a bare title.\n"
+                  "Under '## Comparative' — ONE bullet per other-jurisdiction rule on the SAME point "
+                  "(name the country and state its rule/authority).\n"
+                  "For Cases / Scholarly / Comparative: these are DATA the compile will apply — cite "
+                  "them, do NOT argue them out. Where a source type is genuinely absent for this issue, "
+                  "put ONE line under its heading — '⚠ none in the materials' — rather than invent one.\n"
+                  "KEEP IT LEAN — GATHER ONLY, NO APPLICATION and NO CONCLUSION here, not even a one-line "
+                  "'how it applies' hook or a likely holding. Applying the law to the facts and reaching "
+                  "conclusions is done ENTIRELY at the compile stage. No intro, no background, no "
                   "restating the facts, no developed argument.")
         if prior:
             system = system + "\n\n" + (
@@ -4509,8 +4515,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # the model sometimes still tacks on an Application/Conclusion section (strong IRAC prior).
         # Cut everything from the first analysis heading onward — on BOTH the plain and the
         # citation-annotated text — so an Application/Conclusion can never reach the page.
-        _final_answer = _strip_gather_analysis(_final_answer)
-        annotated = _strip_gather_analysis(annotated)
+        _final_answer = _tidy_gather_markdown(_strip_gather_analysis(_final_answer))
+        annotated = _tidy_gather_markdown(_strip_gather_analysis(annotated))
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
     reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
@@ -4545,6 +4551,30 @@ def _strip_gather_analysis(text):
     if not m:
         return text
     return text[:m.start()].rstrip()
+
+
+def _tidy_gather_markdown(text):
+    """Safety net for the gather's Markdown structure. Haiku occasionally jams a heading into
+    the next sentence, forgets the blank line between provisions, or scatters '---' dividers,
+    which renders as a cramped wall. These are conservative, structure-only fixes — they never
+    touch the words, only whitespace/line breaks so headings, bullets and the ⟦LAW⟧ drawers
+    render cleanly."""
+    if not text:
+        return text
+    t = text
+    # blank line BEFORE a heading when the previous line has content
+    t = re.sub(r'([^\n])\n(#{2,4}\s)', r'\1\n\n\2', t)
+    # blank line AFTER a heading when text follows immediately
+    t = re.sub(r'(?m)^(#{2,4}[^\n]+)\n(?=\S)', r'\1\n\n', t)
+    # a line-start **label** jammed straight into a following word -> break it out
+    t = re.sub(r'(?m)^(\s*\*\*[^*\n]{2,90}\*\*)(?=[A-Za-z])', r'\1\n\n', t)
+    # ensure a blank line between provisions: a new '- ' bullet right after a closed ⟦/LAW⟧ drawer
+    t = re.sub(r'(⟦/LAW⟧[^\n]*)\n(-\s)', r'\1\n\n\2', t)
+    # drop stray horizontal-rule divider lines (the format asks for none)
+    t = re.sub(r'(?m)^[ \t]*[-*_]{3,}[ \t]*$', '', t)
+    # collapse any run of 3+ blank lines the fixes may have created
+    t = re.sub(r'\n{3,}', '\n\n', t)
+    return t.strip()
 
 # ---------------------------------------------------------------- shared helpers
 def _client():
