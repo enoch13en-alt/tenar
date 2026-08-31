@@ -2205,7 +2205,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "8"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "9"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4194,17 +4194,25 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "- '## Issue' — ONE line: the precise legal question these facts raise. No preamble.\n"
                   "- '## Rule' — list each governing provision as a TWO-LINE block, blank line between "
                   "provisions:\n"
-                  "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of the rule in plain "
-                  "words in **bold**, then ' — ' and the pinpoint (e.g. 's.17, Act 703'). NOTHING else "
-                  "on this line — do NOT put the quoted statutory words here.\n"
+                  "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of the rule in "
+                  "**bold**, then ' — ' and the pinpoint (e.g. 's.17, Act 703'). WRITE THIS BOLD LINE IN "
+                  "PLAIN, EVERYDAY ENGLISH — the way you'd explain the rule to a friend who is not a "
+                  "lawyer. Use ordinary words, not statute-speak: say 'take or use water' not 'abstract', "
+                  "'redirect / block' not 'divert / impound', 'you must get permission first' not "
+                  "'subject to obtaining the requisite approvals', 'doing it without permission is a "
+                  "crime' not 'constitutes an offence', 'the person holding the mining licence' not 'the "
+                  "holder of a mineral right'. Keep it legally accurate but jargon-free; the EXACT legal "
+                  "wording is preserved separately in the ⟦LAW⟧ drawer on line 2, so the bold line does "
+                  "not need the technical terms. NOTHING else on this line — do NOT put the quoted "
+                  "statutory words here.\n"
                   "    · line 2 is the EXACT provision text wrapped in the markers ⟦LAW⟧ … ⟦/LAW⟧ (these "
                   "render as a collapsible 'show the law' the reader can expand). Inside: the quoted "
                   "words, the verbatim flag, then ' — Why it matters: ' and ONE short clause. The quoted "
                   "statutory words appear ONLY inside these markers — NEVER inline next to the citation.\n"
                   "  Worked example of ONE provision (copy this exact shape — two lines, then a blank "
                   "line before the next '- '):\n"
-                  "    - **A mineral right gives no automatic water right — water use needs a separate "
-                  "WRC licence** — s.17, Act 703\n"
+                  "    - **Having a mining licence does not automatically let you take water — you still "
+                  "need a separate water permit from the Water Resources Commission first** — s.17, Act 703\n"
                   "    ⟦LAW⟧\"a holder of a mineral right may, for purposes of or ancillary to the "
                   "mineral operations and subject to obtaining the requisite approvals or licences under "
                   "the Water Resources Commission Act 1996 (Act 522), obtain, divert, impound, convey "
