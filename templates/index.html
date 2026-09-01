@@ -3029,8 +3029,11 @@ async function verifyIssue(i) {
   if (!a || a.startsWith("Error") || /^⚠/.test(a)) return;   // don't audit a block/error message
   const original = it.answer;
   try {
+    // CHEAP per-gather verify: a second HAIKU agent checks each authority against the corpus and
+    // fixes clear misattributions/ungrounded claims at source. No 'strict' full-instrument recheck
+    // here (that heavy pass is reserved for the Opus compile-stage backstop) — keeps it ~5x cheaper.
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, strict: true})});
+      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, verify_model: "haiku"})});
     const d = await r.json();
     if (d && !d.error) {
       it._audited = true;

@@ -6573,11 +6573,15 @@ def api_audit():
     # heavy one pays its true cost, and verification is NEVER capped.
     _strict_fix = bool(body.get("fix")) and bool(body.get("strict"))
     consume("questions", 3 if _strict_fix else 1)
+    # The verifier model. Default Opus (the thorough compile-stage backstop). The per-gather
+    # verify passes verify_model="haiku" — a cheap second Haiku that catches the high-frequency
+    # mechanical errors (wrong pinpoint, ungrounded citation, non-verbatim quote) at source.
+    _audit_model = HAIKU_MODEL if str(body.get("verify_model", "")).lower() == "haiku" else ANSWER_MODEL
 
     # 1) extract the checkable authority-claims
     try:
         ext, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=4000,
+            c, model=_audit_model, max_tokens=4000,
             system=("You audit a legal answer for a marker. Extract EVERY checkable assertion — miss "
                     "nothing a marker could challenge. Include: (a) every statute/constitution "
                     "SECTION, subsection or ARTICLE cited; (b) every named CASE; (c) every DIRECT "
@@ -6669,7 +6673,7 @@ def api_audit():
     def _verify_one(it):
         try:
             v, _ = _create_final(
-                c, model=ANSWER_MODEL, max_tokens=500,
+                c, model=_audit_model, max_tokens=500,
                 system=("You audit ONE legal citation against the corpus passages given. Judge ONLY "
                         "against those passages, never your own knowledge. Read them carefully for the "
                         "exact section/article NUMBER, the recipient or party, any FIGURE, and any "
