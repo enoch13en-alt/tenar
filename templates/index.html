@@ -2531,25 +2531,65 @@ $("#examAuto").onclick = () => {
 };
 // ONE citation audit on the compiled document (fix/remove ungrounded authorities). No per-issue
 // audit, no calibrate — those were redundant expensive passes. Best-effort; grounding is the point.
+// A VISIBLE audit report under the compiled document — proof of what was checked/fixed.
+function compiledAuditReportHtml(items, quotes, fixed, removed, calChanges) {
+  items = items || [];
+  const cj = JSON.stringify((typeof examCourses === "function" ? examCourses() : [COURSE]));
+  const flagged = items.filter(x => x.verdict && x.verdict !== "supported");
+  const supported = items.length - flagged.length;
+  const head = '🔍 Citation audit — ' + items.length + ' authorities checked · ✅ ' + supported + ' grounded'
+    + (fixed ? (' · 🔧 ' + fixed + ' corrected') : '')
+    + (removed ? (' · 🗑 ' + removed + ' cut') : '')
+    + (calChanges && calChanges.length ? (' · 🎚 ' + calChanges.length + ' calibrated') : '');
+  let body = flagged.length
+    ? flagged.map(x => auditRowHtml(x, cj)).join('')
+    : '<div style="font-size:12px;color:#7fdca0;margin:4px 0">Every authority checked was grounded in your materials.</div>';
+  body += quotesHtml(quotes);
+  if (calChanges && calChanges.length)
+    body += '<div style="font-size:11px;color:#8fb4ff;margin-top:6px">🎚 Language calibrated: ' + calChanges.map(esc).join(' · ') + '</div>';
+  return '<details id="examAuditReport" open style="margin-top:10px;border:1px solid #2a3344;border-radius:8px;padding:8px 10px;background:#0f131b">'
+    + '<summary style="cursor:pointer;font-size:12px;color:#c9a86a;font-weight:600">' + head + '</summary>'
+    + '<div style="margin-top:6px">' + body + '</div></details>';
+}
+
 async function auditCompiled() {
   // Finalises the compiled document AUTOMATICALLY: strict citation audit + fix (grounding), THEN
-  // language calibration — i.e. audit → calibrate → final check in one pass, no manual buttons.
+  // language calibration — audit → calibrate → final check in one pass — and SHOWS a report so the
+  // audit is visible (it used to run silently). No manual buttons.
   const de = $("#examDoc"); if (!de || !EXAM.doc) return { fixed: 0, removed: 0, cal: 0 };
-  let cur = EXAM.doc, fixed = 0, removed = 0, cal = 0;
+  const host = de.parentNode || document.body;
+  const progress = m => {
+    let r = document.getElementById("examAuditReport");
+    if (!r) { r = document.createElement("div"); r.id = "examAuditReport"; host.appendChild(r); }
+    r.innerHTML = '<div style="margin-top:10px;font-size:12px;color:#8fb4ff;border:1px solid #26364f;'
+      + 'background:#0f131b;border-radius:8px;padding:8px 10px">' + m + '</div>';
+  };
+  progress('🔍 Auditing every citation in the document against your materials… (this is the grounding check)');
+  let cur = EXAM.doc, fixed = 0, removed = 0, cal = 0, items = [], quotes = null, calChanges = [];
   try {
     const aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true})})).json();
-    if (aud && aud.corrected) { cur = aud.corrected; fixed = aud.fixed_count || 0; removed = aud.removed_count || 0; }
+    if (aud) {
+      if (aud.corrected) cur = aud.corrected;
+      fixed = aud.fixed_count || 0; removed = aud.removed_count || 0;
+      items = aud.items || []; quotes = aud.quotes || null;
+    }
   } catch (e) { /* audit is best-effort — never block the answer over it */ }
+  progress('✅ Citations checked (' + (items.length) + ' authorities) · 🎚 calibrating the language…');
   try {
     const cb = await (await fetch("/api/issue/calibrate", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({issue: "the full memorandum", answer: cur, question: EXAM.question || ""})})).json();
-    if (cb && cb.answer && cb.answer.trim()) { cur = cb.answer; cal = (cb.changes || []).length; }
+    if (cb && cb.answer && cb.answer.trim()) { cur = cb.answer; calChanges = cb.changes || []; cal = calChanges.length; }
   } catch (e) { /* calibrate is best-effort too */ }
   EXAM.doc = cur; try { saveExam(); } catch (e) {}
   de.style.whiteSpace = "normal"; de.innerHTML = mdToHtml(EXAM.doc);
-  const bar = de.nextElementSibling; if (bar) bar.remove();
+  // rebuild the export bar; keep our report the LAST element
+  const oldRep = document.getElementById("examAuditReport"); if (oldRep) oldRep.remove();
+  const bar = de.nextElementSibling; if (bar && bar.id !== "examAuditReport") bar.remove();
   renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90));
+  const wrap = document.createElement("div");
+  wrap.innerHTML = compiledAuditReportHtml(items, quotes, fixed, removed, calChanges);
+  host.appendChild(wrap.firstChild);
   return { fixed, removed, cal };
 }
 
