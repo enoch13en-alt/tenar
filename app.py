@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "27"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "28"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4644,6 +4644,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "NOT reproduce its wording or section number from memory — say the precise wording "
                   "is unconfirmed on the materials, then CONTINUE the analysis on the governing "
                   "PRINCIPLE; do not stop, do not defer, and do not invent the wording.)\n"
+                  "RULE IS PRIMARY-ANCHORED — the authority for EVERY rule here is the PRIMARY "
+                  "instrument itself (Constitution / Act / Regulation) with its exact provision, quoted "
+                  "from the materials. A SECONDARY source (a journal article, textbook, report or "
+                  "commentary — Ainuson, Agyenim, Williams, a policy paper) may NEVER be the authority "
+                  "for a rule in the Rule section: if the rule is stated in Act 522 or L.I. 1692, cite "
+                  "THAT provision, not the scholar who describes it. Build the primary-authority map "
+                  "FIRST; secondary sources are collected separately under Scholarly (below) for "
+                  "interpretation or criticism only — never to carry the core rule.\n"
                   "Under '## Cases' — ONE bullet per decided case that bears on this issue: '- **Case "
                   "name** (citation exactly as the corpus/articles give it) — one line on what it HELD.' "
                   "Mine the readings for cases they cite — a case named inside an article counts.\n"
