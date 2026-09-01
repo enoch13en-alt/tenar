@@ -2266,7 +2266,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "16"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "17"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4736,14 +4736,23 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     return result
 
 # A gather is a DATA SHEET (Issue · Rule · Cases · Scholarly · Comparative). If the model still
-# appends an IRAC Application/Conclusion, cut from that heading to the end. The heading must be a
-# WHOLE line equal to the banned word (+ optional colon) — so a legitimate Rule sub-heading like
-# "Application Procedure" (the statutory application process) is NOT matched and NOT cut.
+# appends an IRAC Application/Conclusion, cut from that heading to the end. Two accepted forms:
+#  (A) a MARKDOWN-HEADING/bold line starting with the banned word, even with trailing words
+#      ("## Application to Asempa Gold…", "**Conclusion:**") — but NOT "Application Procedure/
+#      Process/Form/…", which is a legitimate statutory Rule sub-heading;
+#  (B) a BARE standalone line that is just the banned word (+ optional markers/colon).
+# Requiring markup for the trailing-words form keeps ordinary Rule prose that merely starts a
+# line with "Application of s.17…" from being cut.
 _GATHER_ANALYSIS_HEADING = re.compile(
-    r'(?im)^[ \t>]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*'
-    r'(?:application to the facts|application|conclusion|assessment|analysis|discussion|'
-    r'how (?:it|these|the law) applies?)'
-    r'[:*_ \t]*$'
+    r'(?im)^[ \t>]*(?:'
+    r'(?:#{1,6}[ \t]*|\*\*[ \t]*|__[ \t]*)'                       # (A) heading / bold prefix required
+    r'(?:application(?!\s+(?:procedure|process|form|fee|requirement|document|stage|steps))'
+    r'|conclusion|assessment|analysis|discussion|how (?:it|these|the law) applies?)'
+    r'\b[^\n]*'
+    r'|'                                                          # (B) bare standalone heading word
+    r'(?:\*\*|__)?[ \t]*(?:application to the facts|application|conclusion|assessment|analysis|discussion)'
+    r'[ \t]*(?:\*\*|__)?[ \t]*:?'
+    r')[ \t]*$'
 )
 def _strip_gather_analysis(text):
     if not text:
