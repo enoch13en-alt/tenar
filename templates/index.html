@@ -5430,6 +5430,27 @@ $("#openResearch").onclick = openResearch;
 $("#researchClose").onclick = () => { $("#researchModal").style.display = "none"; };
 $("#researchGo").onclick = () => runResearch();
 
+// AUTO-PURGE STALE GATHERS ON LOAD — so an old-format saved gather (no verbatim-law drawers)
+// can never resurface. Runs once at startup: any saved exam-run whose gathered issues are ALL
+// old-format is deleted, so the user simply re-gathers it fresh in the current format. New-format
+// saves (which carry ⟦LAW⟧ drawers) are kept. This is the "never see it again" fix.
+(function purgeStaleGathers(){
+  let purged = 0;
+  try {
+    Object.keys(localStorage).filter(k => k.indexOf("examRun_") === 0).forEach(k => {
+      try {
+        const snap = JSON.parse(localStorage.getItem(k) || "null");
+        const done = (snap && Array.isArray(snap.issues) ? snap.issues : [])
+          .filter(it => it && it.done && (it.answer || "").trim());
+        if (!done.length) return;                    // nothing gathered yet — leave it
+        const anyCurrent = done.some(it => /⟦LAW⟧/.test(it.answer || "") || /⟦LAW⟧/.test(it.answer_annotated || ""));
+        if (!anyCurrent) { localStorage.removeItem(k); purged++; }   // all old-format → drop it
+      } catch (e) {}
+    });
+  } catch (e) {}
+  if (purged) console.log("[TENAR] cleared " + purged + " old-format saved gather(s) — re-gather for the current format.");
+})();
+
 loadCourses();
 
 // ---- Rules — exam essentials (in-person: rule + where to find it, terse bullets) ----
