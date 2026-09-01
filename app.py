@@ -2790,19 +2790,20 @@ def _to_roman(n):
 
 
 def _detect_numbering(d):
-    """For PDFs with no embedded labels: read the page number printed in each
-    page's header/footer to recover BOTH schemes — arabic (body) and roman
-    (front matter). Returns (arabic_offset, roman_offset, body_start_physical).
+    """Read the page number PRINTED in each page's header/footer to recover BOTH schemes —
+    arabic (body) and roman (front matter). Returns (arabic_offset, roman_offset,
+    body_start_physical). Run for every PDF (even ones with embedded labels), because the
+    printed number is what a reader cites and embedded labels are often a reprint/eLibrary
+    artifact (e.g. an article whose embedded label is '33' but whose journal page printed on
+    the page is '312').
 
-    offset = physical_page - printed_page. It may be NEGATIVE: a chapter EXTRACT
-    whose physical page 31 is the book's printed page 310 has offset 31-310 = -279.
-    (The old code required printed<=physical, so it silently rejected extracts and
-    fell back to the physical page — the '310 shown as 31' bug.)"""
+    offset = physical_page - printed_page. It may be NEGATIVE: a chapter EXTRACT whose
+    physical page 31 is the book's printed page 310 has offset 31-310 = -279."""
     from collections import Counter
     ar, ro = Counter(), Counter()
     for i in range(len(d)):
         lines = [l.strip() for l in d[i].get_text("text").splitlines() if l.strip()]
-        for l in (lines[:2] + lines[-2:]):        # only the running header / footer
+        for l in (lines[:3] + lines[-4:]):        # running header / footer (footer may trail journal name/URL)
             if re.fullmatch(r"\d{1,5}", l):
                 n = int(l)
                 if 0 < n <= 20000:                # any plausible printed page number (extracts allowed)
@@ -2866,24 +2867,25 @@ def page_label(pdf_path, fname, physical):
                 labs.append(lab)
                 has = has or bool(lab)
             LABELS[fname] = labs if has else None
-            OFFSETS[fname] = (None, None, None) if has else _detect_numbering(d)
+            OFFSETS[fname] = _detect_numbering(d)      # ALWAYS scan the printed page numbers
             d.close()
         except Exception:
             LABELS[fname] = None
             OFFSETS[fname] = (None, None, None)
     labs = LABELS[fname]
-    if labs and 1 <= physical <= len(labs) and labs[physical - 1]:
-        return labs[physical - 1]                      # embedded label wins
     off_a, off_r, body_start = OFFSETS.get(fname, (None, None, None))
-    # body pages → arabic printed number
+    # The number PRINTED on the page (recovered by the header/footer scan) is what a reader
+    # cites, so it WINS over embedded PDF page-labels — those are often a reprint/eLibrary
+    # artifact (this article's embedded '33' vs the journal page '312' printed on the page).
     if off_a is not None and physical - off_a >= 1 and (body_start is None or physical >= body_start):
-        return str(physical - off_a)
-    # front-matter pages → roman numeral
+        return str(physical - off_a)                   # body → printed arabic
     if off_r is not None and (body_start is None or physical < body_start) and physical - off_r >= 1:
-        r = _to_roman(physical - off_r)
+        r = _to_roman(physical - off_r)                # front matter → roman
         if r:
             return r
-    return str(physical)
+    if labs and 1 <= physical <= len(labs) and labs[physical - 1]:
+        return labs[physical - 1]                      # else fall back to the embedded label
+    return str(physical)                               # else the physical page
 
 # ---------------------------------------------------------------- courses
 def safe_course(name):
