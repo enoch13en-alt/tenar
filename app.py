@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "30"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "31"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3892,6 +3892,24 @@ def arrangement_text(course, fname):
                 if sum(len(p) for p in parts) > 24000:   # generous ceiling — full map, bounded
                     break
             out = "\n".join(parts)[:24000]
+        if not out and pos:
+            # FALLBACK — no arrangement/contents page (or it didn't survive OCR): synthesise the map
+            # from SECTION HEADERS in the body ("12. Property in and control of water resources" then
+            # its subsections). Works for statutes uploaded body-only; degraded where OCR fragmented
+            # the headers (then a cleaner re-upload is the real fix).
+            hdr = re.compile(r"(?m)^\s*(\d{1,4}[A-Z]?)\s*[.\-—]\s+([A-Z][A-Za-z][^\n]{3,70})$")
+            entries, seen_n = [], set()
+            for i in pos:
+                for m in hdr.finditer(chunks[i].get("text", "") or ""):
+                    num, head = m.group(1), m.group(2).strip()
+                    if num in seen_n or head.endswith(".") or len(head.split()) > 12:
+                        continue                       # skip prose sentences masquerading as a header
+                    seen_n.add(num)
+                    entries.append(num + ". " + head)
+            if len(entries) >= 4:
+                out = ("SECTION HEADINGS (recovered from the body — this instrument has no separate "
+                       "Arrangement page; use these numbers, verify against the section text):\n"
+                       + "\n".join(entries[:250]))[:24000]
     except Exception:
         out = None
     ARRANGEMENTS[key] = out
