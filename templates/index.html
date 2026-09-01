@@ -2761,6 +2761,7 @@ function renderExam() {
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
           + '</button>'
+          + '<button class="btn mini reGatherBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px" title="Discard this saved answer and gather it again fresh on the latest version (fixes an old/stale gather).">↻ Re-gather</button>'
           + '<button class="btn mini auditIssueBtn'+(it._audited?' done':'')+'" data-i="'+idx+'" style="margin-top:6px" title="Audit the authorities against the corpus and fix/cut ungrounded ones.">'+(it._audited?'✅ Audited — re-run':'🔍 Audit &amp; fix authorities')+'</button>'
           + '<button class="btn mini casesIssueBtn'+(it._casesAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find leading / locus classicus cases AND real-world incidents (disasters, explosions, spills) that strengthen this issue. Best after Audit &amp; fix. You verify each before it is woven in.">'+(it._casesAdded?('✅ Cases added ('+it._casesAdded+') — re-find'):'⚖️ Cases &amp; incidents')+'</button>'
           + '<button class="btn mini scholarIssueBtn'+(it._scholarAdded?' done':'')+'" data-i="'+idx+'" style="margin-top:6px;margin-left:6px" title="Find academic writings from YOUR uploaded materials (articles, book chapters) that strengthen this issue — grounded in the actual retrieved passage and attributed by name, never a guess from the title. You confirm each before it is woven in.">'+(it._scholarAdded?('✅ Writers added ('+it._scholarAdded+') — re-find'):'📚 Writers &amp; scholarship')+'</button>'
@@ -2797,6 +2798,8 @@ function renderExam() {
     b.onclick = () => verifyAssumption(+b.dataset.a, b));
   $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".reGatherBtn").forEach(b =>
+    b.onclick = () => gatherIssue(+b.dataset.i, true));   // force a fresh gather, wiping the stale one
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
     b.onclick = () => auditAndFixIssue(+b.dataset.i));
   $("#examOut").querySelectorAll(".casesIssueBtn").forEach(b =>
@@ -3051,9 +3054,15 @@ async function verifyIssue(i) {
   } catch (e) { if (!it._audit) it._audit = []; }
 }
 
-async function gatherIssue(i) {
+async function gatherIssue(i, force) {
   const it = EXAM.issues[i];
-  if (it.loading || it.done) return;          // ignore repeat clicks
+  if (it.loading) return;                     // ignore double-clicks
+  if (it.done && !force) return;              // already gathered — use force (↻ Re-gather) to refresh
+  if (force) {                                // wipe the stale answer so it truly re-gathers fresh
+    it.done = false; it.answer = ""; it.answer_annotated = "";
+    it._audited = false; it._audit = []; it._autoFixed = 0; it._autoRemoved = 0; it._auditOriginal = null;
+    it._calibrated = false;
+  }
   it.loading = true; renderExam();            // instant feedback
   $("#examStatus").textContent = "Gathering law for issue " + (it.n||i+1) + "…";
   try {
