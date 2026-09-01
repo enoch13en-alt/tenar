@@ -2317,7 +2317,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "23"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "24"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4460,6 +4460,21 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             "title": _title,
             "citations": {"enabled": True},
         })
+        # GROUNDED READING-NOTE — a minerals-vesting clause (e.g. art 257(6): "every mineral in its
+        # natural state in ... rivers, streams, water courses ... vested in the President") is
+        # repeatedly misread as vesting the WATER. It does not: its vested SUBJECT is 'every mineral'.
+        # Fire a caution right after such a passage so the model can't cite it for water ownership.
+        # This reads the RETRIEVED text (grounded); it names no substitute provision from memory.
+        if re.search(r"(?is)\bevery\s+mineral\s+in\s+its\s+natural\s+state\b.{0,400}?\bvested\s+in\s+the\s+President\b",
+                     ch.get("text", "")):
+            content.append({"type": "text", "text": (
+                "[READING NOTE on the passage immediately above: the subject that is 'the property "
+                "of the Republic' / 'vested in the President' is EVERY MINERAL — this provision vests "
+                "MINERALS occurring in or under land, rivers, streams and watercourses; it does NOT "
+                "vest the WATER itself. Do NOT cite this provision as the authority for ownership or "
+                "control of WATER. For water ownership/control, use the provision in the materials "
+                "that actually governs water resources (the Water Resources statute), not this "
+                "minerals clause.]")})
     # OPTIONAL background context — from the course's SEPARATE context store, clearly labelled
     # so it is used as attributed background, never as legal authority or as the problem's facts.
     ctx_note = ""
