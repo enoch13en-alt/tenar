@@ -2317,7 +2317,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "22"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "23"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3580,21 +3580,48 @@ def _index_years(idx):
         idx["docyear"] = np.asarray(arr, dtype=np.float32)
     return idx["docyear"]
 
-_PRIMARY_TYPES = {"constitution", "statute", "treaty", "case"}
-def _index_primary(idx):
-    """Per-chunk flag (1.0/0.0) for whether the chunk's document is PRIMARY law — the actual
-    statute/regulation/constitution/case text, which carries the real section/regulation numbers.
-    Cached on the captured index. Used to surface primary text over secondary commentary so
-    PINPOINTS are grounded on the instrument itself, not paraphrased from an article."""
-    if "prim" not in idx:
+_PRIMARY_TYPES = {"constitution", "statute", "case"}   # DOMESTIC primary (treaty handled as international)
+_INTL_HINTS = re.compile(
+    r"(?i)\b(convention|treaty|protocol|charter|covenant|unclos|united nations|u\.n\.|"
+    r"transboundary|inter-?national|foreign|nile|jordan|volta basin|mekong|danube|"
+    r"seabed authority|helsinki|watercourses convention|abidjan)\b")
+_GH_HINTS = re.compile(
+    r"(?i)(\bghana|ghanaian|republic of ghana|\bact\s*\d|\bl\.?\s?i\.?\s*\d|p\.?n\.?d\.?c\.?l|"
+    r"n\.?l\.?c\.?d|1992 constitution|constitution of the republic of ghana)")
+
+def _source_tier_weight(fname):
+    """Rank a document by the source hierarchy — DOMESTIC primary is highest, then domestic
+    secondary, then international primary (treaties), then international secondary. Extraction is
+    biased to this order so a Ghanaian legal question anchors on Ghana's own primary law, not on a
+    foreign treaty or a commentary. Heuristic (name + doctype); a rough bias, not a hard rule."""
+    nm = (display_name(fname) or "") + " " + (fname or "")
+    t = display_type(fname)
+    is_primary = t in _PRIMARY_TYPES
+    is_treaty = (t == "treaty")
+    is_intl = is_treaty or (_INTL_HINTS.search(nm) and not _GH_HINTS.search(nm))
+    if is_primary and not is_intl:
+        return 1.00        # domestic primary — Constitution / Act / L.I. / Ghanaian case
+    if is_primary and is_intl:
+        return 0.45        # (rare) foreign primary
+    if is_treaty:
+        return 0.40        # international primary — treaty/convention (often non-binding here)
+    if is_intl:
+        return 0.20        # international secondary — foreign/comparative commentary
+    if _GH_HINTS.search(nm):
+        return 0.55        # domestic secondary — Ghanaian textbook/article/report/policy
+    return 0.45            # unknown secondary — treat as mildly domestic
+
+def _index_tier(idx):
+    """Per-chunk source-tier weight (see _source_tier_weight), cached on the captured index."""
+    if "tier" not in idx:
         cache, arr = {}, []
         for c in idx["chunks"]:
             d = c.get("doc", "")
             if d not in cache:
-                cache[d] = 1.0 if display_type(d) in _PRIMARY_TYPES else 0.0
+                cache[d] = _source_tier_weight(d)
             arr.append(cache[d])
-        idx["prim"] = np.asarray(arr, dtype=np.float32)
-    return idx["prim"]
+        idx["tier"] = np.asarray(arr, dtype=np.float32)
+    return idx["tier"]
 
 def _blend(sims, idx, query):
     """Vector similarity + a lexical boost (query keywords present in the chunk) + a MILD
@@ -3615,10 +3642,11 @@ def _blend(sims, idx, query):
         if ymax > ymin:
             rec = np.where(known, (yrs - ymin) / (ymax - ymin), 0.0).astype(np.float32)
             out = out + 0.12 * rec        # up to +0.12 for the newest dated doc; 0 for undated
-    # Surface the PRIMARY instrument (statute/regulation/constitution/case) over secondary
-    # commentary on the same point, so the model reads the real provision — with its real
-    # section/regulation number — instead of an article's paraphrase and a remembered number.
-    out = out + 0.15 * _index_primary(idx)
+    # SOURCE-HIERARCHY bias: lift by tier so DOMESTIC PRIMARY law surfaces first, then domestic
+    # secondary, then international primary (treaties), then international/comparative commentary.
+    # This is what keeps a Ghanaian question anchored on Act 522 / L.I. 1692 rather than a Volta
+    # Basin treaty or a journal paraphrase. Up to +0.22 for domestic primary; ~+0.04 for foreign.
+    out = out + 0.22 * _index_tier(idx)
     return out
 
 
@@ -3806,7 +3834,8 @@ def auto_pin_primary_hits(course, query, total=16, k_per=4):
     idx = INDEXES.get(course)
     if not idx or not idx.get("chunks"):
         return []
-    want = [i for i, ch in enumerate(idx["chunks"]) if display_type(ch.get("doc", "")) in _PRIMARY_TYPES]
+    # DOMESTIC primary only (tier 1.0) — pin Act 522 / L.I. 1692 / the Constitution, NOT a treaty.
+    want = [i for i, ch in enumerate(idx["chunks"]) if _source_tier_weight(ch.get("doc", "")) >= 1.0]
     if not want:
         return []
     try:
