@@ -6138,26 +6138,40 @@ def api_ask():
                                    writer_model=body.get("writer_model")))
 
 
+def _norm_doc_title(s):
+    """Normalise a citation title for matching: drop a trailing ' — p.N', a leading '[Course]',
+    collapse whitespace, and lowercase."""
+    s = re.sub(r"\s+—\s+p\.?\s*[0-9ivxlcdmIVXLCDM].*$", "", s or "", flags=re.I)   # trailing ' — p.N'
+    s = re.sub(r"^\s*\[[^\]]*\]\s*", "", s)                                         # leading '[Course]'
+    s = re.sub(r"[&]", "and", s)
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
 def _resolve_doc_fname(course, doc):
     """Map a doc identifier — a stored filename, or a display/citation title like
-    '[Course] Name — Author — p.N' — to the stored filename in the course folder."""
+    '[Course] Name — Author — p.N' — to the stored filename in the course folder. Lenient: matches
+    on the full title, then on the core title before the author/publisher suffix, then substring."""
     if not doc:
         return None
     pdf_dir, _ = course_paths(course)
     if os.path.exists(os.path.join(pdf_dir, doc)):
         return doc
-    dl = doc.strip()
-    dl = re.sub(r"\s+—\s+p\.?\s*[0-9ivxlcdm].*$", "", dl, flags=re.I)   # drop trailing ' — p.N'
-    dl = re.sub(r"^\s*\[[^\]]*\]\s*", "", dl).strip().lower()            # drop leading '[Course]'
+    dl = _norm_doc_title(doc)
+    dl_core = dl.split(" — ")[0].strip()               # title before ' — Author/Publisher'
     try:
         files = os.listdir(pdf_dir)
     except Exception:
         files = []
-    for f in files:                                    # exact display-name match
-        if display_name(f).strip().lower() == dl:
+    norms = [(f, _norm_doc_title(display_name(f))) for f in files]
+    for f, dn in norms:                                # exact display-name match
+        if dn and dn == dl:
             return f
-    for f in files:                                    # then substring
-        if dl and dl in display_name(f).strip().lower():
+    for f, dn in norms:                                # match ignoring author/publisher suffix
+        dn_core = dn.split(" — ")[0].strip()
+        if dn_core and dl_core and (dn_core == dl_core or dn_core == dl or dn == dl_core):
+            return f
+    for f, dn in norms:                                # last-resort substring either way
+        if dl_core and dn and (dl_core in dn or dn.split(" — ")[0].strip() in dl):
             return f
     return None
 

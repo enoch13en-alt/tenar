@@ -1070,7 +1070,11 @@ async function viewSourcePage(doc, page){
   const title = modal.querySelector("#srcPageTitle"), bodyEl = modal.querySelector("#srcPageBody");
   title.textContent = "📄 " + doc + " — p." + page;
   bodyEl.innerHTML = '<div style="color:#8b93a7">Loading the exact page…</div>';
+  // Try the currently-scanned courses FIRST, then fall back to every course the user has —
+  // so a chip resolves even when the cited document lives in a course not currently ticked.
   let list = (typeof examCourses === "function" ? examCourses() : [COURSE]).slice();
+  (typeof ALL_COURSES !== "undefined" ? ALL_COURSES : []).forEach(c => { if (list.indexOf(c) < 0) list.push(c); });
+  if (COURSE && list.indexOf(COURSE) < 0) list.push(COURSE);
   if (!list.length) list = [COURSE];
   let data = null;
   for (const c of list){
