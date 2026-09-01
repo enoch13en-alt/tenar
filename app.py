@@ -5100,6 +5100,41 @@ def _strip_gather_analysis(text):
     return text[:m.start()].rstrip()
 
 
+_WATER_SUBJ = re.compile(r'(?i)\b(water|abstract\w*|riparian|effluent|discharge|drainage|catchment|dam\b|dredg\w*|wrc|water\s+resource|water\s+right)\b')
+_MINERAL_CORE = re.compile(r'(?i)(who\s+owns\s+(?:the\s+)?mineral|ownership\s+of\s+(?:the\s+)?mineral|mineral[s]?\s+(?:vest|title|ownership|belong)|vest\w*[^.]{0,40}mineral)')
+_CONST_SEG = re.compile(r'(?i)(constitution|\bart(?:icle)?\.?\s*2(?:57|58|68)\b)')
+
+def _scrub_constitution_from_water(issues):
+    """DETERMINISTIC guard against the single most stubborn error the user keeps flagging:
+    the 1992 Constitution being cited as the authority that OWNS/VESTS or governs WATER.
+    It does not. Water ownership is Water Resources Commission Act 1996 (Act 522) s.12
+    (vesting) and s.13 (water right); a miner still needs a water right under Minerals and
+    Mining Act 2006 (Act 703) s.17. Article 257(6) vests MINERALS, not water.
+
+    The breakdown model habitually lists 'Constitution … Article 257/258/268' as the water
+    authority (a trained prior no prompt fully suppresses). So for any WATER-subject issue
+    that is NOT itself a minerals-ownership issue, we physically delete constitutional
+    Article 257/258/268 citations from the issue's 'law' hint — nothing left to seed the
+    gather, so 257(6) can't ride downstream. Minerals-ownership issues keep 257(6)."""
+    for it in (issues or []):
+        if not isinstance(it, dict):
+            continue
+        text = " ".join(str(it.get(k, "")) for k in ("issue", "why"))
+        if not _WATER_SUBJ.search(text):
+            continue                       # not a water issue — leave the Constitution alone
+        if _MINERAL_CORE.search(text):
+            continue                       # genuinely a minerals-ownership issue — 257(6) belongs
+        law = str(it.get("law", "") or "")
+        if not law:
+            continue
+        segs = [s.strip() for s in re.split(r'\s*;\s*', law) if s.strip()]
+        kept = [s for s in segs if not _CONST_SEG.search(s)]
+        # only rewrite if we actually dropped a constitutional segment AND something remains
+        if kept and len(kept) != len(segs):
+            it["law"] = "; ".join(kept)
+    return issues
+
+
 def _tidy_gather_markdown(text):
     """Safety net for the gather's Markdown structure. Haiku occasionally jams a heading into
     the next sentence, forgets the blank line between provisions, or scatters '---' dividers,
@@ -11452,6 +11487,8 @@ def api_exam_breakdown():
         return jsonify({"error": "Couldn't read the breakdown this time — please "
                         "click 'Break it down' again."})
     data["cost"] = cost
+    if isinstance(data.get("issues"), list):
+        _scrub_constitution_from_water(data["issues"])   # physically drop art 257/258/268 from water issues
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
     return jsonify(data)
