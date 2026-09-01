@@ -2147,7 +2147,16 @@ AUTHORITY_PRECISION = (
     "paraphrase (an article/report discussing the law), and NEVER supply one from memory. If the "
     "materials establish the principle but you cannot see the exact number in the primary text, "
     "state the principle and mark the number '⚠ number unconfirmed on the materials' rather than "
-    "guess — a wrong section number reads as sources not independently checked."
+    "guess — a wrong section number reads as sources not independently checked.\n"
+    "- READ THE SUBJECT OF A VESTING / DEFINITION CLAUSE. A provision that declares as property or "
+    "vests 'X in, under or upon land, rivers, streams and watercourses' vests **X** — the "
+    "rivers/streams/watercourses are merely WHERE X is located; it is NOT a provision vesting the "
+    "WATER itself. Identify the grammatical subject that is 'the property of' / 'vested in' and use "
+    "the provision only for THAT subject. Do NOT stretch a term (e.g. 'mineral') to cover something "
+    "it does not name (e.g. 'water'), and do NOT treat a provision that merely MENTIONS watercourses "
+    "as the authority for water ownership. When a DIFFERENT instrument in the materials directly "
+    "governs the point (e.g. a Water Resources statute for water ownership/control), THAT is the "
+    "correct anchor — cite it, not the incidental mention elsewhere."
 )
 
 LEGAL_SELF_CHECK = (
@@ -2308,7 +2317,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "20"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "21"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
