@@ -5038,6 +5038,64 @@ def api_admin_errors():
     return jsonify({"errors": RECENT_ERRORS[-30:]})
 
 
+@app.route("/api/admin/pagecheck", methods=["GET"])
+def api_admin_pagecheck():
+    """Owner-only diagnostic for page-number problems. No args -> list every document in the
+    course with its detected page mapping. ?doc=<name substring> -> per-chunk detail: the
+    stored page, what page_label() resolves it to, and the first/last lines of the chunk (so I
+    can see whether a real printed page number is present to detect an offset from)."""
+    u = current_user()
+    if not u or not u.get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    course = safe_course(request.args.get("course", ""))
+    want = (request.args.get("doc", "") or "").lower().strip()
+    try:
+        ensure_loaded(course)
+    except Exception as e:
+        return jsonify({"error": f"load failed: {e}"}), 200
+    idx = INDEXES.get(course) or {}
+    chunks = idx.get("chunks") or []
+    pdf_dir, _ = course_paths(course)
+    by_doc = {}
+    for c in chunks:
+        by_doc.setdefault(c.get("doc", ""), []).append(c)
+
+    def _mapping(d):
+        is_pdf = d.lower().endswith(".pdf")
+        page_label(os.path.join(pdf_dir, d), d, 1)          # trigger detection/caching
+        if is_pdf:
+            off = OFFSETS.get(d) or (None, None, None)
+            return {"type": "pdf", "embedded_labels": bool(LABELS.get(d)),
+                    "arabic_offset": off[0], "roman_offset": off[1]}
+        return {"type": "text", "text_offset": TEXT_OFFSETS.get(d)}
+
+    if not want:
+        docs = []
+        for d, cs in sorted(by_doc.items()):
+            docs.append({"doc": d, "display": display_name(d), "chunks": len(cs), **_mapping(d)})
+        return jsonify({"course": course, "documents": docs})
+
+    d = next((k for k in by_doc if want in k.lower() or want in display_name(k).lower()), None)
+    if not d:
+        return jsonify({"course": course, "error": "no matching document",
+                        "available": [display_name(k) for k in by_doc]}), 200
+    cs = by_doc[d]
+    def _seen_page(c):
+        return c.get("page")
+    cs_sorted = sorted(cs, key=lambda c: (str(_seen_page(c))))
+    samples = []
+    for c in cs_sorted[:12]:
+        lines = [l.strip() for l in (c.get("text") or "").splitlines() if l.strip()]
+        samples.append({
+            "stored_page": _seen_page(c),
+            "resolved_label": page_label(os.path.join(pdf_dir, d), d, _seen_page(c)),
+            "head": lines[:2],
+            "tail": lines[-2:],
+        })
+    return jsonify({"course": course, "doc": d, "display": display_name(d),
+                    "mapping": _mapping(d), "sample_chunks": samples})
+
+
 @app.before_request
 def _require_login():
     p = request.path
