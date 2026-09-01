@@ -2123,7 +2123,15 @@ AUTHORITY_PRECISION = (
     "- Keep RULE → DISCRETION → EVIDENCE → CONCLUSION distinct. State the rule, note the "
     "discretion/trigger, weigh the evidence, then conclude. Do not dress advocacy ('practically "
     "unanswerable', 'plainly unlawful', 'must be preserved') as the statutory rule unless a "
-    "provision or permit condition in the materials makes it so."
+    "provision or permit condition in the materials makes it so.\n"
+    "- PINPOINTS COME FROM THE PRIMARY-LAW TEXT ITSELF. Cite a section/regulation/article NUMBER "
+    "(e.g. 's.29', 'reg 12', 'art 257(6)') ONLY when that number is shown in the PRIMARY "
+    "instrument's own text in the materials — the Act/Regulation/Constitution itself, including its "
+    "'Arrangement of Sections/Regulations'. Do NOT take a provision number from a secondary source's "
+    "paraphrase (an article/report discussing the law), and NEVER supply one from memory. If the "
+    "materials establish the principle but you cannot see the exact number in the primary text, "
+    "state the principle and mark the number '⚠ number unconfirmed on the materials' rather than "
+    "guess — a wrong section number reads as sources not independently checked."
 )
 
 # Fold grounded-citation + authority-precision discipline into CITATION_INTEGRITY so EVERY path
@@ -2266,7 +2274,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "17"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "18"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3529,13 +3537,27 @@ def _index_years(idx):
         idx["docyear"] = np.asarray(arr, dtype=np.float32)
     return idx["docyear"]
 
+_PRIMARY_TYPES = {"constitution", "statute", "treaty", "case"}
+def _index_primary(idx):
+    """Per-chunk flag (1.0/0.0) for whether the chunk's document is PRIMARY law — the actual
+    statute/regulation/constitution/case text, which carries the real section/regulation numbers.
+    Cached on the captured index. Used to surface primary text over secondary commentary so
+    PINPOINTS are grounded on the instrument itself, not paraphrased from an article."""
+    if "prim" not in idx:
+        cache, arr = {}, []
+        for c in idx["chunks"]:
+            d = c.get("doc", "")
+            if d not in cache:
+                cache[d] = 1.0 if display_type(d) in _PRIMARY_TYPES else 0.0
+            arr.append(cache[d])
+        idx["prim"] = np.asarray(arr, dtype=np.float32)
+    return idx["prim"]
+
 def _blend(sims, idx, query):
     """Vector similarity + a lexical boost (query keywords present in the chunk) + a MILD
-    recency nudge (more recent documents surface rather than staying buried under a
-    topically-similar older one). Takes the CAPTURED index dict so eviction can't race a
-    live search. The recency term is small on purpose — it breaks near-ties, it does not
-    override a clearly better match, and it never applies to in-force-vs-superseded law
-    reasoning (that is the model's job via the succession rule)."""
+    recency nudge + a PRIMARY-LAW nudge. Takes the CAPTURED index dict so eviction can't race a
+    live search. The nudges are small on purpose — they break near-ties, they do not override a
+    clearly better match, and in-force-vs-superseded reasoning stays the model's job (succession)."""
     out = sims
     qk = _kw(query)
     if qk:
@@ -3550,6 +3572,10 @@ def _blend(sims, idx, query):
         if ymax > ymin:
             rec = np.where(known, (yrs - ymin) / (ymax - ymin), 0.0).astype(np.float32)
             out = out + 0.12 * rec        # up to +0.12 for the newest dated doc; 0 for undated
+    # Surface the PRIMARY instrument (statute/regulation/constitution/case) over secondary
+    # commentary on the same point, so the model reads the real provision — with its real
+    # section/regulation number — instead of an article's paraphrase and a remembered number.
+    out = out + 0.15 * _index_primary(idx)
     return out
 
 
