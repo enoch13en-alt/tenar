@@ -2317,7 +2317,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "24"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "25"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4527,12 +4527,20 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONFIG["system_prompt"] + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + FACT_DISCIPLINE + "\n\n"
-                  "THIS IS A DATA SHEET FOR THE ISSUE — NOT AN ANSWER, NOT AN ESSAY, NOT ANALYSIS. You "
-                  "ONLY collect the verified raw material (law + cases + sources) that the COMPILE stage "
-                  "will use to write the answer. NO 'assessment', 'adequacy', 'analysis', 'discussion' "
-                  "or 'conclusion'; NO developed argument; NO running the facts through the rule. If you "
-                  "are writing more than a line or two of your own prose between the quoted sources, "
-                  "STOP — that is the compile's job.\n\n"
+                  "YOU ARE A VERBATIM EXTRACTOR, NOT AN INTERPRETER. Your ONLY job is to COPY the "
+                  "verified raw material — the governing provisions in their EXACT words with their "
+                  "EXACT pinpoints, and the cases/sources exactly as cited — for the COMPILE stage "
+                  "(a stronger model) to read and interpret. Because interpretation is where mistakes "
+                  "happen, you must NOT interpret: do NOT decide which provision 'governs' a topic, do "
+                  "NOT restate a provision as applying to a subject it does not name (a clause vesting "
+                  "'minerals ... in watercourses' is NOT about water), do NOT characterise, rank, "
+                  "compare, or say one use 'ranks above' another, do NOT apply the law to the facts, do "
+                  "NOT reach or hint at a conclusion. Reproduce; don't reason. If you are tempted to "
+                  "add a word that is not doing one of {stating the exact rule, naming its pinpoint, "
+                  "one-line what-it-says}, STOP — that judgment is the compile's job.\n"
+                  "THIS IS A DATA SHEET FOR THE ISSUE — NOT AN ANSWER, NOT AN ESSAY, NOT ANALYSIS. "
+                  "NO 'assessment', 'adequacy', 'analysis', 'discussion' or 'conclusion'; NO developed "
+                  "argument; NO running the facts through the rule.\n\n"
                   "FORMATTING — FOLLOW EXACTLY so the sheet renders clean and is easy to read:\n"
                   "- Use these FIVE section headings, each written as a Markdown H2 on ITS OWN LINE, in "
                   "this order: '## Issue', '## Rule', '## Cases', '## Scholarly & secondary', "
@@ -4543,10 +4551,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "- '## Issue' — ONE line: the precise legal question these facts raise. No preamble.\n"
                   "- '## Rule' — list each governing provision as a TWO-LINE block, blank line between "
                   "provisions:\n"
-                  "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of the rule in "
-                  "**bold**, then ' — ' and the pinpoint (e.g. 's.17, Act 703'). WRITE THIS BOLD LINE IN "
-                  "PLAIN, EVERYDAY ENGLISH — the way you'd explain the rule to a friend who is not a "
-                  "lawyer. Use ordinary words, not statute-speak: say 'take or use water' not 'abstract', "
+                  "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of WHAT THIS "
+                  "PROVISION SAYS ABOUT ITS OWN NAMED SUBJECT in **bold**, then ' — ' and the pinpoint "
+                  "(e.g. 's.17, Act 703'). This is a FAITHFUL restatement, not a conclusion: say only "
+                  "what the provision's own words say about the subject THEY name — do NOT extend it to "
+                  "a subject it does not name (a minerals clause stays about minerals, never 'water'), "
+                  "do NOT say it 'governs'/'ranks above'/'is the authority for' anything, do NOT apply "
+                  "it. Write it IN PLAIN, EVERYDAY ENGLISH — the way you'd read the rule to a friend who "
+                  "is not a lawyer. Use ordinary words, not statute-speak: say 'take or use water' not 'abstract', "
                   "'redirect / block' not 'divert / impound', 'you must get permission first' not "
                   "'subject to obtaining the requisite approvals', 'doing it without permission is a "
                   "crime' not 'constitutes an offence', 'the person holding the mining licence' not 'the "
