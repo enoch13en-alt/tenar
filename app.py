@@ -2341,7 +2341,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "33"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "34"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4758,6 +4758,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "THAT provision, not the scholar who describes it. Build the primary-authority map "
                   "FIRST; secondary sources are collected separately under Scholarly (below) for "
                   "interpretation or criticism only — never to carry the core rule.\n"
+                  "PICK ONLY THE PROVISIONS THAT DIRECTLY ANSWER THE ISSUE — the MINIMAL SUFFICIENT "
+                  "set, not a survey. Lead with the single most on-point provision, then add another "
+                  "ONLY if it supplies a DISTINCT rule the issue actually needs. Do NOT pad with "
+                  "tangential, background or merely-related provisions, and do NOT list a provision "
+                  "just because it was retrieved. A tight 2–4 provisions that squarely govern beats a "
+                  "long list that buries them. If in doubt whether a provision is needed to ANSWER "
+                  "this issue, leave it out.\n"
                   "Under '## Cases' — ONE bullet per decided case that bears on this issue: '- **Case "
                   "name** (citation exactly as the corpus/articles give it) — one line on what it HELD.' "
                   "Mine the readings for cases they cite — a case named inside an article counts.\n"
