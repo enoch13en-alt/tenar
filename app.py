@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "31"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "32"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3898,11 +3898,14 @@ def arrangement_text(course, fname):
             # its subsections). Works for statutes uploaded body-only; degraded where OCR fragmented
             # the headers (then a cleaner re-upload is the real fix).
             hdr = re.compile(r"(?m)^\s*(\d{1,4}[A-Z]?)\s*[.\-—]\s+([A-Z][A-Za-z][^\n]{3,70})$")
+            # openers that mark a body SENTENCE, not a section TITLE — reject to avoid a noisy map
+            _prose = re.compile(r"(?i)^(where|if|subject|notwithstanding|despite|save|upon|any|no|for|"
+                                r"when|before|after|the commission shall|a person|an? applicant)\b")
             entries, seen_n = [], set()
             for i in pos:
                 for m in hdr.finditer(chunks[i].get("text", "") or ""):
                     num, head = m.group(1), m.group(2).strip()
-                    if num in seen_n or head.endswith(".") or len(head.split()) > 12:
+                    if num in seen_n or head.endswith(".") or len(head.split()) > 12 or _prose.match(head):
                         continue                       # skip prose sentences masquerading as a header
                     seen_n.add(num)
                     entries.append(num + ". " + head)
