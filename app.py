@@ -4311,7 +4311,7 @@ SOURCE_COVERAGE = (
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
-                    pinned=None, auto_pin_primary=False):
+                    pinned=None, auto_pin_primary=False, writer_model=None):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -4326,6 +4326,12 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # reserved for the COMPILE. A plain answer/essay stays on Opus (or Fable if max quality).
     primary_model = (HAIKU_MODEL if mode == "gather"
                      else FABLE_MODEL if max_quality else ANSWER_MODEL)
+    # HIGH-PRECISION GATHER (opt-in): route the gather WRITER to a stronger model. Default keeps
+    # Haiku (cheap). Used for the A/B and for a graded-submission toggle.
+    if mode == "gather" and writer_model in ("opus", "opus_x"):
+        primary_model = ANSWER_MODEL
+    elif mode == "gather" and writer_model == "fable":
+        primary_model = FABLE_MODEL
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {"answer": "ANTHROPIC_API_KEY is not set. Put it in the .env "
@@ -6128,7 +6134,8 @@ def api_ask():
                                    siblings=body.get("siblings"),
                                    issue_index=body.get("issue_index"),
                                    pinned=body.get("pinned"),
-                                   auto_pin_primary=body.get("auto_pin_primary", True)))
+                                   auto_pin_primary=body.get("auto_pin_primary", True),
+                                   writer_model=body.get("writer_model")))
 
 
 def _resolve_doc_fname(course, doc):
