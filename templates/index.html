@@ -573,7 +573,7 @@
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
       </label>
       </details>
-      <button class="btn gold" id="examAuto" style="width:auto" title="LEAN hands-off run (cost-cut): break down → gather every issue (cheap Haiku extraction + Opus writer) → (if ⚖️ on) find & pre-apply cases → compile → verify every citation against the corpus ONCE. That's the whole quality guarantee: a grounded answer with checked authorities. Calibrate, page-fit and Final check are NOT run automatically — do them yourself when finalising (they cost extra). Asks before it starts.">⚡ Auto-run (lean)</button>
+      <button class="btn gold" id="examAuto" style="width:auto" title="LEAN hands-off run (cost-cut): break down → gather every issue (cheap Haiku extraction + Opus writer) → (if ⚖️ on) find & pre-apply cases → compile → verify every citation against the corpus, then calibrate the language — audit + calibrate + Final check now run automatically at the end, so the document comes out grounded and calibrated. Page-fit and case-weaving stay optional. Asks before it starts.">⚡ Auto-run (lean)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
       <button class="btn alt" id="examClearSaved" style="width:auto" title="Delete the answers saved on this computer for this course, so every issue re-gathers fresh on the latest build. Does NOT touch your uploaded documents or pins.">🗑 Clear saved answers</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
@@ -2432,11 +2432,15 @@ async function runFullPipeline() {
     // ④ ONE citation audit on the COMPILED document — verify every authority against the corpus and
     //    fix/cut anything ungrounded. This is the grounding guarantee that actually matters; it
     //    replaces the old per-issue audit (16 calls → 1) and we dropped the redundant calibrate pass.
-    stage("④ Verifying citations…");
-    $("#examStatus").textContent = "🔍 Verifying every authority in the final document against the corpus…";
-    await auditCompiled();
-    $("#examStatus").textContent = "✅ Done — answer compiled and its citations verified against your materials."
-      + " Optional finishing (extra cost): 🎚️ Fit to page target · 🔒 Final check (calibrate) · ⚖️ weave cases.";
+    stage("④ Verifying & calibrating…");
+    $("#examStatus").textContent = "🔍 Verifying every authority against the corpus, then calibrating the language…";
+    const fin = await auditCompiled();
+    const bits = [];
+    if (fin && fin.fixed) bits.push("🔧 " + fin.fixed + " citation(s) corrected");
+    if (fin && fin.removed) bits.push("🗑️ " + fin.removed + " cut");
+    if (fin && fin.cal) bits.push("🎚 " + fin.cal + " language calibration(s)");
+    $("#examStatus").textContent = "✅ Done — compiled, citations verified against your materials, and language calibrated"
+      + (bits.length ? " (" + bits.join(" · ") + ")" : "") + ". Optional: 🎚️ Fit to page target · ⚖️ weave cases.";
   } catch (e) {
     $("#examStatus").textContent = "Auto-run stopped: " + e;
   } finally {
@@ -2447,26 +2451,34 @@ $("#examAuto").onclick = () => {
   const q = ($("#examQ").value||"").trim();
   const n = (EXAM.issues && EXAM.question === q) ? EXAM.issues.length : 0;
   if (!confirm("Run the lean answer pipeline" + (n ? (" on " + n + " issues") : "") + "?\n\n"
-      + "Steps: break down → gather each issue → ⏸ PAUSE to show cost → (you approve) compile → verify citations.\n"
+      + "Steps: break down → gather each issue → ⏸ PAUSE to show cost → (you approve) compile → verify citations → calibrate language.\n"
       + (($("#autoCases")||{}).checked ? "Cases: ON (a web search per issue).\n" : "")
       + "It stops after the cheap gather and asks before the pricier compile, so it can't run away.\n"
-      + "Calibrate, page-fit and Final check are NOT included — run them yourself when finalising.\n\nContinue?")) return;
+      + "Citation audit + language calibration (the old 'Final check') now run automatically at the end. Page-fit and case-weaving stay optional.\n\nContinue?")) return;
   runFullPipeline();
 };
 // ONE citation audit on the compiled document (fix/remove ungrounded authorities). No per-issue
 // audit, no calibrate — those were redundant expensive passes. Best-effort; grounding is the point.
 async function auditCompiled() {
-  const de = $("#examDoc"); if (!de || !EXAM.doc) return;
+  // Finalises the compiled document AUTOMATICALLY: strict citation audit + fix (grounding), THEN
+  // language calibration — i.e. audit → calibrate → final check in one pass, no manual buttons.
+  const de = $("#examDoc"); if (!de || !EXAM.doc) return { fixed: 0, removed: 0, cal: 0 };
+  let cur = EXAM.doc, fixed = 0, removed = 0, cal = 0;
   try {
     const aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: EXAM.doc, courses: examCourses(), fix: true, strict: true})})).json();
-    if (aud && aud.corrected) {
-      EXAM.doc = aud.corrected; try { saveExam(); } catch (e) {}
-      de.style.whiteSpace = "normal"; de.innerHTML = mdToHtml(EXAM.doc);
-      const bar = de.nextElementSibling; if (bar) bar.remove();
-      renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90));
-    }
+      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true})})).json();
+    if (aud && aud.corrected) { cur = aud.corrected; fixed = aud.fixed_count || 0; removed = aud.removed_count || 0; }
   } catch (e) { /* audit is best-effort — never block the answer over it */ }
+  try {
+    const cb = await (await fetch("/api/issue/calibrate", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({issue: "the full memorandum", answer: cur, question: EXAM.question || ""})})).json();
+    if (cb && cb.answer && cb.answer.trim()) { cur = cb.answer; cal = (cb.changes || []).length; }
+  } catch (e) { /* calibrate is best-effort too */ }
+  EXAM.doc = cur; try { saveExam(); } catch (e) {}
+  de.style.whiteSpace = "normal"; de.innerHTML = mdToHtml(EXAM.doc);
+  const bar = de.nextElementSibling; if (bar) bar.remove();
+  renderExportBar(de, EXAM.doc, "Exam answer", (EXAM.question||"").split('\n')[0].slice(0,90));
+  return { fixed, removed, cal };
 }
 
 // ④ compile + ⑤ deepen — the tail of the pipeline (also called after the case step)
