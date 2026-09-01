@@ -2085,7 +2085,9 @@ CONVERSATIONAL = (
 )
 
 RECENCY_PREFERENCE = (
-    "SOURCE RECENCY — the materials are DATED (each source is shown with an approximate date). "
+    "SOURCE RECENCY — each source carries an APPROXIMATE date signal for judging how recent it "
+    "is. That signal is INTERNAL: never cite it as a publication year — put a year in a citation "
+    "only when the year appears in the source's own text or title. "
     "When the corpus holds BOTH older and more recent material ON THE SAME POINT, use and cite "
     "the MOST RECENT one. This matters most for reports, statistics, policy, institutional "
     "practice, reform proposals and recent decided cases — a 2024 source displaces a 2015 or "
@@ -2218,7 +2220,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "13"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "14"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4252,7 +4254,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         _yr = doc_year(pdf_dir, ch["doc"])
         if _yr:
             content.append({"type": "text",
-                "text": f'[Source date ≈ {_yr}: "{display_name(ch["doc"])}".]'})
+                "text": (f'[RECENCY SIGNAL — internal and APPROXIMATE, do NOT cite this as the '
+                         f'source\'s publication date: "{display_name(ch["doc"])}" appears to date '
+                         f'from around {_yr}. Use this ONLY to judge how recent this source is '
+                         f'relative to others. Put a year in a citation ONLY if that year actually '
+                         f'appears in the source\'s own text/title — never from this signal.]')})
         content.append({
             "type": "document",
             "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
