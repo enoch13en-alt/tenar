@@ -6016,6 +6016,91 @@ def api_ask():
                                    pinned=body.get("pinned")))
 
 
+def _resolve_doc_fname(course, doc):
+    """Map a doc identifier — a stored filename, or a display/citation title like
+    '[Course] Name — Author — p.N' — to the stored filename in the course folder."""
+    if not doc:
+        return None
+    pdf_dir, _ = course_paths(course)
+    if os.path.exists(os.path.join(pdf_dir, doc)):
+        return doc
+    dl = doc.strip()
+    dl = re.sub(r"\s+—\s+p\.?\s*[0-9ivxlcdm].*$", "", dl, flags=re.I)   # drop trailing ' — p.N'
+    dl = re.sub(r"^\s*\[[^\]]*\]\s*", "", dl).strip().lower()            # drop leading '[Course]'
+    try:
+        files = os.listdir(pdf_dir)
+    except Exception:
+        files = []
+    for f in files:                                    # exact display-name match
+        if display_name(f).strip().lower() == dl:
+            return f
+    for f in files:                                    # then substring
+        if dl and dl in display_name(f).strip().lower():
+            return f
+    return None
+
+
+@app.route("/api/source/page", methods=["GET"])
+def api_source_page():
+    """Return the EXACT source page behind a citation — a rendered image of the PDF page (so the
+    reader sees the real statute page, NotebookLM-style), or the page text for a converted doc.
+    `page` is the LABEL as cited (e.g. '312'); we map it back to the physical sheet via page_label."""
+    course = safe_course(request.args.get("course", ""))
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    doc = request.args.get("doc", "") or ""
+    label = (request.args.get("page", "") or "").strip()
+    lab_norm = label.lstrip("0").lower() or label.lower()
+    pdf_dir, _ = course_paths(course)
+    fname = _resolve_doc_fname(course, doc)
+    if not fname:
+        return jsonify({"error": "Source not found in this course: " + doc[:80]}), 404
+    path = os.path.join(pdf_dir, fname)
+    if not os.path.exists(path):
+        return jsonify({"error": "File missing on the server."}), 404
+    if fname.lower().endswith(".pdf"):
+        try:
+            d = fitz.open(path)
+            npages = len(d)
+            target = None
+            for i in range(npages):
+                if str(page_label(path, fname, i + 1)).strip().lstrip("0").lower() == lab_norm:
+                    target = i
+                    break
+            if target is None:                          # fall back: treat the digits as a physical sheet
+                m = re.sub(r"\D", "", label)
+                if m and 1 <= int(m) <= npages:
+                    target = int(m) - 1
+            if target is None:
+                target = 0
+            pix = d[target].get_pixmap(matrix=fitz.Matrix(1.8, 1.8))   # ~130 DPI, crisp but not huge
+            png = pix.tobytes("png")
+            d.close()
+        except Exception as e:
+            return jsonify({"error": "Couldn't render the page: " + str(e)[:80]}), 200
+        import base64
+        return jsonify({"kind": "image", "doc": display_name(fname), "label": label,
+                        "physical": target + 1, "pages": npages,
+                        "image": "data:image/png;base64," + base64.b64encode(png).decode()})
+    # converted text / docx — return the page's text (matched by its displayed label)
+    try:
+        if fname.lower().endswith(".docx"):
+            import docx
+            text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+        else:
+            text = open(path, encoding="utf-8", errors="ignore").read()
+    except Exception as e:
+        return jsonify({"error": str(e)[:100]}), 200
+    hit = None
+    for lab, ptext in _paginate_text(text):
+        disp = page_label(path, fname, lab) if (lab and str(lab).isdigit()) else lab
+        if str(disp).strip().lstrip("0").lower() == lab_norm or str(lab).strip().lstrip("0").lower() == lab_norm:
+            hit = ptext
+            break
+    return jsonify({"kind": "text", "doc": display_name(fname), "label": label,
+                    "text": (hit or "(couldn't locate that exact page in the converted text)").strip()[:20000]})
+
+
 @app.route("/api/cases", methods=["POST"])
 def api_cases():
     """Find DECIDED cases that can be applied to the question — each verified by
