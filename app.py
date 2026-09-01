@@ -6585,6 +6585,7 @@ def api_audit():
     # verify passes verify_model="haiku" — a cheap second Haiku that catches the high-frequency
     # mechanical errors (wrong pinpoint, ungrounded citation, non-verbatim quote) at source.
     _audit_model = HAIKU_MODEL if str(body.get("verify_model", "")).lower() == "haiku" else ANSWER_MODEL
+    _data_sheet = bool(body.get("data_sheet"))   # auditing a GATHER data sheet — keep it data-only
 
     # 1) extract the checkable authority-claims
     try:
@@ -6893,16 +6894,28 @@ def api_audit():
                        "Touch NOTHING else: keep every other sentence, authority, figure, argument, "
                        "conclusion and the style verbatim. Do NOT add new authorities. Return ONLY "
                        "the corrected answer text — no preamble, no notes.\n\n" + KEEP_LAW_MARKERS)
+            if _data_sheet:
+                sys_fix += ("\n\nTHIS IS A GATHER DATA SHEET, NOT AN ANSWER. Preserve EXACTLY its "
+                            "headings and structure (## Issue / ## Rule / ## Cases / ## Scholarly & "
+                            "secondary / ## Comparative). Correct/remove ONLY citations. Do NOT add an "
+                            "Application, Conclusion, Assessment, Analysis or ANY prose section, do NOT "
+                            "run the facts through the law, and do NOT turn it into an answer — it stays "
+                            "a data sheet of verified law.")
             try:
                 # auto-continue: a long (calc-heavy) answer must be reproduced WHOLE, or the truncated
                 # 'corrected' text cascades into the calibrate step as a cut-off document.
                 corrected = _create_completing(
-                    c, ANSWER_MODEL, sys_fix,
+                    c, _audit_model, sys_fix,
                     "ANSWER:\n" + answer + "\n\nFIX (correct these):\n"
                     + json.dumps(fixes) + "\n\nREMOVE (cut these):\n" + json.dumps(drops),
                     max_tokens=8000, max_conts=4).strip()
             except Exception:
                 corrected = None
+            # DETERMINISTIC GUARANTEE: even if the fix rewrite slipped an Application/Conclusion
+            # back in, cut it — a gather stays a data sheet (this is the bypass that reintroduced
+            # 'Application under gather' after the verify step).
+            if _data_sheet and corrected:
+                corrected = _tidy_gather_markdown(_strip_gather_analysis(corrected))
         result["corrected"] = corrected
         result["fixed_count"] = len(flagged)
         result["removed_count"] = len(removed)

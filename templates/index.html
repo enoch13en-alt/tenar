@@ -3035,7 +3035,7 @@ async function verifyIssue(i) {
   const original = it.answer;
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, verify_model: "haiku"})});
+      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, verify_model: "haiku", data_sheet: true})});
     const d = await r.json();
     if (d && !d.error) {
       it._audited = true;
