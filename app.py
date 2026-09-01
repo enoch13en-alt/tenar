@@ -2101,9 +2101,34 @@ GROUNDED_CITATIONS = (
     "A fabricated or misattributed citation is a serious error — worse than leaving the point out."
 )
 
-# Fold grounded-citation discipline into CITATION_INTEGRITY so EVERY path that uses it
-# (gather, answer, compile, chat) inherits the anti-fabrication rule.
-CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + GROUNDED_CITATIONS
+AUTHORITY_PRECISION = (
+    "AUTHORITY PRECISION — MATCH EACH PROPOSITION TO THE PROVISION THAT ACTUALLY CONTAINS IT.\n"
+    "- Do NOT attribute a power, test or criterion to a section unless that section's OWN WORDS in "
+    "the materials contain it. Adjacent provisions do DIFFERENT work — grant of a right, SUSPENSION "
+    "/variation where the resource is insufficient, TERMINATION/limitation for a public purpose, "
+    "remedy for BREACH of conditions, and POLLUTION are typically SEPARATE sections; never fold one "
+    "section's test into another. If you cite s.X for a proposition, the quoted words of s.X must "
+    "support it — otherwise cite the correct section or drop the claim.\n"
+    "- Do NOT convert a CONDITIONAL or DISCRETIONARY provision into an ABSOLUTE rule. 'where the "
+    "Commission considers…', 'may', 'shall be guided by' create a TRIGGER or a DISCRETION, not an "
+    "automatic or ranked entitlement. Do not write 'no permit can issue without X' or 'A ranks "
+    "above B' unless the text says exactly that; state the trigger/discretion instead.\n"
+    "- STATE THE EXCEPTIONS. A general requirement/prohibition in the materials usually has "
+    "statutory exceptions (e.g. a domestic-use or small-use exemption). A categorical claim that "
+    "ignores an on-point exception is an error — carry the exception.\n"
+    "- USE THE CURRENT ENACTMENT. Where the materials contain a later Act that repeals/replaces an "
+    "earlier one (a 2025 Act replacing a 1994 Act; a renamed body), analyse under the CURRENT one, "
+    "name it, and note the repeal — never reason under the superseded regime when the live one is "
+    "in the materials.\n"
+    "- Keep RULE → DISCRETION → EVIDENCE → CONCLUSION distinct. State the rule, note the "
+    "discretion/trigger, weigh the evidence, then conclude. Do not dress advocacy ('practically "
+    "unanswerable', 'plainly unlawful', 'must be preserved') as the statutory rule unless a "
+    "provision or permit condition in the materials makes it so."
+)
+
+# Fold grounded-citation + authority-precision discipline into CITATION_INTEGRITY so EVERY path
+# that uses it (gather, answer, compile, chat) inherits the anti-fabrication + precision rules.
+CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + GROUNDED_CITATIONS + "\n\n" + AUTHORITY_PRECISION
 
 RECENCY_PREFERENCE = (
     "SOURCE RECENCY — each source carries an APPROXIMATE date signal for judging how recent it "
@@ -2241,7 +2266,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "15"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "16"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
