@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "28"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "29"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3844,6 +3844,32 @@ def search_in_docs(course, query, docs, k_per=8):
     return _with_neighbors(idx["chunks"], keep)
 
 
+ARRANGEMENTS = {}   # (course, fname) -> arrangement text or None (cached)
+def arrangement_text(course, fname):
+    """The instrument's own 'ARRANGEMENT OF SECTIONS/REGULATIONS' — a topic→exact-number contents
+    map. Feeding this to the model lets it CITE THE CORRECT section/regulation number for a topic
+    from the document's own index, instead of guessing. Returns the arrangement text or None."""
+    key = (course, fname)
+    if key in ARRANGEMENTS:
+        return ARRANGEMENTS[key]
+    out = None
+    try:
+        ensure_loaded(course)
+        idx = INDEXES.get(course)
+        if idx and idx.get("chunks"):
+            for ch in idx["chunks"]:
+                if ch.get("doc") != fname:
+                    continue
+                t = ch.get("text", "") or ""
+                if re.search(r"ARRANGEMENT\s+OF\s+(SECTIONS|REGULATIONS)", t, re.I):
+                    out = t[:4000]
+                    break
+    except Exception:
+        out = None
+    ARRANGEMENTS[key] = out
+    return out
+
+
 def auto_pin_primary_hits(course, query, total=16, k_per=4):
     """AUTO-PIN: force the query-most-relevant chunks from the course's PRIMARY-LAW documents
     (constitution / statute / treaty) into context, so the governing provision — with its real
@@ -4446,6 +4472,26 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             res["cost"] = {"this_query_usd": 0.0, "cached": True}
             return res
     content = []
+    # CONTENTS-MAP FIRST (gather): for the DOMESTIC-PRIMARY instruments actually retrieved, prepend
+    # their 'Arrangement of Sections/Regulations' — the topic→exact-number index — so the model
+    # cites the CORRECT section/regulation number for a topic from the instrument's own contents,
+    # not from memory. Capped to the few most relevant so it can't flood the window.
+    if mode == "gather":
+        _seen_arr, _n_arr = set(), 0
+        for ch in retrieved:
+            d = ch.get("doc", "")
+            if d in _seen_arr or _source_tier_weight(d) < 1.0:   # domestic primary only
+                continue
+            _seen_arr.add(d)
+            arr = arrangement_text(ch.get("_course", courses[0]), d)
+            if arr:
+                content.append({"type": "text", "text": (
+                    "[CONTENTS MAP — " + display_name(d) + ": the instrument's own Arrangement of "
+                    "Sections/Regulations (topic → exact number). USE THIS to cite the CORRECT "
+                    "section/regulation number for a topic; do not guess a number.]\n\n" + arr)})
+                _n_arr += 1
+            if _n_arr >= 3:
+                break
     for ch in retrieved:
         # resolve the PDF folder per chunk — in multi-course search each chunk
         # carries its own `_course`; single-course chunks fall back to courses[0]
