@@ -2235,16 +2235,29 @@ function examCourses() {
 function renderExamCourses() {
   const list = $("#examCoursesList"); if (!list) return;
   if (!EXAM_COURSES) EXAM_COURSES = [COURSE];
-  list.innerHTML = ALL_COURSES.map(c =>
-    '<label style="display:block;margin:2px 0;cursor:pointer">'
-    + '<input type="checkbox" class="examCourseCb" value="' + esc(c) + '"'
-    + (EXAM_COURSES.includes(c) ? " checked" : "") + '> ' + esc(c) + '</label>').join("");
+  const allOn = ALL_COURSES.length && ALL_COURSES.every(c => EXAM_COURSES.includes(c));
+  list.innerHTML =
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    + '<button type="button" class="btn ' + (allOn ? 'gold' : 'alt') + ' mini" id="examAllCourses" '
+    + 'style="width:auto" title="Search EVERY course you have, so a cross-cutting problem pulls law '
+    + 'from any paper without you ticking each one.">✓ All my courses</button>'
+    + '<button type="button" class="btn alt mini" id="examThisCourse" style="width:auto" '
+    + 'title="Reset to just the current course.">Just this course</button>'
+    + '</div>'
+    + ALL_COURSES.map(c =>
+      '<label style="display:block;margin:2px 0;cursor:pointer">'
+      + '<input type="checkbox" class="examCourseCb" value="' + esc(c) + '"'
+      + (EXAM_COURSES.includes(c) ? " checked" : "") + '> ' + esc(c) + '</label>').join("");
   list.querySelectorAll(".examCourseCb").forEach(cb => cb.onchange = () => {
     EXAM_COURSES = Array.from(list.querySelectorAll(".examCourseCb"))
       .filter(x => x.checked).map(x => x.value);
     if (!EXAM_COURSES.length) { EXAM_COURSES = [COURSE]; renderExamCourses(); }
     updateExamCourseLabel();
   });
+  const allBtn = $("#examAllCourses");
+  if (allBtn) allBtn.onclick = () => { EXAM_COURSES = ALL_COURSES.slice(); renderExamCourses(); };
+  const thisBtn = $("#examThisCourse");
+  if (thisBtn) thisBtn.onclick = () => { EXAM_COURSES = [COURSE]; renderExamCourses(); };
   updateExamCourseLabel();
 }
 function updateExamCourseLabel() {
