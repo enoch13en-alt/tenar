@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "29"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "30"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3845,10 +3845,26 @@ def search_in_docs(course, query, docs, k_per=8):
 
 
 ARRANGEMENTS = {}   # (course, fname) -> arrangement text or None (cached)
+_ARR_HEADER = re.compile(r"ARRANGEMENT\s+OF\s+(SECTIONS|REGULATIONS)|TABLE\s+OF\s+CONTENTS", re.I)
+_ARR_ENTRY = re.compile(r"^\s*\d{1,4}[A-Z]?\s*[.)\-—:]?\s+\S")   # a "12. Heading" arrangement line
+
+def _looks_like_arrangement(text):
+    """True if a chunk is mostly numbered arrangement/contents entries (not body prose)."""
+    lines = [l for l in (text or "").splitlines() if l.strip()]
+    if len(lines) < 3:
+        return False
+    entries = sum(1 for l in lines if _ARR_ENTRY.match(l))
+    return entries / len(lines) >= 0.35
+
 def arrangement_text(course, fname):
-    """The instrument's own 'ARRANGEMENT OF SECTIONS/REGULATIONS' — a topic→exact-number contents
-    map. Feeding this to the model lets it CITE THE CORRECT section/regulation number for a topic
-    from the document's own index, instead of guessing. Returns the arrangement text or None."""
+    """The instrument's OWN contents map — 'Arrangement of Sections/Regulations' (or Table of
+    Contents) — a topic→exact-number index. Feeding this to the model lets it cite the CORRECT
+    section/regulation number for a topic from the document itself, instead of guessing.
+
+    STITCHED across chunks: a long Act's arrangement spans several chunks, so we start at the
+    'Arrangement' header and keep appending the document's subsequent chunks while they still look
+    like a numbered contents list, stopping once the Act's BODY prose begins — so the whole map is
+    captured, not just the first page. Returns the (possibly multi-chunk) arrangement text or None."""
     key = (course, fname)
     if key in ARRANGEMENTS:
         return ARRANGEMENTS[key]
@@ -3856,14 +3872,26 @@ def arrangement_text(course, fname):
     try:
         ensure_loaded(course)
         idx = INDEXES.get(course)
-        if idx and idx.get("chunks"):
-            for ch in idx["chunks"]:
-                if ch.get("doc") != fname:
+        chunks = (idx or {}).get("chunks") or []
+        pos = [i for i, ch in enumerate(chunks) if ch.get("doc") == fname]   # this doc, in order
+        start = next((i for i in pos if _ARR_HEADER.search(chunks[i].get("text", "") or "")), None)
+        if start is not None:
+            parts = [chunks[start].get("text", "") or ""]
+            gap = 0
+            for i in pos:
+                if i <= start:
                     continue
-                t = ch.get("text", "") or ""
-                if re.search(r"ARRANGEMENT\s+OF\s+(SECTIONS|REGULATIONS)", t, re.I):
-                    out = t[:4000]
+                t = chunks[i].get("text", "") or ""
+                if _looks_like_arrangement(t):
+                    parts.append(t)          # a continuation page of the contents list
+                    gap = 0
+                else:
+                    gap += 1
+                    if gap >= 2:             # two non-list chunks in a row → the body has begun
+                        break
+                if sum(len(p) for p in parts) > 24000:   # generous ceiling — full map, bounded
                     break
+            out = "\n".join(parts)[:24000]
     except Exception:
         out = None
     ARRANGEMENTS[key] = out
@@ -5417,8 +5445,12 @@ def api_admin_pagecheck():
             "head": lines[:2],
             "tail": lines[-2:],
         })
+    _arr = arrangement_text(course, d) or ""
     return jsonify({"course": course, "doc": d, "display": display_name(d),
-                    "mapping": _mapping(d), "sample_chunks": samples})
+                    "mapping": _mapping(d), "sample_chunks": samples,
+                    "arrangement_chars": len(_arr),
+                    "arrangement_max_num": max([int(n) for n in re.findall(r"(?m)^\s*(\d{1,4})[A-Z]?\s*[.)\-—:]", _arr)] or [0]),
+                    "arrangement_tail": _arr[-400:]})
 
 
 @app.before_request
