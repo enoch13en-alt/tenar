@@ -3019,6 +3019,33 @@ function priorRulesLedger(uptoIndex) {
   return parts.join("\n\n———\n\n");
 }
 
+// VERIFY-AT-GATHER: as soon as an issue is gathered, check its authorities against the corpus
+// (Opus, all scanned courses), correct wrong pinpoints and cut ungrounded claims AT SOURCE, and
+// store the report on the issue. The compile then works from LAW THAT IS ALREADY VERIFIED — so
+// errors are fixed where they arise, not patched after the whole document is built.
+async function verifyIssue(i) {
+  const it = EXAM.issues[i];
+  const a = (it && it.answer || "").trim();
+  if (!a || a.startsWith("Error") || /^⚠/.test(a)) return;   // don't audit a block/error message
+  const original = it.answer;
+  try {
+    const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, strict: true})});
+    const d = await r.json();
+    if (d && !d.error) {
+      it._audited = true;
+      it._audit = d.items || [];
+      it._autoFixed = d.fixed_count || 0;
+      it._autoRemoved = d.removed_count || 0;
+      it._removed = d.removed || [];
+      if (d.corrected && (d.fixed_count || d.removed_count)) {
+        it._auditOriginal = original;
+        it.answer = d.corrected; it.answer_annotated = "";   // fix at source (chips drop on a corrected issue)
+      }
+    }
+  } catch (e) { if (!it._audit) it._audit = []; }
+}
+
 async function gatherIssue(i) {
   const it = EXAM.issues[i];
   if (it.loading || it.done) return;          // ignore repeat clicks
@@ -3071,6 +3098,13 @@ async function gatherIssue(i) {
       it.sources = r.sources || [];
       it.done = !!it.answer.trim();              // only 'done' on a real answer
       if (r.cost && !r.cost.cached) EXAM.cost = (EXAM.cost || 0) + (r.cost.this_query_usd || 0);
+      // VERIFY-AT-GATHER: check this issue's authorities against the corpus and fix at source, so
+      // the compile gets verified law. Best-effort; never blocks the gathered answer.
+      if (it.done) {
+        $("#examStatus").textContent = "🔍 Verifying issue " + (it.n||i+1) + "'s authorities against your materials…";
+        renderExam();
+        await verifyIssue(i);
+      }
       $("#examStatus").textContent = "Exam session cost so far $" + (EXAM.cost || 0).toFixed(4);
     }
   } catch (e) {
@@ -3501,7 +3535,7 @@ async function auditAndFixIssue(i) {
   const col = v => ({supported:"#7fdca0",misattributed:"#e0b050",contradicted:"#e88",unverified:"#8fb4ff"}[v] || "#556");
   try {
     const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true, strict: true})});
+      body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, strict: true})});
     const d = await r.json();
     if (d.error) { if (outEl) outEl.textContent = d.error; if (btn){ btn.disabled=false; btn.textContent="🔍 Audit & fix authorities"; } return; }
     const items = d.items || [];
@@ -3596,7 +3630,7 @@ async function auditFixAll() {
       const original = it.answer;
       try {
         const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({answer: it.answer, courses: [COURSE], fix: true, strict: true})});
+          body: JSON.stringify({answer: it.answer, courses: examCourses(), fix: true, strict: true})});
         const d = await r.json();
         it._audited = true;                             // answer is now verified
         it._audit = d.items || [];                      // FULL report for every issue (passed + flagged)

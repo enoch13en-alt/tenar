@@ -2336,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "26"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "27"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -11646,7 +11646,18 @@ def api_exam_assemble():
         "a one-line pointer per issue — NOT a finished analysis. YOUR JOB IS THE SUBSTANTIVE WRITING: "
         "take that data and WRITE the full analysis — apply the law's operative words to the scenario's "
         "facts step by step, develop the reasoning, deploy the cases and comparative material, and "
-        "reach conclusions. Do NOT merely stitch the gathered notes together; expand them into ONE "
+        "reach conclusions. "
+        "CITE ONLY THE GATHERED, VERIFIED AUTHORITIES — THIS IS ABSOLUTE. The per-issue material below "
+        "has been VERIFIED against the corpus; its provisions, PINPOINTS (section/regulation/article "
+        "numbers), cases and sources are the checked record. You may cite ONLY those authorities, and "
+        "you must carry each PINPOINT EXACTLY as the gathered material gives it. Do NOT introduce a "
+        "section/regulation/article number, case, or source that is not in the gathered material, and "
+        "NEVER change a gathered pinpoint to a different number — not even if you 'recall' another one "
+        "(that is precisely how a correct s.22 becomes a wrong s.15). If the analysis seems to need an "
+        "authority the gather did not supply, say so plainly ('no provision in the gathered material "
+        "addresses X') rather than inventing one. Every citation in your prose and footnotes must trace "
+        "to the gathered, verified data. "
+        "Do NOT merely stitch the gathered notes together; expand them into ONE "
         "coherent, well-structured, argued legal answer that flows as a single piece (not stapled "
         "blocks; remove repetition). "
         "MODEL THE FLOW BETWEEN ISSUES — they are NOT independent. Resolve any "
