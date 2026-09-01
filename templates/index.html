@@ -2485,7 +2485,7 @@ async function auditCompiled() {
 async function finishPipeline() {
   // Compile only. Button state is managed by the caller (runFullPipeline) so it stays disabled
   // through the citation-verify step that follows.
-  await compileExam();
+  await compileExam(false);   // pipeline finalizes itself (step ④) — don't double-finalize here
   if (!EXAM.doc) { $("#examStatus").textContent = "Compile didn't finish."; return; }
 }
 
@@ -2725,7 +2725,7 @@ function renderExam() {
     });
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
   const gc = $("#gatherCore"); if (gc) gc.onclick = gatherCore;
-  const cp = $("#examCompile"); if (cp) cp.onclick = compileExam;
+  const cp = $("#examCompile"); if (cp) cp.onclick = () => compileExam(true);
   const cs = $("#examConsistency"); if (cs) cs.onclick = runConsistency;
   scheduleSave();                 // persist the run after every render (debounced)
 }
@@ -3645,7 +3645,11 @@ async function applyIssueConsistency(i, conflicts, flags) {
     renderExam();
   } catch (e) { flags.innerHTML = "Error — try again."; }
 }
-async function compileExam() {
+async function compileExam(finalize) {
+  // finalize (default true): after compiling, automatically run the citation audit + language
+  // calibration so a manual 🧬 Synthesise finishes just like Auto-run. The pipeline passes false
+  // because it runs its own finalize step (so it never happens twice).
+  if (finalize === undefined) finalize = true;
   const done = EXAM.issues.filter(it => it.done && it.answer);
   if (!done.length) { $("#examStatus").textContent = "Gather at least one issue first."; return; }
   const btn = $("#examCompile");
@@ -3730,26 +3734,41 @@ async function compileExam() {
   docEl.innerHTML = mdToHtml(document);
   EXAM.doc = document; saveExam();           // expose the compiled text for the pipeline
   EXAM.cost = (EXAM.cost || 0) + (meta.cost ? (meta.cost.this_usd || 0) : 0);
-  // Cost figures are owner-only; a normal user just sees that it compiled.
-  $("#examStatus").textContent = (meta.cost && PLAN && PLAN.is_admin)
-    ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $"
-       + EXAM.cost.toFixed(4) + " · total spent $" + meta.cost.total_usd)
-    : "Compiled.";
   renderExportBar(docEl, document, "Exam answer",
     EXAM.question ? EXAM.question.split('\n')[0].slice(0,90) : "");
-  // Page/word feedback ONLY — no automatic reshape (that was a silent per-run cost). If a target was
-  // set, show the estimated page count so you can decide whether to click 🎚️ Fit yourself.
+  // AUTO-FINISH: verify citations against the corpus + calibrate the language — same finishing the
+  // Auto-run does — so gathering issue-by-issue and clicking 🧬 Synthesise yields an already
+  // audited + calibrated document. Skipped only when the pipeline calls us (it finalizes itself).
+  let _finMsg = "";
+  if (finalize) {
+    if (btn) { btn.disabled = true; btn.textContent = "🔒 Verifying & calibrating…"; }
+    $("#examStatus").textContent = "🔍 Verifying every authority against your materials, then calibrating the language…";
+    const fin = await auditCompiled();       // audit+fix then calibrate; re-renders + rebuilds export bar
+    if (btn) { btn.disabled = false; btn.textContent = "Compile final document"; }
+    const bits = [];
+    if (fin && fin.fixed) bits.push("🔧 " + fin.fixed + " corrected");
+    if (fin && fin.removed) bits.push("🗑️ " + fin.removed + " cut");
+    if (fin && fin.cal) bits.push("🎚 " + fin.cal + " calibration(s)");
+    _finMsg = " · citations verified + language calibrated" + (bits.length ? " (" + bits.join(" · ") + ")" : "");
+  }
+  // Cost figures are owner-only; a normal user just sees that it compiled (+ what the finish did).
+  $("#examStatus").textContent = ((meta.cost && PLAN && PLAN.is_admin)
+    ? ("Compiled with " + (meta.model || "Opus 4.8") + " · THIS EXAM SESSION cost $" + EXAM.cost.toFixed(4))
+    : "Compiled.") + _finMsg;
+  // Page/word feedback ONLY — no automatic reshape (that was a silent per-run cost). Computed on the
+  // FINAL (audited + calibrated) text. If a target was set, show the estimate so you can 🎚️ Fit.
   const _pg = parseInt(($("#pageLimit")||{}).value) || 0;
   const _wd = parseInt(($("#wordLimit")||{}).value) || 0;
   if (_pg || _wd) {
+    const _finalDoc = EXAM.doc || document;
     const _size = parseInt(($("#docFontSize")||{}).value) || 12, _sp = parseFloat(($("#docSpacing")||{}).value) || 1.5;
     const _base = _sp >= 2 ? 280 : _sp >= 1.5 ? 350 : 500;
     const _wpp = Math.max(120, Math.round(_base * Math.pow(12/_size, 2)));
-    const bodyOnly = document.split(/\n\s*#*\s*(?:Footnotes|Endnotes|Bibliography|Table of)/i)[0];
+    const bodyOnly = _finalDoc.split(/\n\s*#*\s*(?:Footnotes|Endnotes|Bibliography|Table of)/i)[0];
     const bodyW = bodyOnly.split(/\s+/).filter(Boolean).length;
     const estP = (bodyW/_wpp).toFixed(1), tgtP = _pg || (_wd/_wpp).toFixed(1);
-    $("#examStatus").textContent = "Compiled ≈ " + estP + " pages (target " + tgtP + "). "
-      + (Math.abs(estP - tgtP) > 0.6 ? "Click 🎚️ Fit to land the target exactly." : "On target.");
+    $("#examStatus").textContent += " · ≈ " + estP + " pages (target " + tgtP + "). "
+      + (Math.abs(estP - tgtP) > 0.6 ? "Click 🎚️ Fit to land it." : "On target.");
   }
 }
 
