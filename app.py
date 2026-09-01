@@ -2084,6 +2084,27 @@ CONVERSATIONAL = (
     "reader can always ask you to go deeper, open Exam Coach, or Deepen a point."
 )
 
+GROUNDED_CITATIONS = (
+    "CITE ONLY WHAT IS IN THE PROVIDED DOCUMENTS — ABSOLUTE. Every source you name — statute, "
+    "case, author, article, book, report, page number or year — MUST physically appear in the "
+    "documents supplied in THIS request. If it is not in those documents you may NOT cite it, "
+    "quote it, or attribute anything to it, even if you are sure it exists or recall it from "
+    "general knowledge. Specific traps:\n"
+    "- A NAME in a course outline, reading list or syllabus (e.g. the LECTURER) is NOT a source. "
+    "Do NOT cite that person's articles/books unless the actual work is among the provided "
+    "documents. Never turn 'the lecturer is Dr X' into 'X (Some Article, 20XX, p.36) says…'. "
+    "That is fabrication, however real the scholar is.\n"
+    "- Do NOT supply a title, year or page number from memory to make a citation look complete.\n"
+    "- If a point needs a secondary source and NONE of the provided documents supports it, write "
+    "'⚠ no secondary source in the materials on this point' — do NOT fill the gap from memory. "
+    "Use the secondary sources you DO have, by their real names as shown in the document titles.\n"
+    "A fabricated or misattributed citation is a serious error — worse than leaving the point out."
+)
+
+# Fold grounded-citation discipline into CITATION_INTEGRITY so EVERY path that uses it
+# (gather, answer, compile, chat) inherits the anti-fabrication rule.
+CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + GROUNDED_CITATIONS
+
 RECENCY_PREFERENCE = (
     "SOURCE RECENCY — each source carries an APPROXIMATE date signal for judging how recent it "
     "is. That signal is INTERNAL: never cite it as a publication year — put a year in a citation "
@@ -2220,7 +2241,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "14"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "15"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
