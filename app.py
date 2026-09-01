@@ -2205,7 +2205,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "10"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "11"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -2729,22 +2729,40 @@ def _to_roman(n):
 def _detect_numbering(d):
     """For PDFs with no embedded labels: read the page number printed in each
     page's header/footer to recover BOTH schemes — arabic (body) and roman
-    (front matter). Returns (arabic_offset, roman_offset, body_start_physical)."""
+    (front matter). Returns (arabic_offset, roman_offset, body_start_physical).
+
+    offset = physical_page - printed_page. It may be NEGATIVE: a chapter EXTRACT
+    whose physical page 31 is the book's printed page 310 has offset 31-310 = -279.
+    (The old code required printed<=physical, so it silently rejected extracts and
+    fell back to the physical page — the '310 shown as 31' bug.)"""
     from collections import Counter
     ar, ro = Counter(), Counter()
     for i in range(len(d)):
         lines = [l.strip() for l in d[i].get_text("text").splitlines() if l.strip()]
-        for l in (lines[:2] + lines[-2:]):
-            if re.fullmatch(r"\d{1,4}", l):
+        for l in (lines[:2] + lines[-2:]):        # only the running header / footer
+            if re.fullmatch(r"\d{1,5}", l):
                 n = int(l)
-                if 0 < n <= (i + 1):
-                    ar[(i + 1) - n] += 1
-            elif re.fullmatch(r"(?i)[ivxlc]{1,6}", l):
+                if 0 < n <= 20000:                # any plausible printed page number (extracts allowed)
+                    ar[(i + 1) - n] += 1          # offset can be negative
+            elif re.fullmatch(r"(?i)[ivxlcdm]{1,7}", l):
                 v = _from_roman(l)
-                if v and 0 < v <= (i + 1):
+                if v and 0 < v <= 400:
                     ro[(i + 1) - v] += 1
-    off_a = ar.most_common(1)[0][0] if ar and ar.most_common(1)[0][1] >= 2 else None
-    off_r = ro.most_common(1)[0][0] if ro and ro.most_common(1)[0][1] >= 2 else None
+
+    def _winner(counter):
+        # Trust an offset only if enough pages agree AND it clearly dominates any other
+        # value — so a stray year/footnote number in a header can't set a bogus offset.
+        if not counter:
+            return None
+        top = counter.most_common(2)
+        best_off, best_n = top[0]
+        runner = top[1][1] if len(top) > 1 else 0
+        if best_n >= 3 and best_n >= 2 * runner:
+            return best_off
+        return None
+
+    off_a = _winner(ar)
+    off_r = _winner(ro)
     body_start = (off_a + 1) if off_a is not None else None
     return (off_a, off_r, body_start)
 
