@@ -1037,8 +1037,63 @@ function mdToHtml(raw){
   html = html.replace(/【\s*FILL:\s*([\s\S]*?)】/g, function(_, inner){
     return '<mark class="fillgap" style="background:#4a3410;color:#f4cf8a;padding:0 5px;border-radius:3px;font-size:.9em;font-weight:600">🔎 FILL: ' + inner.trim() + '</mark>';
   });
+  // Source chips: a citation marker 【Title — p.N】 becomes a clickable "📄 p.N" chip that opens
+  // the EXACT source page (NotebookLM-style). Runs AFTER FILL, so FILL markers are already gone.
+  html = html.replace(/【\s*([^【】]+?)\s+—\s+p\.?\s*([0-9ivxlcdmIVXLCDM][0-9ivxlcdmIVXLCDM().\-]*)\s*】/g, function(_, title, pg){
+    var t = title.trim(); if (/^FILL:/i.test(t)) return _;
+    var da = t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<button class="srcChip" data-doc="' + da + '" data-page="' + String(pg).trim() + '" '
+      + 'title="View this exact page from ' + da + '" '
+      + 'style="display:inline-flex;align-items:center;gap:3px;background:#152033;color:#8fb4ff;'
+      + 'border:1px solid #26364f;border-radius:10px;padding:0 7px;font-size:10.5px;line-height:1.7;'
+      + 'cursor:pointer;margin:0 2px;vertical-align:baseline">📄 p.' + String(pg).trim() + '</button>';
+  });
   return html;
 }
+// Open the exact source page behind a citation — a rendered image of the real PDF page (or the
+// page text for a converted doc). Tries each course the exam is scanning until the doc resolves.
+async function viewSourcePage(doc, page){
+  let modal = document.getElementById("srcPageModal");
+  if (!modal){
+    modal = document.createElement("div"); modal.id = "srcPageModal";
+    modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px";
+    modal.innerHTML = '<div style="background:#0f131b;border:1px solid #2a3344;border-radius:10px;max-width:920px;width:100%;max-height:92vh;overflow:auto;padding:12px;position:relative">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">'
+      + '<div id="srcPageTitle" style="font-size:13px;color:#c9a86a;font-weight:600"></div>'
+      + '<button id="srcPageClose" class="btn alt mini" style="width:auto">✕ Close</button></div>'
+      + '<div id="srcPageBody" style="font-size:12px;color:#cdd5e6"></div></div>';
+    document.body.appendChild(modal);
+    modal.onclick = e => { if (e.target === modal) modal.style.display = "none"; };
+    modal.querySelector("#srcPageClose").onclick = () => modal.style.display = "none";
+  }
+  modal.style.display = "flex";
+  const title = modal.querySelector("#srcPageTitle"), bodyEl = modal.querySelector("#srcPageBody");
+  title.textContent = "📄 " + doc + " — p." + page;
+  bodyEl.innerHTML = '<div style="color:#8b93a7">Loading the exact page…</div>';
+  let list = (typeof examCourses === "function" ? examCourses() : [COURSE]).slice();
+  if (!list.length) list = [COURSE];
+  let data = null;
+  for (const c of list){
+    try {
+      const r = await fetch("/api/source/page?course=" + encodeURIComponent(c)
+        + "&doc=" + encodeURIComponent(doc) + "&page=" + encodeURIComponent(page));
+      const j = await r.json();
+      if (!j.error){ data = j; break; }
+    } catch (e) {}
+  }
+  if (!data){ bodyEl.innerHTML = '<div style="color:#e0a05a">Couldn\'t load that page — the document may not be in the selected course(s). Tick ✓ All my courses and try again.</div>'; return; }
+  title.textContent = "📄 " + data.doc + " — p." + data.label
+    + (data.physical ? (' · PDF sheet ' + data.physical + '/' + data.pages) : '');
+  if (data.kind === "image"){
+    bodyEl.innerHTML = '<img src="' + data.image + '" style="max-width:100%;display:block;border:1px solid #2a3344;border-radius:6px">';
+  } else {
+    bodyEl.innerHTML = '<pre style="white-space:pre-wrap;font:12px/1.55 ui-monospace,Menlo,monospace;background:#0b0e14;color:#c4cdda;padding:10px;border-radius:6px;border:1px solid #2a3344;margin:0">' + esc(data.text || "") + '</pre>';
+  }
+}
+document.addEventListener("click", e => {
+  const b = (e.target.closest ? e.target.closest(".srcChip") : null);
+  if (b){ e.preventDefault(); viewSourcePage(b.dataset.doc, b.dataset.page); }
+});
 // Remove the ⟦LAW⟧ markers but KEEP the law inline — for copy, compile and export, so the verbatim
 // provision flows into the formal document rather than a literal marker.
 function stripLawTags(t){ return (t || "").replace(/⟦LAW⟧|⟦\/LAW⟧/g, ""); }
@@ -2654,7 +2709,10 @@ function renderExam() {
       let body;
       if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
       else if (it.answer) {
-        body = '<div class="ans" style="white-space:normal">'+mdToHtml(it.answer)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
+        // Render the ANNOTATED text when available (it carries the 【Title — p.N】 citation markers
+        // that mdToHtml turns into clickable "📄 p.N" source-page chips); fall back to the clean answer.
+        const _shown = (it.answer_annotated && it.answer_annotated.trim()) ? it.answer_annotated : it.answer;
+        body = '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
           + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
