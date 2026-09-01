@@ -2341,7 +2341,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "35"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "36"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -4768,6 +4768,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "to the compile's prose, NOT in the core Rule for this one. Do NOT list a provision "
                   "just because it was retrieved or is 'related'. A tight set that squarely governs "
                   "beats a long list that buries the point. When in doubt, leave it out.\n"
+                  "STAY IN THE ISSUE'S SUBJECT LANE. Anchor to what THIS question is actually about "
+                  "(e.g. water use and mining regulation) and do NOT import rules or framing from an "
+                  "ADJACENT field the question does not turn on — land tenure, customary LAND "
+                  "ownership, general property law — even when a retrieved source discusses them "
+                  "alongside the point. Many sources here mix land AND water (land-acquisition and "
+                  "'land and water rights' pieces); take ONLY the part on the issue's real subject and "
+                  "leave the land-tenure/customary-land material out. If it is about land, it is not "
+                  "this water/mining issue.\n"
                   "Under '## Cases' — ONE bullet per decided case that bears on this issue: '- **Case "
                   "name** (citation exactly as the corpus/articles give it) — one line on what it HELD.' "
                   "Mine the readings for cases they cite — a case named inside an article counts.\n"
