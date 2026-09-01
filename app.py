@@ -6830,7 +6830,8 @@ def api_audit():
                     cx = ctxs.get(i) or ("", None, 0)
                     try:
                         return i, _recheck_verify(c, items[i]["authority"],
-                                                  items[i].get("claim", ""), cx[0], cx[1], cx[2])
+                                                  items[i].get("claim", ""), cx[0], cx[1], cx[2],
+                                                  model=_audit_model)
                     except Exception:
                         return i, None
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -7023,12 +7024,12 @@ def _recheck_context(courses, authority, claim, doc_cache=None, cache_lock=None)
     return ctx, loaded_doc, len(merged)
 
 
-def _recheck_verify(c, authority, claim, ctx, loaded_doc, searched):
+def _recheck_verify(c, authority, claim, ctx, loaded_doc, searched, model=None):
     """Model verify of ONE authority against an already-loaded ctx. Pure API call, no
     shared-state access — SAFE to run in parallel. Returns the verdict dict."""
     try:
         v, _ = _create_final(
-            c, model=ANSWER_MODEL, max_tokens=600,
+            c, model=(model or ANSWER_MODEL), max_tokens=600,
             system=("You re-check ONE legal citation. You are usually given the FULL text of the "
                     "relevant instrument (e.g. the whole Act) — read it closely for the exact "
                     "section/article number, the recipient/party, figures, and any exception. Judge "

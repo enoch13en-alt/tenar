@@ -2568,7 +2568,7 @@ async function auditCompiled() {
   let cur = EXAM.doc, fixed = 0, removed = 0, cal = 0, items = [], quotes = null, calChanges = [];
   try {
     const aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true})})).json();
+      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true, verify_model: "haiku"})})).json();
     if (aud) {
       if (aud.corrected) cur = aud.corrected;
       fixed = aud.fixed_count || 0; removed = aud.removed_count || 0;
