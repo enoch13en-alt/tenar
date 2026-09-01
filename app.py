@@ -2084,6 +2084,19 @@ CONVERSATIONAL = (
     "reader can always ask you to go deeper, open Exam Coach, or Deepen a point."
 )
 
+RECENCY_PREFERENCE = (
+    "SOURCE RECENCY — the materials are DATED (each source is shown with an approximate date). "
+    "When the corpus holds BOTH older and more recent material ON THE SAME POINT, use and cite "
+    "the MOST RECENT one. This matters most for reports, statistics, policy, institutional "
+    "practice, reform proposals and recent decided cases — a 2024 source displaces a 2015 or "
+    "1990s one on the same question. When you rely on older material, STATE its date, and if a "
+    "newer source on the same point may exist, say so plainly rather than presenting the old "
+    "position as current. This is about FACTUAL / EVIDENTIAL currency and choosing between rival "
+    "sources; it does NOT override in-force foundational law — a 1992 constitutional provision or "
+    "a still-live Act remains the governing law even though old (apply the succession rule for "
+    "what is repealed vs in force)."
+)
+
 TEMPORAL_SUCCESSION = (
     "LAW LIVES IN TIME — READ IT DIACHRONICALLY. A legal regime is never a flat pile "
     "of equally-live rules; it is a sequence in which later instruments act on earlier "
@@ -2205,7 +2218,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "12"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "13"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -2699,6 +2712,32 @@ def meta_hint(title):
 LABELS = {}   # fname -> list[str] (printed label per physical page) or None
 OFFSETS = {}  # fname -> int front-matter offset (printed = physical - offset)
 TEXT_OFFSETS = {}  # fname (.txt/.md/.docx) -> int marker offset (printed = marker - offset) or None
+DOC_YEARS = {}  # fname -> int best-guess year (for date-awareness / recency) or None
+
+
+def _year_in(s):
+    """The most plausible 4-digit year (1500..this year) in a string, preferring the LATEST."""
+    if not s:
+        return None
+    now = datetime.date.today().year
+    yrs = [int(y) for y in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", s) if 1500 <= int(y) <= now]
+    return max(yrs) if yrs else None
+
+
+def doc_year(pdf_dir, fname):
+    """Best-guess year for a document: from its display name / filename first, else from its
+    first couple of pages. Cached. Used to make the model date-aware and to nudge recent
+    sources up in retrieval. None when nothing plausible is found."""
+    if fname in DOC_YEARS:
+        return DOC_YEARS[fname]
+    y = _year_in(display_name(fname)) or _year_in(fname)
+    if y is None:
+        try:
+            y = _year_in(first_pages_text(os.path.join(pdf_dir, fname), n=2, limit=3000))
+        except Exception:
+            y = None
+    DOC_YEARS[fname] = y
+    return y
 
 
 def _from_roman(s):
@@ -3427,17 +3466,41 @@ def _index_kw(idx):
         idx["kw"] = [_kw(c.get("text", "")) for c in idx["chunks"]]
     return idx["kw"]
 
+def _index_years(idx):
+    """Per-chunk document year (from the doc's NAME — cheap and deterministic), 0 = unknown.
+    Cached on the captured index. Used for a mild recency nudge in ranking."""
+    if "docyear" not in idx:
+        cache, arr = {}, []
+        for c in idx["chunks"]:
+            d = c.get("doc", "")
+            if d not in cache:
+                cache[d] = _year_in(display_name(d)) or _year_in(d) or 0
+            arr.append(cache[d])
+        idx["docyear"] = np.asarray(arr, dtype=np.float32)
+    return idx["docyear"]
+
 def _blend(sims, idx, query):
-    """Add a lexical boost (fraction of the query's keywords the chunk contains) to
-    the vector similarities, so literal-term matches are not buried. Takes the CAPTURED
-    index dict (not the course name) so index eviction can't race a live search."""
+    """Vector similarity + a lexical boost (query keywords present in the chunk) + a MILD
+    recency nudge (more recent documents surface rather than staying buried under a
+    topically-similar older one). Takes the CAPTURED index dict so eviction can't race a
+    live search. The recency term is small on purpose — it breaks near-ties, it does not
+    override a clearly better match, and it never applies to in-force-vs-superseded law
+    reasoning (that is the model's job via the succession rule)."""
+    out = sims
     qk = _kw(query)
-    if not qk:
-        return sims
-    kw = _index_kw(idx)
-    lex = np.fromiter((len(qk & kw[i]) / len(qk) for i in range(len(kw))),
-                      dtype=np.float32, count=len(kw))
-    return sims + 0.45 * lex
+    if qk:
+        kw = _index_kw(idx)
+        lex = np.fromiter((len(qk & kw[i]) / len(qk) for i in range(len(kw))),
+                          dtype=np.float32, count=len(kw))
+        out = out + 0.45 * lex
+    yrs = _index_years(idx)
+    known = yrs > 0
+    if known.any():
+        ymax, ymin = float(yrs[known].max()), float(yrs[known].min())
+        if ymax > ymin:
+            rec = np.where(known, (yrs - ymin) / (ymax - ymin), 0.0).astype(np.float32)
+            out = out + 0.12 * rec        # up to +0.12 for the newest dated doc; 0 for undated
+    return out
 
 
 def _with_neighbors(chunks, positions, span=1):
@@ -4183,6 +4246,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "text": (f'[The next document is a SECONDARY source — the commentary '
                          f'"{display_name(ch["doc"])}". Attribute its analysis, arguments and '
                          f'characterisations to this author/work by name; it is not primary law.]')})
+        # DATE CUE: make the model aware of THIS source's date so it can prefer the most recent
+        # on-point material (and flag when it relies on older material). Kept out of the citation
+        # title so page/footnote matching downstream is unaffected. Only when a year is known.
+        _yr = doc_year(pdf_dir, ch["doc"])
+        if _yr:
+            content.append({"type": "text",
+                "text": f'[Source date ≈ {_yr}: "{display_name(ch["doc"])}".]'})
         content.append({
             "type": "document",
             "source": {"type": "text", "media_type": "text/plain", "data": ch["text"]},
@@ -4352,7 +4422,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
                   + GRUNDNORM_METHOD + "\n\n" + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
-                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
+                  + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + RECENCY_PREFERENCE + "\n\n" + ARGUMENTATIVE_COMMITMENT + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE
                   + "\n\n" + ECONOMY)
         if FORMATS.get(fmt):
             system = system + "\n\n" + FORMATS[fmt]
@@ -4373,6 +4443,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             "law to the facts, no conclusion, no 'building block' reasoning — just the verified Rule, "
             "Cases, Scholarly and Comparative material. The compile does all the reasoning later.")
         system = system + "\n\n" + SOURCE_COVERAGE   # primary+secondary law, books, cases, comparative
+        system = system + "\n\n" + RECENCY_PREFERENCE  # prefer the most recent on-point source
         if siblings and isinstance(siblings, list):
             n = (issue_index + 1) if isinstance(issue_index, int) else "?"
             system = system + (
