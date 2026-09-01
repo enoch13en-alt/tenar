@@ -2157,6 +2157,11 @@ AUTHORITY_PRECISION = (
     "as the authority for water ownership. When a DIFFERENT instrument in the materials directly "
     "governs the point (e.g. a Water Resources statute for water ownership/control), THAT is the "
     "correct anchor — cite it, not the incidental mention elsewhere.\n"
+    "- THE CONSTITUTION IS NOT A CATCH-ALL. Cite a constitutional article ONLY where a "
+    "constitutional provision DIRECTLY governs the question. For a matter a STATUTE governs "
+    "(water ownership → Act 522; a statutory permit → its regulations), cite the statute, not a "
+    "constitutional article that merely mentions related words. Do not reach for the Constitution "
+    "just because it is high authority.\n"
     "- BE INTERNALLY CONSISTENT ACROSS THE WHOLE DOCUMENT. Do not state a position and then "
     "contradict it later in more polished words. If you say a provision is 'not a rigid hierarchy', "
     "do NOT later say a use has 'statutory precedence'; if you note an instrument is NOT binding on "
@@ -2336,7 +2341,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "32"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "33"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3919,22 +3924,28 @@ def arrangement_text(course, fname):
     return out
 
 
-def auto_pin_primary_hits(course, query, total=16, k_per=4):
-    """AUTO-PIN: force the query-most-relevant chunks from the course's PRIMARY-LAW documents
-    (constitution / statute / treaty) into context, so the governing provision — with its real
-    section number — is always present and the model anchors on it rather than a secondary
-    paraphrase. Bounded by a per-doc cap and a TOTAL cap so off-topic statutes can't flood."""
+def auto_pin_primary_hits(course, query, total=16, k_per=4, floor=0.28):
+    """AUTO-PIN: force the query-RELEVANT provisions from the course's DOMESTIC-PRIMARY STATUTES
+    (Acts / L.I.s) into context, so the governing provision — with its real section number — is
+    present and the model anchors on it rather than a secondary paraphrase. Deliberately does NOT
+    force the CONSTITUTION in: it's a broad instrument that, when blanket-injected, gets misapplied
+    (a minerals/Minerals-Commission article cited for a water question). The Constitution still
+    arrives through NORMAL retrieval when it is genuinely on point. And only chunks whose relevance
+    clears a floor are forced, so an off-topic statute can't be dragged in just for being primary."""
     ensure_loaded(course)
     idx = INDEXES.get(course)
     if not idx or not idx.get("chunks"):
         return []
-    # DOMESTIC primary only (tier 1.0) — pin Act 522 / L.I. 1692 / the Constitution, NOT a treaty.
-    want = [i for i, ch in enumerate(idx["chunks"]) if _source_tier_weight(ch.get("doc", "")) >= 1.0]
+    # domestic-primary STATUTES only — exclude the constitution (see docstring) and treaties
+    want = [i for i, ch in enumerate(idx["chunks"])
+            if _source_tier_weight(ch.get("doc", "")) >= 1.0
+            and display_type(ch.get("doc", "")) != "constitution"]
     if not want:
         return []
     try:
         qv = embed_texts([query])[0]
         sims = idx["emb"] @ qv
+        want = [i for i in want if float(sims[i]) >= floor]   # relevance floor: don't force weak matches
         want.sort(key=lambda i: -float(sims[i]))
     except Exception:
         return []
@@ -4529,7 +4540,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         _seen_arr, _n_arr = set(), 0
         for ch in retrieved:
             d = ch.get("doc", "")
-            if d in _seen_arr or _source_tier_weight(d) < 1.0:   # domestic primary only
+            if d in _seen_arr or _source_tier_weight(d) < 1.0 or display_type(d) == "constitution":   # domestic-primary statutes, not the Constitution
                 continue
             _seen_arr.add(d)
             arr = arrangement_text(ch.get("_course", courses[0]), d)
