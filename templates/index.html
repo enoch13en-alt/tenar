@@ -575,7 +575,7 @@
       </details>
       <button class="btn gold" id="examAuto" style="width:auto" title="LEAN hands-off run (cost-cut): break down → gather every issue (cheap Haiku extraction + Opus writer) → (if ⚖️ on) find & pre-apply cases → compile → verify every citation against the corpus, then calibrate the language — audit + calibrate + Final check now run automatically at the end, so the document comes out grounded and calibrated. Page-fit and case-weaving stay optional. Asks before it starts.">⚡ Auto-run (lean)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
-      <button class="btn alt" id="examClearSaved" style="width:auto" title="Delete the answers saved on this computer for this course, so every issue re-gathers fresh on the latest build. Does NOT touch your uploaded documents or pins.">🗑 Clear saved answers</button>
+      <button class="btn alt" id="examClearSaved" style="width:auto" title="Delete ALL saved answers on this computer, for every course, so everything re-gathers fresh on the latest version. Does NOT touch your uploaded documents or pins.">🗑 Clear ALL saved answers</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
     <details id="ctxWrap" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:8px">
@@ -2421,17 +2421,20 @@ $("#examClose").onclick = () => $("#examModal").style.display = "none";
 // re-gathers fresh on the latest build (old saved gathers keep their old text — they
 // don't re-run themselves). Does NOT touch uploaded documents or pins (separate keys).
 $("#examClearSaved").onclick = () => {
-  if (!COURSE) { alert("Pick a course first."); return; }
-  if (!confirm('Clear the saved answers for "' + COURSE + '"?\n\n'
-    + 'This deletes the gathered issues and compiled document saved on this computer for this course, '
-    + 'so you can re-gather them fresh. Your uploaded documents and pinned sources are NOT affected.\n\n'
+  // Clear the saved answers for EVERY course in one click (no console needed).
+  const keys = Object.keys(localStorage).filter(k => k.indexOf("examRun_") === 0);
+  if (!confirm('Clear ALL saved answers, for every course (' + keys.length + ' saved)?\n\n'
+    + 'This deletes every gathered issue and compiled document saved on this computer, so you start '
+    + 'fresh on the latest version. Your uploaded documents and pinned sources are NOT affected.\n\n'
     + 'This cannot be undone.')) return;
-  try { localStorage.removeItem("examRun_" + COURSE); } catch (e) {}
-  clearTimeout(_saveTimer);              // stop a pending autosave from rewriting the key
-  EXAM = { facts: [], assumptions: [], issues: [], question: ($("#examQ") ? $("#examQ").value : "") };
+  clearTimeout(_saveTimer);              // stop a pending autosave from rewriting a key
+  keys.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  EXAM = { facts: [], assumptions: [], issues: [], question: "" };
+  if ($("#examQ")) $("#examQ").value = "";
   if (typeof renderExam === "function") renderExam();
   const out = $("#examOut"); if (out) out.innerHTML = "";
-  $("#examStatus").textContent = "Saved answers cleared for " + COURSE + " — re-gather to get the latest data-sheet format.";
+  const ar = document.getElementById("examAuditReport"); if (ar) ar.remove();
+  $("#examStatus").textContent = "✅ Cleared all saved answers (" + keys.length + " course(s)). Everything's a clean slate — gather fresh.";
   if (typeof maybeOfferResume === "function") maybeOfferResume();
 };
 
