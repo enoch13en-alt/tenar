@@ -2150,9 +2150,27 @@ AUTHORITY_PRECISION = (
     "guess — a wrong section number reads as sources not independently checked."
 )
 
-# Fold grounded-citation + authority-precision discipline into CITATION_INTEGRITY so EVERY path
-# that uses it (gather, answer, compile, chat) inherits the anti-fabrication + precision rules.
-CITATION_INTEGRITY = CITATION_INTEGRITY + "\n\n" + GROUNDED_CITATIONS + "\n\n" + AUTHORITY_PRECISION
+LEGAL_SELF_CHECK = (
+    "SELF-CHECK EVERY LEGAL-RULE SENTENCE — the guard against confident-but-wrong statutory "
+    "detail (the single most common failure). BEFORE asserting that the law says X, answer three "
+    "questions from the MATERIALS: (1) WHICH exact provision says this — and is that provision's "
+    "own text actually in the materials? (2) Does the section/regulation NUMBER I am about to "
+    "cite MATCH the number shown in that primary text? (3) Am I stating the provision's OWN WORDS, "
+    "or an interpretation of them (mine or a commentator's)? If you cannot answer all three, do "
+    "ONE of: soften it to a principle, attribute it to the commentator, flag the number/text "
+    "'⚠ unconfirmed on the materials', or cut it — NEVER fill the gap with a plausible-sounding "
+    "section number or a paraphrase dressed as the statute. Unverifiable precision loses more "
+    "marks than an honest 'the exact provision is not in the materials'. Watch the tells of "
+    "overconfidence: turning 'shall be guided by' into an absolute priority, calling an offence "
+    "'strict liability' with no authority, saying an exceedance 'establishes an offence' without "
+    "attribution, or a principle 'shifts the burden' — each must trace to a provision in the "
+    "materials or be softened."
+)
+
+# Fold grounded-citation + authority-precision + self-check discipline into CITATION_INTEGRITY so
+# EVERY path (gather, answer, compile, chat) inherits the anti-fabrication + precision rules.
+CITATION_INTEGRITY = (CITATION_INTEGRITY + "\n\n" + GROUNDED_CITATIONS + "\n\n"
+                      + AUTHORITY_PRECISION + "\n\n" + LEGAL_SELF_CHECK)
 
 RECENCY_PREFERENCE = (
     "SOURCE RECENCY — each source carries an APPROXIMATE date signal for judging how recent it "
@@ -2290,7 +2308,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "19"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "20"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
