@@ -2205,7 +2205,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "11"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "12"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -2698,6 +2698,7 @@ def meta_hint(title):
 # position only when a PDF has none.
 LABELS = {}   # fname -> list[str] (printed label per physical page) or None
 OFFSETS = {}  # fname -> int front-matter offset (printed = physical - offset)
+TEXT_OFFSETS = {}  # fname (.txt/.md/.docx) -> int marker offset (printed = marker - offset) or None
 
 
 def _from_roman(s):
@@ -2768,9 +2769,18 @@ def _detect_numbering(d):
 
 
 def page_label(pdf_path, fname, physical):
-    # Non-PDF (txt/md/docx): the chunk's stored 'page' IS the real label (from a converter's page
-    # markers) or a sequential section — return it as-is; fitz page-label logic is PDF-only.
+    # Non-PDF (txt/md/docx): the chunk's stored 'page' IS the marker label. Usually that is the
+    # real printed page and we return it as-is. But when the marker holds the wrong internal number
+    # (a chapter extract), recover the true printed page from a detected offset — same fix as PDFs,
+    # so NO source type shows wrong pages.
     if not fname.lower().endswith(".pdf"):
+        if fname not in TEXT_OFFSETS:
+            TEXT_OFFSETS[fname] = _detect_numbering_text(pdf_path)
+        off = TEXT_OFFSETS[fname]
+        if isinstance(off, int):
+            s = str(physical)
+            if s.lstrip("-").isdigit():
+                return str(int(s) - off)          # printed = marker - offset (offset may be negative)
         return str(physical)
     if fname not in LABELS:
         try:
@@ -3021,6 +3031,41 @@ def _paginate_text(text):
     if "\f" in text:                             # form-feed page breaks → sequential physical pages
         return [(str(i + 1), p) for i, p in enumerate(text.split("\f"))]
     return [(None, text)]                        # no page info at all
+
+
+def _detect_numbering_text(path):
+    """Converted .txt/.md/.docx counterpart of _detect_numbering. When the '--- Page N ---'
+    marker holds the WRONG internal number (e.g. a chapter extract marked '--- Page 31 ---'
+    whose real printed page is 310), the true number usually survives conversion as a stray
+    header/footer line inside the page. Read it and return the dominant offset
+    = marker_label - printed_number (may be negative), or None if nothing consistent."""
+    try:
+        ext = path.lower().rsplit(".", 1)[-1]
+        if ext == "docx":
+            import docx
+            text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+        else:
+            text = open(path, encoding="utf-8", errors="ignore").read()
+    except Exception:
+        return None
+    from collections import Counter
+    ar = Counter()
+    for label, ptext in _paginate_text(text):
+        if not label or not str(label).isdigit():
+            continue                              # unpaged / roman marker — skip
+        marker = int(label)
+        lines = [l.strip() for l in ptext.splitlines() if l.strip()]
+        for l in (lines[:2] + lines[-2:]):        # running header / footer only
+            if re.fullmatch(r"\d{1,5}", l):
+                n = int(l)
+                if 0 < n <= 20000 and n != marker:   # a different printed number than the marker
+                    ar[marker - n] += 1
+    if not ar:
+        return None
+    top = ar.most_common(2)
+    best_off, best_n = top[0]
+    runner = top[1][1] if len(top) > 1 else 0
+    return best_off if (best_n >= 3 and best_n >= 2 * runner) else None
 
 
 def extract_doc_chunks(path, fname):
