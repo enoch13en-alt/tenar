@@ -2156,7 +2156,18 @@ AUTHORITY_PRECISION = (
     "it does not name (e.g. 'water'), and do NOT treat a provision that merely MENTIONS watercourses "
     "as the authority for water ownership. When a DIFFERENT instrument in the materials directly "
     "governs the point (e.g. a Water Resources statute for water ownership/control), THAT is the "
-    "correct anchor — cite it, not the incidental mention elsewhere."
+    "correct anchor — cite it, not the incidental mention elsewhere.\n"
+    "- BE INTERNALLY CONSISTENT ACROSS THE WHOLE DOCUMENT. Do not state a position and then "
+    "contradict it later in more polished words. If you say a provision is 'not a rigid hierarchy', "
+    "do NOT later say a use has 'statutory precedence'; if you note an instrument is NOT binding on "
+    "the country (e.g. an unratified convention), do NOT later assert 'the country's duty' UNDER it; "
+    "if you rest on regulatory discretion, do NOT also invent a 'balance of probabilities' burden. "
+    "Take ONE reasoned position on each point and hold it end to end — a self-contradiction is as "
+    "damaging as a wrong citation.\n"
+    "- DON'T RE-CITE THE SAME SECTION FOR DIFFERENT RULES. If several distinct rules each need an "
+    "authority, they almost certainly sit in DIFFERENT sections — attributing three different rules "
+    "to one section number (e.g. s.15) is a tell that the numbers are guessed; check each against "
+    "the provision text."
 )
 
 LEGAL_SELF_CHECK = (
@@ -2193,7 +2204,15 @@ RECENCY_PREFERENCE = (
     "position as current. This is about FACTUAL / EVIDENTIAL currency and choosing between rival "
     "sources; it does NOT override in-force foundational law — a 1992 constitutional provision or "
     "a still-live Act remains the governing law even though old (apply the succession rule for "
-    "what is repealed vs in force)."
+    "what is repealed vs in force).\n"
+    "'WITHIN THE LAST N YEARS' IS MEASURED FROM TODAY'S DATE (given in this request) — DO THE "
+    "ARITHMETIC. If a task requires a document issued within, say, the last two years, compute the "
+    "age against today: as of 2026 a document dated 2024 is about two-and-a-half years old and does "
+    "NOT satisfy 'within two years' — a 2025 instrument does. When such a requirement applies, pick "
+    "the most recent QUALIFYING primary/official source and make it a CORE document, not a "
+    "parenthetical aside (e.g. use a 2025 Act to meet the requirement, not a 2024 policy that no "
+    "longer qualifies). Never assert a document is 'within the last N years' without checking its "
+    "date against today."
 )
 
 TEMPORAL_SUCCESSION = (
@@ -2317,7 +2336,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "25"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "26"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
