@@ -2317,7 +2317,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "21"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "22"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
@@ -3796,6 +3796,36 @@ def search_in_docs(course, query, docs, k_per=8):
         keep.append(i)
     return _with_neighbors(idx["chunks"], keep)
 
+
+def auto_pin_primary_hits(course, query, total=16, k_per=4):
+    """AUTO-PIN: force the query-most-relevant chunks from the course's PRIMARY-LAW documents
+    (constitution / statute / treaty) into context, so the governing provision — with its real
+    section number — is always present and the model anchors on it rather than a secondary
+    paraphrase. Bounded by a per-doc cap and a TOTAL cap so off-topic statutes can't flood."""
+    ensure_loaded(course)
+    idx = INDEXES.get(course)
+    if not idx or not idx.get("chunks"):
+        return []
+    want = [i for i, ch in enumerate(idx["chunks"]) if display_type(ch.get("doc", "")) in _PRIMARY_TYPES]
+    if not want:
+        return []
+    try:
+        qv = embed_texts([query])[0]
+        sims = idx["emb"] @ qv
+        want.sort(key=lambda i: -float(sims[i]))
+    except Exception:
+        return []
+    keep, per = [], {}
+    for i in want:
+        d = idx["chunks"][i].get("doc")
+        if per.get(d, 0) >= k_per:
+            continue
+        per[d] = per.get(d, 0) + 1
+        keep.append(i)
+        if len(keep) >= total:
+            break
+    return _with_neighbors(idx["chunks"], keep)
+
 # ---------------------------------------------------------------- AI name extraction
 def first_pages_text(path, n=2, limit=3500):
     ext = path.lower().rsplit(".", 1)[-1]
@@ -4252,7 +4282,7 @@ SOURCE_COVERAGE = (
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
-                    pinned=None):
+                    pinned=None, auto_pin_primary=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -4301,6 +4331,25 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     seen.add(key)
                     pin_hits.append(hh)
         retrieved = pin_hits + retrieved
+    # AUTO-PIN PRIMARY LAW (gather): force the governing statute/regulation/constitution provisions
+    # in so the model anchors pinpoints on the instrument itself, not a secondary paraphrase. Bounded:
+    # the per-course budget shrinks as more courses are scanned, and the merged total is hard-capped.
+    if auto_pin_primary and mode == "gather" and courses:
+        per_course = max(3, min(16, 24 // len(courses)))
+        ap_seen = set((h.get("_course", ""), h.get("doc"), h.get("page"), (h.get("text") or "")[:60])
+                      for h in retrieved)
+        ap_hits = []
+        for cc in courses:
+            for h in auto_pin_primary_hits(cc, question, total=per_course, k_per=4):
+                hh = dict(h)
+                hh.setdefault("_course", cc)
+                key = (hh.get("_course", ""), hh.get("doc"), hh.get("page"), (hh.get("text") or "")[:60])
+                if key not in ap_seen:
+                    ap_seen.add(key)
+                    ap_hits.append(hh)
+            if len(ap_hits) >= 24:
+                break
+        retrieved = ap_hits[:24] + retrieved       # primary law FIRST so the budget keeps it
     # case-finder can run on the web alone; a normal answer needs the corpus
     if not retrieved and mode != "cases":
         return {"answer": "No documents indexed in the selected course(s) yet. Add "
@@ -6022,7 +6071,8 @@ def api_ask():
                                    simple=bool(body.get("simple")),
                                    siblings=body.get("siblings"),
                                    issue_index=body.get("issue_index"),
-                                   pinned=body.get("pinned")))
+                                   pinned=body.get("pinned"),
+                                   auto_pin_primary=body.get("auto_pin_primary", True)))
 
 
 def _resolve_doc_fname(course, doc):
