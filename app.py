@@ -8671,14 +8671,15 @@ def api_issue_calibrate():
            "'the stronger view is that the JV is not the only route'\"). No preamble, no fences.\n\n"
            + KEEP_LAW_MARKERS)
     try:
-        # calibration is a careful proposition-by-proposition review, where deeper reasoning
-        # genuinely helps — run at high effort. AUTO-CONTINUE so reproducing a long (calc-heavy)
-        # document plus the change list can't truncate mid-computation behind the thinking budget.
+        # Calibration is language tuning (strip overstatement, qualify genuine uncertainty) — an
+        # adjustment pass, not deep writing — so it runs on cheap HAIKU (per the cost rule: Opus
+        # only for the actual reasoning/writing). AUTO-CONTINUE so reproducing a long document plus
+        # the change list can't truncate. No high-effort thinking on Haiku (it doesn't use it).
         out = _create_completing(
-            c, ANSWER_MODEL, cached_system(sys),
+            c, HAIKU_MODEL, cached_system(sys),
             (("Problem: " + context[:900] + "\n\n") if context else "")
             + "ISSUE: " + issue + "\n\nANSWER TO CALIBRATE:\n" + answer,
-            max_tokens=16000, max_conts=4, output_config={"effort": "high"}).strip()
+            max_tokens=16000, max_conts=4).strip()
     except Exception as e:
         return jsonify({"error": str(e)[:140]})
     parts = out.split("===CHANGES===")
