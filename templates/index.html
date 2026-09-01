@@ -3058,8 +3058,19 @@ async function verifyIssue(i) {
       it._autoRemoved = (it._autoRemoved || 0) + (d.removed_count || 0);
       it._removed = (it._removed || []).concat(d.removed || []);
       if (d.corrected && (d.fixed_count || d.removed_count)) {
-        if (!it._auditOriginal) it._auditOriginal = original;  // keep the EARLIEST original
-        it.answer = d.corrected; it.answer_annotated = "";     // fix at source (chips drop on a corrected issue)
+        // FORMAT GUARD: the correction is a rewrite, and the cheap model sometimes drops the ⟦LAW⟧
+        // verbatim-law drawers (which would make a FRESH gather look "old-format"). Only accept the
+        // corrected text if it preserves the drawers; otherwise keep the well-formatted original
+        // (the compile-stage audit still catches the citation later). Prevents the false stale badge.
+        const drawersBefore = (original.match(/⟦LAW⟧/g) || []).length;
+        const drawersAfter = (String(d.corrected).match(/⟦LAW⟧/g) || []).length;
+        if (drawersBefore === 0 || drawersAfter >= drawersBefore) {
+          if (!it._auditOriginal) it._auditOriginal = original;  // keep the EARLIEST original
+          it.answer = d.corrected; it.answer_annotated = "";     // fix at source (chips drop on a corrected issue)
+        } else {
+          it._autoFixed = Math.max(0, (it._autoFixed || 0) - (d.fixed_count || 0));   // fix not applied
+          it._autoRemoved = Math.max(0, (it._autoRemoved || 0) - (d.removed_count || 0));
+        }
       }
     }
   } catch (e) { if (!it._audit) it._audit = []; }
