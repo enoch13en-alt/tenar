@@ -2052,7 +2052,23 @@ PRIMARY_FIRST = (
     "itself ('section 12 of Act 522 provides…'), not 'Ainuson quotes section 12'. Attribute "
     "the scholar's OWN contribution (analysis, opinion, characterisation, argument), not the "
     "primary text they happen to carry. And where scholars DISAGREE, present the competing "
-    "views AS a scholarly debate, attributed on each side, and take a reasoned position."
+    "views AS a scholarly debate, attributed on each side, and take a reasoned position.\n"
+    "- SOURCE HIERARCHY — TREAT AND ORDER SOURCES BY RANK. The order of authority, highest "
+    "first, is: (1) the Constitution; (2) primary statutes (Acts); (3) subsidiary legislation "
+    "(Regulations / L.I. / statutory instruments); (4) case law; THEN (5) secondary sources "
+    "(textbooks, journal articles, reports, policy papers); and last (6) comparative / foreign "
+    "law and non-binding/soft-law instruments. Build every point in that order and let the "
+    "analysis FLOW in it: the binding primary framework first as the backbone, then cases, then "
+    "scholarly commentary as gloss, then any comparative material.\n"
+    "- ANCHOR ON THE HIGHEST-RANKING SOURCE THAT SUPPORTS THE POINT. If a statute or regulation "
+    "in the materials states the rule, cite THAT provision as the authority; a secondary source "
+    "that also discusses it is added as commentary, NEVER as the anchor. Do not write 'Williams "
+    "notes the WRC must investigate irreparable damage' when reg 5 of L.I. 1692 says so — cite "
+    "reg 5 and, if useful, add the commentary after. Leading a legal proposition with a "
+    "secondary source when a primary source is available inverts the hierarchy and loses marks.\n"
+    "- KEEP THE LAYERS VISIBLE. Primary law is stated as law; secondary is clearly flagged as "
+    "commentary (named author/work); comparative/soft-law is clearly flagged as non-binding. "
+    "Never let a lower-ranked source blur into or displace a higher-ranked one."
 )
 
 CONVERSATIONAL = (
@@ -2274,7 +2290,7 @@ def _rule_cache_put(key, rule):
 # the SAME question over the SAME passages is nearly FREE — the Opus writer, the biggest re-run cost,
 # is skipped entirely. Key includes the retrieved chunk identities + a version tag, so any change
 # (question, pins, corpus, prompt) re-generates. Bump ANSWER_CACHE_VERSION when the writer prompt moves.
-ANSWER_CACHE_VERSION = "18"      # bump when the writer/coverage prompt changes (invalidates cached answers)
+ANSWER_CACHE_VERSION = "19"      # bump when the writer/coverage prompt changes (invalidates cached answers)
 ANSWER_CACHE_FILE = os.path.join(DATA, "answer_cache.json")
 ANSWER_CACHE = {}
 
