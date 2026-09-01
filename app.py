@@ -5069,6 +5069,21 @@ def api_admin_pagecheck():
                     "arabic_offset": off[0], "roman_offset": off[1]}
         return {"type": "text", "text_offset": TEXT_OFFSETS.get(d)}
 
+    find = (request.args.get("find", "") or "").lower().strip()
+    if find:
+        # locate which document/page a passage lives in (to trace a citation's real page)
+        hits = []
+        for c in chunks:
+            if find in (c.get("text") or "").lower():
+                d = c.get("doc", "")
+                lines = [l.strip() for l in (c.get("text") or "").splitlines() if l.strip()]
+                hits.append({"doc": d, "display": display_name(d), "stored_page": c.get("page"),
+                             "resolved_label": page_label(os.path.join(pdf_dir, d), d, c.get("page")),
+                             "mapping": _mapping(d), "head": lines[:2], "tail": lines[-2:]})
+                if len(hits) >= 8:
+                    break
+        return jsonify({"course": course, "find": find, "hits": hits})
+
     if not want:
         docs = []
         for d, cs in sorted(by_doc.items()):
