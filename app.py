@@ -4133,8 +4133,8 @@ def build_toc_specs(courses, query=None, limit=24):
 _TOC_CLUSTER = re.compile(r'\b(ss?\.?|sections?|regs?\.?|regulations?)\s*\.?\s*'
                           r'(\d{1,4}[A-Za-z]?(?:\s*(?:,|&|and|to|–|-|—)\s*\d{1,4}[A-Za-z]?)*)', re.I)
 # a hedge tail the model sometimes appends despite the ban ("; not in corpus — provision: …", "[… not detailed …]")
-_TOC_HEDGE = re.compile(r'\s*[;,]?\s*(?:\[[^\]]*?(?:not (?:in|detailed|listed|fully)|to confirm)[^\]]*\]'
-                        r'|not (?:in|detailed)[^;.)]*)', re.I)
+_TOC_HEDGE = re.compile(r'\s*[;,]?\s*(?:\[[^\]]*?(?:not (?:in|detailed|listed|fully|specified|quoted|clearly|available|provided)|to confirm)[^\]]*\]'
+                        r'|not (?:in|detailed|specified|quoted|clearly|fully|available|provided)[^;.)\]]*)', re.I)
 
 def _toc_nums(s):
     """Parse a number-list string ('5, 12–16', '28-30', '35 and 36') into individual ints, expanding
@@ -11846,6 +11846,21 @@ def api_exam_breakdown():
                 data["cost"] = cost
             except Exception:
                 app.logger.exception("breakdown source-audit failed")
+            # GUARANTEED deterministic sweep — runs on every sub's law regardless of whether the LLM
+            # audit succeeded, truncated or renumbered. Expands combined/range citations to per-section
+            # headings and strips '[not in corpus]'-style hedges, so a bundle or hedge can never survive.
+            try:
+                _specs = build_toc_specs(courses, q, limit=24)
+                for _it in data["issues"]:
+                    _tgts = [s for s in (_it.get("subs") or []) if isinstance(s, dict) and (s.get("law") or "").strip()]
+                    if not _tgts and (_it.get("law") or "").strip():
+                        _tgts = [_it]
+                    for _s in _tgts:
+                        _nl, _tn = toc_reconcile_law(_s["law"], _specs)
+                        if _nl and _nl != _s["law"]:
+                            _s["law"] = _nl
+            except Exception:
+                app.logger.exception("breakdown guaranteed reconcile failed")
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
     return jsonify(data)
@@ -11926,7 +11941,7 @@ def _audit_issue_authorities(c, courses, q, issues, model=None):
             + "\n\nReturn the corrected JSON now.")
 
     cost, data = 0.0, None
-    resp, _m = _stream_final(c, (model or HAIKU_MODEL), max_tokens=4000, system=system,
+    resp, _m = _stream_final(c, (model or HAIKU_MODEL), max_tokens=8000, system=system,
                              messages=[{"role": "user", "content": user}])
     cost = record_cost(resp)
     txt = _text_of(resp)
