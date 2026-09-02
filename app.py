@@ -84,6 +84,10 @@ STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:
 ANSWER_MODEL = "claude-opus-4-8"
 FABLE_MODEL = "claude-fable-5"        # optional max-quality model for compile
 HAIKU_MODEL = "claude-haiku-4-5"      # cheapest — for RULE EXTRACTION (faithful reproduction, not reasoning)
+# The breakdown AUTHORITY AUDIT runs on Sonnet: measured same cost as Haiku (~$0.07/pass) but
+# markedly more COMPLETE authority sets (it surfaces the full statutory chain, e.g. s.15+s.24+s.29+s.30
+# for enforcement, where Haiku gives only s.24) — the best cost-effective route vs Opus (~50% dearer).
+AUDIT_MODEL = "claude-sonnet-4-6"
 EXPAND_MODEL = "claude-haiku-4-5"     # cheap/fast model for retrieval query expansion
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 # Chunks embedded per call. Bigger batches are faster but spike memory — 128 can OOM-kill
@@ -11797,7 +11801,7 @@ def api_exam_breakdown():
         # so the browser can never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled).
         if data["issues"] and c:
             try:
-                acost = _audit_breakdown_issues(c, courses, q, data["issues"], passes=2)
+                acost = _audit_breakdown_issues(c, courses, q, data["issues"], passes=2, model=AUDIT_MODEL)
                 cost = dict(cost or {})
                 cost["this_usd"] = round(float(cost.get("this_usd", 0) or 0) + float((acost or {}).get("this_usd", 0) or 0), 5)
                 data["cost"] = cost
