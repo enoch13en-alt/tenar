@@ -2751,7 +2751,7 @@ function renderExam() {
     h += "<h4 style='margin:14px 0 4px'>Issues to answer</h4>";
     h += EXAM.issues.map((it, idx) => {
       let body;
-      if (it.loading) body = '<div class="why">⏳ Gathering the law… (10–30s)</div>';
+      if (it.loading) body = '<div class="why">⏳ Gathering the law… (up to ~1–2 min — the answer appears as soon as it lands, then verifies)</div>';
       else if (it.answer) {
         // Render the ANNOTATED text when available (it carries the 【Title — p.N】 citation markers
         // that mdToHtml turns into clickable "📄 p.N" source-page chips); fall back to the clean answer.
@@ -2769,7 +2769,10 @@ function renderExam() {
               : '<span style="font-size:11px;color:#e0a05a" title="This answer was produced by an earlier version'+(it._build?(' ('+esc(it._build)+')'):'')+'. Click ↻ Re-gather to refresh it on the latest.">👁 earlier version — ↻ re-gather to refresh</span>')
           : '';
         const _eyeBar = _eye ? ('<div style="margin-bottom:4px">'+_eye+'</div>') : '';
-        body = _eyeBar + '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
+        const _verifyBar = it._verifying
+          ? '<div style="margin-bottom:4px;font-size:11px;color:#8fb4e0">🔍 verifying authorities in the background — the answer below is already usable and will refine in a moment…</div>'
+          : '';
+        body = _verifyBar + _eyeBar + '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
           + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
@@ -3156,16 +3159,24 @@ async function gatherIssue(i, force) {
       it._build = r.build || null;               // stamp the build that produced this answer (freshness mark)
       it.done = !!it.answer.trim();              // only 'done' on a real answer
       if (r.cost && !r.cost.cached) EXAM.cost = (EXAM.cost || 0) + (r.cost.this_query_usd || 0);
-      // VERIFY-AT-GATHER (×2): two independent Haiku audit passes check this issue's authorities
-      // against the corpus and fix at source, so the compile gets doubly-verified law. Best-effort.
+      // SHOW THE GATHERED DATA SHEET IMMEDIATELY — do not make the user wait through the two verify
+      // passes (each ~40s), which was leaving the spinner up for 2–3 min so it looked stuck ("nothing
+      // comes"). Flip loading off and render the answer NOW; the verify passes then refine it in the
+      // background and re-render as corrections land.
       if (it.done) {
+        it.loading = false;
+        it._verifying = true;
+        renderExam();
+        // VERIFY-AT-GATHER (×2): two independent Haiku audit passes check this issue's authorities
+        // against the corpus and fix at source, so the compile gets doubly-verified law. Best-effort.
         it._autoFixed = 0; it._autoRemoved = 0; it._removed = []; it._audit = []; it._auditOriginal = null;
-        $("#examStatus").textContent = "🔍 Verifying issue " + (it.n||i+1) + " — pass 1 of 2…";
-        renderExam();
+        $("#examStatus").textContent = "🔍 Verifying issue " + (it.n||i+1) + " — pass 1 of 2 (answer already shown)…";
         await verifyIssue(i);
+        renderExam();
         $("#examStatus").textContent = "🔍 Re-verifying issue " + (it.n||i+1) + " — pass 2 of 2…";
-        renderExam();
         await verifyIssue(i);
+        it._verifying = false;
+        renderExam();
       }
       $("#examStatus").textContent = "Exam session cost so far $" + (EXAM.cost || 0).toFixed(4);
     }
