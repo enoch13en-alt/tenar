@@ -11997,6 +11997,17 @@ def _audit_breakdown_issues(c, courses, q, issues, passes=2, model=None):
             r = by.get(str(it2["n"]))
             if r and (r.get("law") or "").strip():
                 it2["law"] = r["law"]; it2["_note"] = r.get("note", "")
+    # FINAL deterministic reconcile — guaranteed last word, so a bundle the last LLM pass re-formed
+    # ('ss. 19–21, 25–26') is still expanded to per-section headings and any hedge stripped.
+    try:
+        specs = build_toc_specs(courses, q, limit=24)
+        for it2 in items:
+            newlaw, tnotes = toc_reconcile_law(it2["law"], specs)
+            if tnotes:
+                it2["law"] = newlaw
+                it2["_note"] = ((it2.get("_note", "") + " · ToC: " + "; ".join(tnotes[:5])).strip(" ·"))
+    except Exception:
+        app.logger.exception("final ToC reconcile failed")
     for target, item in zip(back, items):
         target["law"] = item["law"]
         if item.get("_note"):
