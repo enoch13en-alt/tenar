@@ -2454,12 +2454,47 @@ async function runBreakdown() {
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
             issues: (r.issues||[]).map(i => ({...i, answer:null, sources:[], done:false})),
             question: q, focus, cost: (r.cost ? (r.cost.this_usd||0) : 0)};
-    $("#examStatus").textContent = "Broken down · exam session cost so far $" + EXAM.cost.toFixed(4);
-    renderExam();
+    renderExam();                                  // show the raw map immediately
+    // AUDIT AT THE SOURCE — verify each issue's cited authorities against the primary instruments'
+    // Tables of Contents BEFORE anything is expanded, so a mis-cite can't propagate into the gathers.
+    // Double-pass (pass 2 re-checks pass 1), mirroring the gather's double-verify.
+    $("#examStatus").textContent = "Auditing the cited authorities at source (pass 1 of 2)…";
+    const c1 = await auditBreakdown();
+    $("#examStatus").textContent = "Auditing the cited authorities at source (pass 2 of 2)…";
+    const c2 = await auditBreakdown();
+    renderExam();                                  // re-render with corrected law + notes
+    const _fx = c1 + c2;
+    $("#examStatus").textContent = "Broken down & audited"
+      + (_fx ? (" — " + _fx + " authority fix(es) at source") : " — authorities checked, no changes needed")
+      + " · exam session cost so far $" + EXAM.cost.toFixed(4);
     return EXAM.issues.length > 0;
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
 }
 $("#examBreak").onclick = runBreakdown;
+
+// Double-audit the breakdown's cited authorities against the primary instruments' contents maps.
+// Returns the number of issues whose 'law' was corrected this pass; updates EXAM.issues in place.
+async function auditBreakdown() {
+  try {
+    const r = await (await fetch("/api/exam/breakdown/audit", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, courses: examCourses(), question: EXAM.question,
+        issues: EXAM.issues.map(i => ({n:i.n, issue:i.issue, why:i.why, law:i.law}))})})).json();
+    if (!r || !Array.isArray(r.issues)) return 0;
+    const byN = {}; r.issues.forEach(x => byN[String(x.n)] = x);
+    let changes = 0;
+    EXAM.issues.forEach(it => {
+      const f = byN[String(it.n)];
+      if (f && f.law && f.law !== it.law) {
+        it.law = f.law;
+        it._auditNote = (f.note || "authorities adjusted");
+        changes++;
+      }
+    });
+    if (r.cost && r.cost.this_usd) EXAM.cost += r.cost.this_usd;
+    return changes;
+  } catch (e) { return 0; }
+}
 
 // ONE-CLICK: run the whole Exam Coach pipeline end to end → break down, gather
 // every issue, compile the final document, then Deepen it to top-band standard.
@@ -2793,9 +2828,12 @@ function renderExam() {
         ? " <span style='font-size:10px;background:#7a2f2f;color:#ffdada;padding:1px 6px;border-radius:8px;margin-left:5px' title='Core, mark-heavy issue'>CORE</span>"
         : _wt==='minor'
         ? " <span style='font-size:10px;background:#2a3344;color:#9fb0c6;padding:1px 6px;border-radius:8px;margin-left:5px' title='Minor / low-mark point'>minor</span>" : "";
+      const _auditNote = it._auditNote
+        ? '<div class="why" style="color:#8fce8f;margin-top:2px" title="Authorities audited at source against the primary instruments\' tables of contents, before any gather.">✓ audited: '+esc(it._auditNote)+'</div>'
+        : '';
       return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+'</h5>'
         + '<div class="why">'+esc(it.why||'')+(it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
-        + link + body + '</div>';
+        + _auditNote + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
       + ((EXAM.issues||[]).some(x => (x.weight||'').toLowerCase()==='core' && !x.done)

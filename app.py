@@ -11611,6 +11611,114 @@ def api_exam_breakdown():
     return jsonify(data)
 
 
+@app.route("/api/exam/breakdown/audit", methods=["POST"])
+def api_exam_breakdown_audit():
+    """Audit the issue map's cited authorities AT THE SOURCE — before any gather/expansion.
+    For each issue, verify its 'law' hint against the primary instruments' Tables of Contents
+    (Arrangement of Sections) and retrieved provision text: fix the anchor Act for the subject,
+    confirm/correct each section number against a contents-map HEADING (or flag it unconfirmable),
+    and drop padding. ONE grounded Haiku pass; the frontend calls it TWICE (double audit) so a
+    provision mis-cite is caught at the source instead of propagating into every gather."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    q = (body.get("question") or "").strip()
+    issues = body.get("issues") or []
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    if not isinstance(issues, list) or not issues:
+        return jsonify({"issues": []})
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    courses = _exam_courses(body, course)
+
+    # GROUNDING CONTEXT = the contents maps (Arrangement of Sections) of the domestic-primary
+    # instruments relevant to the whole question — the auditor's source of truth for numbers.
+    ctx_parts, seen, n_arr = [], set(), 0
+    try:
+        hits = search_multi(courses, q, k=40)
+    except Exception:
+        hits = []
+    for ch in hits:
+        d = ch.get("doc", "")
+        if d in seen or _source_tier_weight(d) < 1.0 or display_type(d) == "constitution":
+            continue
+        seen.add(d)
+        arr = arrangement_text(ch.get("_course", courses[0]), d)
+        if arr:
+            ctx_parts.append("CONTENTS MAP — " + display_name(d) + " (Arrangement of Sections/"
+                             "Regulations; topic → exact number):\n" + arr[:6000])
+            n_arr += 1
+        if n_arr >= 6:
+            break
+    contents_block = ("\n\n".join(ctx_parts) if ctx_parts else
+        "(No Arrangement-of-Sections contents maps were found — you cannot confirm section numbers "
+        "from a table of contents here, so mark every unconfirmable number '⚠ unconfirmed'.)")
+
+    issues_block = "\n".join(json.dumps(
+        {"n": it.get("n"), "issue": it.get("issue", ""), "law": it.get("law", "")},
+        ensure_ascii=False) for it in issues)
+
+    system = (CONFIG["system_prompt"] + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + CITATION_INTEGRITY + "\n\n"
+        "BREAKDOWN AUTHORITY AUDIT — you are checking an issue map's cited authorities BEFORE any "
+        "research or drafting, so a wrong provision cannot spread. For EACH issue, correct ONLY its "
+        "'law' string, using ONLY the CONTENTS MAPS provided:\n"
+        "1. ANCHOR — ensure the issue is anchored on the correct PRIMARY instrument for its subject "
+        "(see the routing above). Remove a cross-anchored instrument (e.g. a constitutional article "
+        "or the Minerals Act cited for a pure water point).\n"
+        "2. PINPOINT — every section/regulation number MUST match a HEADING in a contents map above. "
+        "If a cited number's heading does not match the point, replace it with the number whose "
+        "heading does. If a number cannot be confirmed from a contents map, mark it "
+        "'⚠ unconfirmed' — never keep a guessed number and never invent one.\n"
+        "3. COMPLETE — if a clearly-governing provision for the subject is present in a contents map "
+        "but missing from 'law', add it; drop tangential/padding provisions.\n"
+        "Do NOT rewrite the issue question — only fix its 'law'. Keep each 'law' concise. Return "
+        "STRICT JSON: {\"issues\":[{\"n\":<int>,\"law\":<corrected string>,\"changed\":<true|false>,"
+        "\"note\":<short reason if changed, else empty>}]}. JSON only, no prose, no fences.")
+    user = ("PRIMARY INSTRUMENTS' CONTENTS MAPS (your ONLY source of truth for section numbers):\n\n"
+            + contents_block + "\n\n=== ISSUE MAP TO AUDIT ===\n" + issues_block
+            + "\n\nReturn the corrected JSON now.")
+
+    cost, data = 0.0, None
+    try:
+        resp, _m = _stream_final(c, HAIKU_MODEL, max_tokens=4000, system=system,
+                                 messages=[{"role": "user", "content": user}])
+        cost = record_cost(resp)
+        txt = _text_of(resp)
+        try:
+            data = _parse_json(txt)
+        except Exception:
+            data = _first_json_obj(txt)
+    except Exception as e:
+        return jsonify({"error": "Audit couldn't run — " + str(e)[:120]})
+    if not isinstance(data, dict) or not isinstance(data.get("issues"), list):
+        return jsonify({"issues": [], "cost": {"this_usd": cost}})
+
+    fixed = {}
+    for r in data["issues"]:
+        if isinstance(r, dict) and r.get("n") is not None:
+            fixed[str(r.get("n"))] = {"law": (r.get("law") or "").strip(),
+                                      "changed": bool(r.get("changed")),
+                                      "note": (r.get("note") or "").strip()}
+    out = []
+    for it in issues:
+        f = fixed.get(str(it.get("n")))
+        newlaw = f["law"] if (f and f["law"]) else (it.get("law") or "")
+        out.append({"n": it.get("n"), "law": newlaw,
+                    "changed": bool(f and f["changed"] and newlaw != (it.get("law") or "")),
+                    "note": (f["note"] if f else "")})
+    # belt-and-suspenders: deterministically strip the Constitution out of water issues too
+    merged = [{"n": it.get("n"), "issue": it.get("issue", ""), "why": it.get("why", ""),
+               "law": o["law"]} for it, o in zip(issues, out)]
+    _scrub_constitution_from_water(merged)
+    for o, m in zip(out, merged):
+        if o["law"] != m["law"]:
+            o["law"] = m["law"]
+            o["changed"] = True
+            o["note"] = ((o["note"] + " · removed Constitution from a water issue").strip(" ·"))
+    return jsonify({"issues": out, "cost": {"this_usd": cost}})
+
+
 @app.route("/api/mindmap", methods=["POST"])
 def api_mindmap():
     """PREMIUM: a decode-map showing how to structure the answer in the required
