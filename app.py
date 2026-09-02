@@ -2071,6 +2071,38 @@ PRIMARY_FIRST = (
     "Never let a lower-ranked source blur into or displace a higher-ranked one."
 )
 
+# Subject -> governing primary Act routing, then use that Act's Table of Contents to pinpoint the
+# provision. Generalises the Act 522 fix: the model must first decide WHICH primary instrument
+# governs the subject, then read its Arrangement of Sections (the CONTENTS MAP fed with the
+# passages) to find the EXACT section by heading — never guess a number, never cross-anchor.
+PRIMARY_LAW_ROUTING = (
+    "ANCHOR EACH POINT ON THE PRIMARY LAW FOR ITS SUBJECT, THEN USE THAT ACT'S TABLE OF CONTENTS "
+    "TO FIND THE EXACT PROVISION.\n"
+    "1. NAME THE SUBJECT of the question/fact — what it is actually about (e.g. water "
+    "ownership/abstraction, mineral title/mining operations, environmental assessment/pollution, "
+    "district-assembly functions).\n"
+    "2. ANCHOR ON THE DEDICATED PRIMARY INSTRUMENT for that subject (plus any other Act the facts "
+    "directly engage). In this corpus, by subject:\n"
+    "   - WATER (ownership/control, abstraction, diversion, damming, storage, water rights, water "
+    "use): Water Resources Commission Act 1996 (Act 522) + Water Use Regulations 2001 (L.I. 1692).\n"
+    "   - MINERALS / MINING (mineral title, mineral rights, mining leases, mineral operations): "
+    "Minerals and Mining Act 2006 (Act 703) + its regulations.\n"
+    "   - ENVIRONMENT (environmental permits, impact/assessment, pollution control): Environmental "
+    "Protection Act 2025 (Act 1124) + the Environmental Assessment Regulations 2025. The 1994 EPA "
+    "Act (Act 490) is REPEALED — never use it.\n"
+    "   - LOCAL GOVERNMENT / DISTRICT ASSEMBLY (planning, byelaws, district functions): Local "
+    "Governance Act 2016 (Act 936).\n"
+    "   Do NOT cross-anchor: a WATER point is not settled by the Minerals Act or a constitutional "
+    "article; a MINING point is not settled by the Water Act. If the subject's dedicated Act is "
+    "NOT in the materials, say so — do not substitute a tangential instrument to fill the gap.\n"
+    "3. FIND THE EXACT PROVISION VIA THE TABLE OF CONTENTS. Each primary Act's own ARRANGEMENT OF "
+    "SECTIONS / TABLE OF CONTENTS is supplied (the CONTENTS MAP). Locate the point by MATCHING it "
+    "to the section/regulation HEADING in that contents map, then read and cite THAT "
+    "section/regulation. The provision NUMBER must come from the contents map or the provision's "
+    "own text — NEVER from memory. When the contents map is present there is no excuse to guess: "
+    "scan the headings, pick the one whose subject matches, and use its number."
+)
+
 CONVERSATIONAL = (
     "CONVERSATIONAL REGISTER — this is a chat, not an essay. Answer like a sharp "
     "friend who happens to be a lawyer, sitting across the table: get to the point in "
@@ -4572,8 +4604,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             if arr:
                 content.append({"type": "text", "text": (
                     "[CONTENTS MAP — " + display_name(d) + ": the instrument's own Arrangement of "
-                    "Sections/Regulations (topic → exact number). USE THIS to cite the CORRECT "
-                    "section/regulation number for a topic; do not guess a number.]\n\n" + arr)})
+                    "Sections/Regulations (topic → exact number). USE THIS to pinpoint the provision: "
+                    "MATCH the point to the section/regulation HEADING here, then cite THAT number and "
+                    "read that provision — do not guess a number, and do not use a number from memory.]"
+                    "\n\n" + arr)})
                 _n_arr += 1
             if _n_arr >= 3:
                 break
@@ -4862,6 +4896,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 + "\nResolve ONLY your own issue. Any matter that plainly belongs to another issue "
                 "listed above — even if this issue's wording brushes against it — is resolved THERE; "
                 "defer it in ONE line ('gates issue 2'), do not analyse it here.")
+        # Route the subject to its governing primary Act + pinpoint via the table of contents.
+        system = system + "\n\n" + PRIMARY_LAW_ROUTING
         # Anchor Act 522 section roles on water issues so the gathered Rule attaches the right
         # provision (s.12 ownership, s.16 grant, s.15 enforcement) instead of guessing (s.14).
         if _WATER_SUBJ.search(question or ""):
@@ -4890,7 +4926,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     "NO NEW LAW — governed by already-established rules.") if prior else ""
         rule_sys = cached_system(
             CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n"
-            + DOCTRINAL_PRECISION + "\n\n" + PRIMARY_FIRST + "\n\n" + TEMPORAL_SUCCESSION + "\n\n"
+            + DOCTRINAL_PRECISION + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n"
+            + TEMPORAL_SUCCESSION + "\n\n"
             "RULE-EXTRACTION STAGE — output ONLY the RULE for the stated issue, nothing else. "
             "From the passages provided, set out the governing provisions VERBATIM — the EXACT WORDS "
             "of each provision, quoted directly from the retrieved passage and placed in quotation "
@@ -11405,6 +11442,8 @@ def api_exam_breakdown():
         "matters of independent verification, NOT assumptions to hedge — unless the "
         "scenario is clearly hypothetical/fictional. "
         "Return STRICT JSON only, no prose, no markdown fences.")
+    # Route each issue's subject to its governing primary Act, and pinpoint via the table of contents.
+    system = system + "\n\n" + PRIMARY_LAW_ROUTING
     # If this matter is about WATER, anchor the Act 522 section roles so the issue's 'law' hints
     # stop guessing section numbers (the fragmented Act 522 scan is why they drift).
     if _WATER_SUBJ.search(q) or any("WATER" in (cn or "").upper() for cn in courses):
@@ -11922,7 +11961,7 @@ def api_exam_assemble():
         + CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
         + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
-        + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE
+        + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
