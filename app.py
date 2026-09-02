@@ -1960,6 +1960,33 @@ PRECISION_DISCIPLINE = (
     "pinpoint honestly, but do it without disparaging the library or your access.)"
 )
 
+NO_OVERSTATEMENT = (
+    "SAY EXACTLY WHAT THE LAW SAYS — NO MORE — IN SIMPLE WORDS.\n"
+    "- SIMPLE, SHORT SENTENCES. Do not be descriptive or verbose. Use the fewest plain words that "
+    "carry the provision's meaning; cut adjectives and flourish. Prefer a short sentence over a long "
+    "one; one clause over three.\n"
+    "- DO NOT OVERSTATE. State ONLY what the provision's own words establish. Do NOT add intensifiers "
+    "or characterisations the text does not contain. Do NOT use these unless the statute's or a cited "
+    "case's OWN words use them: 'exclusive', 'absolute', 'definitively', 'categorically', 'wholly', "
+    "'entirely', 'purely', 'unqualified', 'operative and exclusive', 'no … whatsoever'. A rule that "
+    "has an exception is NOT 'absolute' — state the rule AND its exception plainly (e.g. water needs "
+    "authority under the Act, except limited domestic use (s.14) and fire-fighting (s.13(2))).\n"
+    "- DO NOT STATE A CATEGORICAL LEGAL CONCLUSION THE SOURCE DOES NOT STATE. Without a provision or a "
+    "Ghanaian case that says so, do NOT write that a water permit is 'not a property interest' or that "
+    "a mineral right gives 'no entitlement to water'. Say what the sections support: 'a conditional "
+    "statutory right to USE water, not ownership of the water itself'.\n"
+    "- ATTRIBUTE EACH RULE TO THE SECTION WHOSE OWN TEXT STATES IT — do not put one section's words "
+    "under another number. (Act 522 example the student flagged: suspension/variation because the "
+    "water is or may become insufficient is s.19; termination for breach of a condition or "
+    "unauthorised use is s.22; the enforcement notice where water use is a SERIOUS THREAT to the "
+    "environment or public health is s.15 — not general 'unauthorised-use' enforcement, which is ss.13 "
+    "and 34.) If unsure which section carries a sentence, quote it under the number whose heading "
+    "matches its words.\n"
+    "- KEEP THE PROVISION'S SCOPE — no wider, no narrower. If s.17 says a miner MAY use water once the "
+    "Act 522 approvals are obtained, do not write that s.17 gives 'no entitlement'; write that s.17 "
+    "does not by itself authorise the water use — the Act 522 approval must be obtained first."
+)
+
 ARGUMENTATIVE_COMMITMENT = (
     "COMMIT TO THE ARGUMENT — precision about FACTS and courage in ARGUMENT are "
     "DIFFERENT axes; do not confuse them. The calibrated-precision rule above "
@@ -4966,7 +4993,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # COMPILE does all the reasoning/writing.
         system = (CONFIG["system_prompt"] + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
-                  + PRECISION_DISCIPLINE + "\n\n" + FACT_DISCIPLINE + "\n\n"
+                  + PRECISION_DISCIPLINE + "\n\n" + NO_OVERSTATEMENT + "\n\n" + FACT_DISCIPLINE + "\n\n"
                   "YOU ARE A VERBATIM EXTRACTOR, NOT AN INTERPRETER. Your ONLY job is to COPY the "
                   "verified raw material — the governing provisions in their EXACT words with their "
                   "EXACT pinpoints, and the cases/sources exactly as cited — for the COMPILE stage "
@@ -12416,6 +12443,7 @@ def api_exam_assemble():
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
         + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + PRECISION_DISCIPLINE
+        + "\n\n" + NO_OVERSTATEMENT
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
