@@ -11808,7 +11808,11 @@ def api_exam_breakdown():
                     res, acost = _audit_issue_authorities(c, courses, q, data["issues"])
                 except Exception:
                     app.logger.exception("breakdown source-audit pass failed"); break
-                cost += acost
+                try:                                    # cost is a {"this_usd": ...} dict — accumulate the number
+                    cost = dict(cost or {})
+                    cost["this_usd"] = round(float(cost.get("this_usd", 0) or 0) + float((acost or {}).get("this_usd", 0) or 0), 5)
+                except Exception:
+                    pass
                 by = {str(r.get("n")): r for r in res}
                 for it in data["issues"]:
                     r = by.get(str(it.get("n")))
@@ -11955,7 +11959,7 @@ def api_exam_breakdown_audit():
         out, cost = _audit_issue_authorities(c, _exam_courses(body, course), q, issues)
     except Exception as e:
         return jsonify({"error": "Audit couldn't run — " + str(e)[:120]})
-    return jsonify({"issues": out, "cost": {"this_usd": cost}})
+    return jsonify({"issues": out, "cost": cost})
 
 
 @app.route("/api/mindmap", methods=["POST"])
