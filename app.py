@@ -11826,7 +11826,7 @@ def api_exam_breakdown():
     return jsonify(data)
 
 
-def _audit_issue_authorities(c, courses, q, issues):
+def _audit_issue_authorities(c, courses, q, issues, model=None):
     """CORE of the breakdown authority audit (one grounded Haiku correction pass + the deterministic
     ToC reconcile). Returns (out, cost) where out is [{n, law, changed, note}] aligned to `issues`.
     Runs SERVER-SIDE inside the breakdown so corrections are guaranteed — never dependent on the
@@ -11891,7 +11891,7 @@ def _audit_issue_authorities(c, courses, q, issues):
             + "\n\nReturn the corrected JSON now.")
 
     cost, data = 0.0, None
-    resp, _m = _stream_final(c, HAIKU_MODEL, max_tokens=4000, system=system,
+    resp, _m = _stream_final(c, (model or HAIKU_MODEL), max_tokens=4000, system=system,
                              messages=[{"role": "user", "content": user}])
     cost = record_cost(resp)
     txt = _text_of(resp)
@@ -11955,11 +11955,17 @@ def api_exam_breakdown_audit():
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    # owner-only model override, for comparing audit quality across models
+    model = None
+    if (current_user() or {}).get("is_admin"):
+        _m = (body.get("model") or "").strip().lower()
+        model = {"haiku": HAIKU_MODEL, "sonnet": "claude-sonnet-4-6",
+                 "opus": ANSWER_MODEL}.get(_m)
     try:
-        out, cost = _audit_issue_authorities(c, _exam_courses(body, course), q, issues)
+        out, cost = _audit_issue_authorities(c, _exam_courses(body, course), q, issues, model=model)
     except Exception as e:
         return jsonify({"error": "Audit couldn't run — " + str(e)[:120]})
-    return jsonify({"issues": out, "cost": cost})
+    return jsonify({"issues": out, "cost": cost, "model": model or HAIKU_MODEL})
 
 
 @app.route("/api/mindmap", methods=["POST"])
