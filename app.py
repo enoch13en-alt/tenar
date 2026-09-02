@@ -2365,7 +2365,17 @@ RECENCY_PREFERENCE = (
     "the most recent QUALIFYING primary/official source and make it a CORE document, not a "
     "parenthetical aside (e.g. use a 2025 Act to meet the requirement, not a 2024 policy that no "
     "longer qualifies). Never assert a document is 'within the last N years' without checking its "
-    "date against today."
+    "date against today.\n"
+    "DATE-QUALIFY TIME-SENSITIVE DATA FROM SECONDARY SOURCES. A figure, statistic, amount, price, "
+    "population, count, ranking, or a 'current/present'-tense description of an institution, "
+    "office-holder, policy version, or practice taken from a BOOK, REPORT or ARTICLE reflects the "
+    "position AT THAT SOURCE'S DATE — it may have changed since. State it WITH an explicit as-at "
+    "qualifier tied to the source ('as at 2015', 'at the time of the 2007 report', 'the 2015 study "
+    "records that…') — do NOT restate a dated figure or 'the current…' description in the present "
+    "tense as though it is today's position. If the point matters and only an older source carries "
+    "it, say the current figure/position is not confirmed on the materials and may have changed. "
+    "(This applies to EVIDENTIAL/FACTUAL data in secondary sources; it does not qualify primary law, "
+    "which governs while in force.)"
 )
 
 TEMPORAL_SUCCESSION = (
@@ -12497,7 +12507,7 @@ def api_exam_assemble():
         + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + NO_OVERSTATEMENT + "\n\n" + QUALIFIED_REASONING
-        + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + ARGUMENTATIVE_COMMITMENT
+        + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + RECENCY_PREFERENCE + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
         "are given is GATHERED DATA — verified law (verbatim, with pinpoints), cases and sources, plus "
