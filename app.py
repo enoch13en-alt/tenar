@@ -11858,7 +11858,7 @@ def _audit_issue_authorities(c, courses, q, issues, model=None):
     # and a deterministic pass reconciles the result afterwards — no hardcoded answer key.
     specs = build_toc_specs(courses, q, limit=24)     # ALL primary laws' ToCs (used for the deterministic reconcile)
     ctx_parts = []
-    for sp in specs[:8]:                               # show the model the most query-relevant tables (bound prompt size)
+    for sp in specs[:14]:                              # show the model MORE tables so every core Act (522/703/1124/L.I.s) is present, not cut
         rows = "; ".join(f"{n} = {sp['map'][n]}" for n in sorted(sp["map"]))
         ctx_parts.append("CONTENTS (Arrangement of Sections/Regulations) — " + sp["name"]
                          + (" [complete]" if sp["clean"] else " [partial — verify numbers you can't see, do not guess]")
@@ -11892,7 +11892,10 @@ def _audit_issue_authorities(c, courses, q, issues, model=None):
         "522 s.16 (Grant of water right); 'ownership/control of water' → s.12; 'prohibition of "
         "unauthorised use' → s.13; 'enforcement' → s.15; 'pollution' → s.24. The CONTENTS MAPS ARE the "
         "corpus's sections — NEVER write that an Act's provisions are 'not in the corpus' or 'not "
-        "detailed' when its contents map is shown above; use it.\n"
+        "detailed' when its contents map is shown above; use it. EVERY Act/L.I. whose contents map is "
+        "shown MUST be cited with at least one SECTION/REGULATION NUMBER from that map — a bare 'Act 522 "
+        "— vesting and control' or 'Act 1124 — enforcement powers' with NO number is NOT acceptable; "
+        "pinpoint the section(s), e.g. 'Act 522 s.12, s.16'.\n"
         "3. COVER ALL RELEVANT PRIMARY LAW — DO NOT STRIP TO A MINIMUM. Where an issue genuinely "
         "engages more than one domain, cite the relevant PRIMARY provision from EACH domain it "
         "touches — do NOT narrow it to a single instrument. E.g. an expansion/approval issue touches "
