@@ -928,6 +928,11 @@ function mdInline(s){
 // after sentence punctuation — conservatively (won't touch 's.9', 'e.g.', '3.5%').
 function deJam(t){
   return (t||"")
+    // a '##'/'###' heading jammed mid-line (e.g. "…vital resource.### The Prohibition") → own line,
+    // so it renders as a heading instead of showing the raw '###'.
+    .replace(/([^\n])[ \t]*(#{2,6}[ \t]+\S)/g, '$1\n\n$2')
+    // a bold heading glued to the next sentence ("**…Not Private Right**Section 12") → break after it
+    .replace(/(\*\*[^\n*]{6,}\*\*)(?=[A-Z(])/g, '$1\n\n')
     .replace(/([a-z0-9%"'\)\]]{2,})([.:;])(?=[A-Za-z"'“])/g, '$1$2 ')
     .replace(/([\)\]"'”]),(?=[A-Za-z])/g, '$1, ')
     .replace(/([a-z0-9\)\]"'”])\.\s*-\s+(?=[A-Z])/g, '$1.\n- ')
