@@ -2827,9 +2827,19 @@ function renderExam() {
       const _auditNote = it._auditNote
         ? '<div class="why" style="color:#8fce8f;margin-top:2px" title="Authorities audited at source against the primary instruments\' tables of contents, before any gather.">✓ audited: '+esc(it._auditNote)+'</div>'
         : '';
+      const _hasSubs = Array.isArray(it.subs) && it.subs.length;
+      const _subsHtml = _hasSubs
+        ? '<div style="margin:5px 0 3px 8px;border-left:2px solid #3a4658;padding-left:10px">'
+          + it.subs.map(s =>
+              '<div class="why" style="margin:4px 0;color:#cdd6e0">↳ ' + esc(s.q||'')
+              + (s.law ? (' <i style="color:#9fb0c6">— '+esc(s.law)+'</i>') : '')
+              + (s.audit_note ? ('<span style="color:#8fce8f;font-size:11px" title="Audited against the instrument\'s table of contents"> ✓</span>') : '')
+              + '</div>').join('')
+          + '</div>'
+        : '';
       return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+'</h5>'
-        + '<div class="why">'+esc(it.why||'')+(it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
-        + _auditNote + link + body + '</div>';
+        + '<div class="why">'+esc(it.why||'')+(!_hasSubs && it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
+        + _subsHtml + _auditNote + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
       + ((EXAM.issues||[]).some(x => (x.weight||'').toLowerCase()==='core' && !x.done)
@@ -3126,10 +3136,16 @@ async function gatherIssue(i, force) {
     // distinguishing provisions a direct question would — e.g. family vs stool land),
     // plus this issue's own why/law for focus. Bare issue labels retrieve too narrowly.
     const exq = (EXAM.question || $("#examQ").value || "").trim();
+    const _subs = Array.isArray(it.subs) ? it.subs : [];
+    const _subText = _subs.length
+      ? ('\n\nResolve EACH of these sub-questions in turn, each anchored on its governing law (Act first, then the L.I. that implements it):\n'
+         + _subs.map(s => '- ' + (s.q || '') + (s.law ? ('   [governing law: ' + s.law + ']') : '')).join('\n'))
+      : '';
     const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
-      + 'Analyse this specific issue in depth: "' + (it.issue || '') + '".'
+      + 'Analyse this issue in depth: "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
-      + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
+      + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
+      + _subText;
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
         prior: priorRulesLedger(i),

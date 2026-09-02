@@ -11670,38 +11670,32 @@ def api_exam_breakdown():
         "those are the evidentiary record — accept them. DO NOT emit 'Limitation' items or "
         "generic assumptions for stated facts. If the facts raise no genuine outcome-changing "
         "omission and no uncertain background, return an EMPTY array.\n"
-        '- "issues": array of objects {\"n\", \"issue\", \"why\", \"law\", \"link\", \"weight\"} — n is '
-        "the order number. "
-        "ISSUE MUST BE A PRECISE, DIRECT LEGAL QUESTION — phrased so it demands a direct answer, not a "
-        "survey. End it with '?'. Name the specific actor(s), fact(s) and the exact legal point, e.g. "
-        "'Does Asempa Gold's mineral lease entitle it to abstract water from the Adom River without a "
-        "separate WRC permit?' or 'Must the WRC hold a public hearing before granting the expansion "
-        "permit?'. NOT a topic label or heading ('Water abstraction rights', 'The permitting regime') "
-        "and NOT vague ('Consider the water issues'). The test: a reader should be able to ANSWER it "
-        "directly — yes/no + the governing rule — rather than write an essay on the area. An umbrella "
-        "issue is still ONE direct question whose answer requires resolving its named sub-questions. "
-        "PHRASE IT AS A GENUINELY OPEN QUESTION — do NOT bake the answer into it. Where the law may "
-        "NOT give a clean answer (e.g. whether a priority/hierarchy exists among competing uses), keep "
-        "it open ('…does the framework establish priorities among them, or require them to be "
-        "balanced?') rather than asserting the outcome in the question. Where several institutions "
-        "exercise DIFFERENT statutory functions over the matter (a Minister, a resource commission, an "
-        "environmental authority, a district assembly), frame a synthesis/recommendation issue around "
-        "'the relevant authorities' and their respective powers — not a single omnibus 'government "
-        "approval'. "
-        "WHY ties it to the "
-        "specific facts. LAW names ONLY the rule(s)/source(s) with a DIRECT, established connection to "
-        "THIS issue, drawn from the "
-        "materials — do NOT pad it with topically-adjacent provisions whose relevance you have not "
-        "established (a government-participation-in-mining section is not, without more, an authority "
-        "on how a water regulator ALLOCATES water); if unsure a provision bears on the issue, leave it "
-        "out — a tight correct list beats a long speculative one. Where one issue folds in genuinely "
-        "DIFFERENT legal tests (what an applicant must show to obtain a PERMIT vs what a regulator must "
-        "have before ENFORCEMENT vs what a claimant must prove in a CIVIL claim), name them as distinct "
-        "sub-parts rather than assuming ONE universal standard (e.g. a single 'burden of proof') across "
-        "all three. WEIGHT is 'core' or 'minor': 'core' = a central, mark-heavy issue the answer must "
-        "resolve fully (the examiner's main targets, including threshold/gateway issues that decide "
-        "others); 'minor' = a peripheral, low-mark or quickly-disposed point. Be honest — most problems "
-        "have a few core issues and several minor ones; do NOT mark everything core. "
+        '- "issues": array of UMBRELLA issues {\"n\", \"issue\", \"why\", \"subs\", \"link\", \"weight\"}. '
+        "n is the order number.\n"
+        "EACH ISSUE IS AN UMBRELLA (a GENERAL legal question) BROKEN INTO SUB-ISSUES that are DIRECT "
+        "QUESTIONS. This two-level shape is REQUIRED — it is what points the research at the right law:\n"
+        "- 'issue' = the UMBRELLA: a general, OPEN question that names the theme + the actors/facts, "
+        "e.g. 'What is the legal framework governing Asempa Gold's abstraction of water from the Adom "
+        "River, and does its mineral lease alone suffice?'. It sets the SCOPE — it is NOT a bare topic "
+        "label ('The permitting regime') and NOT the whole answer.\n"
+        "- 'subs' = array of {\"q\", \"law\"} SUB-ISSUES. Each 'q' is a PRECISE, DIRECT question that a "
+        "reader can answer yes/no + the governing rule (end with '?'). Frame MANY of them as 'What "
+        "law(s) govern …?' so each sub points straight at its governing provision — e.g. 'What law "
+        "governs the ownership and control of water resources?', 'What law governs the grant of a "
+        "water-use right?', 'What law makes a mineral-right holder's water use conditional on WRC "
+        "approval?', 'What law governs enforcement where abstraction pollutes or threatens the "
+        "resource?'. Each sub's 'law' names ONLY the provision(s) that DIRECTLY govern THAT sub-question "
+        "— the ACT FIRST (the substantive rule/power), then the L.I./Regulation that implements it (the "
+        "procedure/detail); do NOT pad. Give 2-5 subs per umbrella — enough to resolve it fully, each a "
+        "distinct question, none a vague heading. Keep each sub OPEN (don't bake the answer in); where "
+        "one sub folds in genuinely different tests (permit vs enforcement vs civil claim), split it "
+        "into separate sub-questions rather than assuming one universal standard. Where several "
+        "institutions exercise different functions, make the institutional umbrella's subs ask what "
+        "EACH body may do ('What are the WRC's powers…?', 'What are the EPA's…?').\n"
+        "WHY ties the umbrella to the specific facts. WEIGHT is 'core' or 'minor': 'core' = a central, "
+        "mark-heavy umbrella the answer must resolve fully (the examiner's main targets, including "
+        "threshold/gateway umbrellas that decide others); 'minor' = peripheral/low-mark. Be honest — "
+        "most problems have a few core umbrellas and several minor ones; do NOT mark everything core. "
         "LINK states how this issue CONNECTS to the others — which it "
         "is a threshold/gateway to, which it depends on the outcome of, or which its "
         "finding feeds into (e.g. 'threshold to issues 3-6', 'only reached if issue 2 "
@@ -11716,18 +11710,17 @@ def api_exam_breakdown():
         "engages — before the merits issues.\n"
         "COVER EVERY SIGNPOSTED REQUIREMENT — but GROUP related ones under UMBRELLA ISSUES; do NOT "
         "fragment into one-per-line. Sub-questions that share the SAME governing instrument, theme or "
-        "line of analysis belong together as ONE umbrella issue that addresses each sub-part in turn — "
-        "name the sub-parts inside the 'issue' text, e.g. 'Mineral title: (a) who owns the minerals; "
-        "(b) how rights are allocated; (c) parliamentary ratification'. Make a SEPARATE issue only where "
-        "a requirement turns on genuinely DIFFERENT governing law or a different analytical question. "
-        "A paired requirement on the SAME regime (e.g. 'liability AND emergency-response under the same "
-        "Act') is ONE umbrella issue with two sub-parts; on DIFFERENT regimes it is two issues. Fold the "
-        "scenario's concrete conditions (a figure to compute, the host state's context) INTO the issue "
-        "they inform as a sub-part, not a standalone abstract issue. RULE: every named requirement must "
-        "be COVERED — as its own issue or a sub-part of an umbrella — and none dropped; but AIM FOR A "
-        "COHERENT SET OF UMBRELLA ISSUES (typically 4-9 for a problem question), never a long list of "
-        "fragments. When two candidate issues would rest on the same authorities and analysis, MERGE "
-        "them.\n"
+        "line of analysis belong together under ONE umbrella, addressed as its SUBS — put each sub-part "
+        "as its own sub-question in the 'subs' array, e.g. umbrella 'Mineral title' with subs 'What law "
+        "governs who owns the minerals?', 'What law governs how mineral rights are allocated?', 'What "
+        "law governs parliamentary ratification of the grant?'. Make a SEPARATE UMBRELLA only where a "
+        "requirement turns on a genuinely DIFFERENT regime or analytical question; a paired requirement "
+        "on the SAME regime is ONE umbrella with two subs. Fold the scenario's concrete conditions (a "
+        "figure to compute, a specific objection) INTO the umbrella they inform as a sub-question, not a "
+        "standalone abstract umbrella. RULE: every named requirement must be COVERED — as an umbrella or "
+        "a sub — and none dropped; AIM FOR A COHERENT SET OF UMBRELLAS (typically 4-8 for a problem), "
+        "each with its subs, never a long flat list. When two candidate umbrellas would rest on the same "
+        "law and analysis, MERGE them.\n"
         "A PURE DELIVERABLE / RESEARCH REQUIREMENT IS NOT A LEGAL ISSUE. An instruction to 'analyse at "
         "least N official/primary documents', 'refer to recent sources' or 'include a references list' "
         "is a requirement the ANSWER must satisfy, NOT a legal controversy — do NOT turn it into an "
@@ -11799,28 +11792,17 @@ def api_exam_breakdown():
     data["cost"] = cost
     if isinstance(data.get("issues"), list):
         _scrub_constitution_from_water(data["issues"])   # physically drop art 257/258/268 from water issues
-        # AUDIT AT SOURCE — SERVER-SIDE, DOUBLE PASS. Verify every cited authority against the primary
-        # instruments' Tables of Contents and correct it BEFORE the map is returned, so the browser can
-        # never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled as a permit power).
+        # AUDIT AT SOURCE — SERVER-SIDE, DOUBLE PASS. Verify every cited authority (each SUB-ISSUE's law)
+        # against the primary instruments' Tables of Contents and correct it BEFORE the map is returned,
+        # so the browser can never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled).
         if data["issues"] and c:
-            for _pass in range(2):
-                try:
-                    res, acost = _audit_issue_authorities(c, courses, q, data["issues"])
-                except Exception:
-                    app.logger.exception("breakdown source-audit pass failed"); break
-                try:                                    # cost is a {"this_usd": ...} dict — accumulate the number
-                    cost = dict(cost or {})
-                    cost["this_usd"] = round(float(cost.get("this_usd", 0) or 0) + float((acost or {}).get("this_usd", 0) or 0), 5)
-                except Exception:
-                    pass
-                by = {str(r.get("n")): r for r in res}
-                for it in data["issues"]:
-                    r = by.get(str(it.get("n")))
-                    if r and (r.get("law") or "").strip():
-                        it["law"] = r["law"]
-                        if r.get("note"):
-                            it["audit_note"] = r["note"]
-            data["cost"] = cost
+            try:
+                acost = _audit_breakdown_issues(c, courses, q, data["issues"], passes=2)
+                cost = dict(cost or {})
+                cost["this_usd"] = round(float(cost.get("this_usd", 0) or 0) + float((acost or {}).get("this_usd", 0) or 0), 5)
+                data["cost"] = cost
+            except Exception:
+                app.logger.exception("breakdown source-audit failed")
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
     return jsonify(data)
@@ -11937,6 +11919,42 @@ def _audit_issue_authorities(c, courses, q, issues, model=None):
             o["changed"] = True
             o["note"] = ((o["note"] + " · ToC: " + "; ".join(tnotes[:4])).strip(" ·"))
     return (out, cost)
+
+
+def _audit_breakdown_issues(c, courses, q, issues, passes=2, model=None):
+    """Audit an UMBRELLA+SUBS issue map in place. Flattens every sub-issue's law (or the umbrella's own
+    law if it has no subs) into audit items, runs `_audit_issue_authorities` `passes` times, and writes
+    the corrected law + audit note back onto each sub. Returns the accumulated {"this_usd": ...} cost."""
+    items, back = [], []          # back = (issue, sub_or_None) parallel to items, for write-back
+    for it in (issues or []):
+        subs = it.get("subs")
+        if isinstance(subs, list) and subs:
+            for j, s in enumerate(subs):
+                if not isinstance(s, dict):
+                    continue
+                items.append({"n": f"{it.get('n')}.{j+1}", "issue": s.get("q", ""),
+                              "why": it.get("issue", ""), "law": s.get("law", "")})
+                back.append(s)
+        else:                     # umbrella with no subs — audit its own law
+            items.append({"n": str(it.get("n")), "issue": it.get("issue", ""),
+                          "why": it.get("why", ""), "law": it.get("law", "")})
+            back.append(it)
+    if not items:
+        return {"this_usd": 0}
+    total = 0.0
+    for _ in range(max(1, passes)):
+        res, cost = _audit_issue_authorities(c, courses, q, items, model=model)
+        total += float((cost or {}).get("this_usd", 0) or 0)
+        by = {str(r.get("n")): r for r in res}
+        for it2 in items:
+            r = by.get(str(it2["n"]))
+            if r and (r.get("law") or "").strip():
+                it2["law"] = r["law"]; it2["_note"] = r.get("note", "")
+    for target, item in zip(back, items):
+        target["law"] = item["law"]
+        if item.get("_note"):
+            target["audit_note"] = item["_note"]
+    return {"this_usd": round(total, 5)}
 
 
 @app.route("/api/exam/breakdown/audit", methods=["POST"])
