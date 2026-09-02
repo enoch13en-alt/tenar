@@ -5256,6 +5256,20 @@ $("#pwSave").onclick = async () => {
     const me = await (await fetch("/api/me")).json();
     if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
     if (me.build) window.CURRENT_BUILD = me.build;   // the live build — used to mark answers "from the latest update"
+    // AUTO-UPDATE: this page was rendered by build PAGE_BUILD; if the LIVE build differs, the browser is
+    // showing a cached older page — reload ONCE (with a cache-busting URL) so a new deploy reaches you
+    // without a manual hard-refresh. sessionStorage guard prevents any reload loop.
+    try {
+      var PAGE_BUILD = "{{ page_build|default('') }}";
+      if (me.build && PAGE_BUILD && me.build !== PAGE_BUILD) {
+        var _rk = "tenar_reloaded_" + me.build;
+        if (!sessionStorage.getItem(_rk)) {
+          sessionStorage.setItem(_rk, "1");
+          location.replace(location.pathname + "?_fresh=" + encodeURIComponent(me.build));
+          return;
+        }
+      }
+    } catch (e) {}
     const bt = $("#buildTag");
     if (bt && me.build) bt.textContent = "build " + me.build + " · " + (me.started || "");
     applyRole(me.role || "student", !!me.is_admin);

@@ -5952,7 +5952,9 @@ def home():
         return render_template("login.html")
     # no-cache: the single-file app ships JS inline, so a cached page = stale JS
     # (features "not working" until a hard-refresh). Always serve the latest.
-    resp = make_response(render_template("index.html"))
+    # BUILD_SHA is injected so the page can detect it is stale (its build != the live build) and
+    # auto-reload once — the user never has to hard-refresh to get a new deploy.
+    resp = make_response(render_template("index.html", page_build=BUILD_SHA))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
