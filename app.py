@@ -6708,17 +6708,20 @@ def api_ask():
             consume("fable_compiles")
         else:
             max_quality = False
-    return jsonify(answer_question(target, q, include_web, fmt, max_out, mode,
-                                   use_context=bool(body.get("use_context")),
-                                   max_quality=max_quality,
-                                   prior=(body.get("prior") or "").strip(),
-                                   extract_model=(body.get("extract_model") or None),
-                                   simple=bool(body.get("simple")),
-                                   siblings=body.get("siblings"),
-                                   issue_index=body.get("issue_index"),
-                                   pinned=body.get("pinned"),
-                                   auto_pin_primary=body.get("auto_pin_primary", True),
-                                   writer_model=body.get("writer_model")))
+    _res = answer_question(target, q, include_web, fmt, max_out, mode,
+                           use_context=bool(body.get("use_context")),
+                           max_quality=max_quality,
+                           prior=(body.get("prior") or "").strip(),
+                           extract_model=(body.get("extract_model") or None),
+                           simple=bool(body.get("simple")),
+                           siblings=body.get("siblings"),
+                           issue_index=body.get("issue_index"),
+                           pinned=body.get("pinned"),
+                           auto_pin_primary=body.get("auto_pin_primary", True),
+                           writer_model=body.get("writer_model"))
+    if isinstance(_res, dict):
+        _res["build"] = BUILD_SHA          # stamp the answer with the build that produced it (freshness mark)
+    return jsonify(_res)
 
 
 def _norm_doc_title(s):

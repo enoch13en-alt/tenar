@@ -2754,7 +2754,17 @@ function renderExam() {
         // (Removed the "OLD-format saved gather" badge — it confused, and it false-flagged legitimate
         // gathers that carry no ⟦LAW⟧ drawer, e.g. a "NO NEW LAW — governed by an earlier issue"
         // cross-reference. The ↻ Re-gather button below is always available to refresh any answer.)
-        body = '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
+        // FRESHNESS EYE — 👁 mark showing whether this answer was produced by the CURRENT live build.
+        // Green eye = from the latest update; amber eye = from an earlier version (↻ Re-gather to refresh).
+        const _cur = window.CURRENT_BUILD || null;
+        const _latest = _cur && it._build && it._build === _cur;
+        const _eye = it._build
+          ? (_latest
+              ? '<span style="font-size:11px;color:#8fce8f" title="This answer was produced by the current, latest version of the bot ('+esc(it._build)+').">👁 from the latest update</span>'
+              : '<span style="font-size:11px;color:#e0a05a" title="This answer was produced by an earlier version'+(it._build?(' ('+esc(it._build)+')'):'')+'. Click ↻ Re-gather to refresh it on the latest.">👁 earlier version — ↻ re-gather to refresh</span>')
+          : '';
+        const _eyeBar = _eye ? ('<div style="margin-bottom:4px">'+_eye+'</div>') : '';
+        body = _eyeBar + '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
           + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
@@ -3138,6 +3148,7 @@ async function gatherIssue(i, force) {
       it._audited = false;                       // fresh answer — not yet audited
       it.answer_annotated = r.answer_annotated || "";
       it.sources = r.sources || [];
+      it._build = r.build || null;               // stamp the build that produced this answer (freshness mark)
       it.done = !!it.answer.trim();              // only 'done' on a real answer
       if (r.cost && !r.cost.cached) EXAM.cost = (EXAM.cost || 0) + (r.cost.this_query_usd || 0);
       // VERIFY-AT-GATHER (×2): two independent Haiku audit passes check this issue's authorities
@@ -5244,6 +5255,7 @@ $("#pwSave").onclick = async () => {
   try {
     const me = await (await fetch("/api/me")).json();
     if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
+    if (me.build) window.CURRENT_BUILD = me.build;   // the live build — used to mark answers "from the latest update"
     const bt = $("#buildTag");
     if (bt && me.build) bt.textContent = "build " + me.build + " · " + (me.started || "");
     applyRole(me.role || "student", !!me.is_admin);
