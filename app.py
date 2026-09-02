@@ -11837,7 +11837,10 @@ def api_exam_breakdown():
         # so the browser can never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled).
         if data["issues"] and c:
             try:
-                acost = _audit_breakdown_issues(c, courses, q, data["issues"], passes=2, model=AUDIT_MODEL)
+                # Sonnet is strong enough in ONE pass (verified), and the FINAL deterministic reconcile
+                # inside _audit_breakdown_issues is the guaranteed second check — so 1 LLM pass keeps the
+                # breakdown fast while still double-checking (LLM correction + deterministic ToC).
+                acost = _audit_breakdown_issues(c, courses, q, data["issues"], passes=1, model=AUDIT_MODEL)
                 cost = dict(cost or {})
                 cost["this_usd"] = round(float(cost.get("this_usd", 0) or 0) + float((acost or {}).get("this_usd", 0) or 0), 5)
                 data["cost"] = cost
@@ -11858,7 +11861,7 @@ def _audit_issue_authorities(c, courses, q, issues, model=None):
     # and a deterministic pass reconciles the result afterwards — no hardcoded answer key.
     specs = build_toc_specs(courses, q, limit=24)     # ALL primary laws' ToCs (used for the deterministic reconcile)
     ctx_parts = []
-    for sp in specs[:14]:                              # show the model MORE tables so every core Act (522/703/1124/L.I.s) is present, not cut
+    for sp in specs[:12]:                              # show enough tables that every core Act (522/703/1124/L.I.s) is present, bounded for latency
         rows = "; ".join(f"{n} = {sp['map'][n]}" for n in sorted(sp["map"]))
         ctx_parts.append("CONTENTS (Arrangement of Sections/Regulations) — " + sp["name"]
                          + (" [complete]" if sp["clean"] else " [partial — verify numbers you can't see, do not guess]")
