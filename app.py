@@ -4862,6 +4862,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 + "\nResolve ONLY your own issue. Any matter that plainly belongs to another issue "
                 "listed above — even if this issue's wording brushes against it — is resolved THERE; "
                 "defer it in ONE line ('gates issue 2'), do not analyse it here.")
+        # Anchor Act 522 section roles on water issues so the gathered Rule attaches the right
+        # provision (s.12 ownership, s.16 grant, s.15 enforcement) instead of guessing (s.14).
+        if _WATER_SUBJ.search(question or ""):
+            system = system + WATER_ACT522_MAP
     if ctx_note:
         system = system + ctx_note              # background-context usage rules
     # Thinking is OFF here, so cost is just bounded output — a generous cap lets
@@ -11315,6 +11319,34 @@ CALC_AWARE = (
 )
 
 
+# USER-VERIFIED provision-role map for the Water Resources Commission Act 1996 (Act 522).
+# NOT law-from-memory: the student verified every role below against Parliament's OFFICIAL copy
+# of Act 522 (twice, via a marker review), because the corpus scan of Act 522 is fragmented and
+# the model kept guessing section numbers (citing s.14 for grants, omitting s.12, dropping s.15).
+# This anchors the roles so the breakdown attaches the RIGHT provision to a water issue; it still
+# tells the model to confirm against the retrieved Act 522 text and follow that text if it differs.
+WATER_ACT522_MAP = (
+    "\n\nWATER — Act 522 PROVISION MAP (the student has verified these roles against the official "
+    "text; attach the provision that does the SPECIFIC work the issue needs, and confirm each "
+    "against the retrieved Act 522 text — if the text differs, follow it and flag the number):\n"
+    "- s.12 — vests the PROPERTY IN AND CONTROL of all water resources in the President in trust for "
+    "the people. This is THE ownership/control provision: any 'who owns/controls water' issue MUST "
+    "cite s.12 (do not omit it).\n"
+    "- s.13 — the GENERAL RESTRICTION: no diverting, damming, storing, abstracting or using water "
+    "except as provided by the Act.\n"
+    "- s.14 — the NARROW DOMESTIC-USE EXCEPTION only. It is NOT a grant of water rights and NOT the "
+    "Commission's permit/conditions power — never cite s.14 for grants, refusals or conditions.\n"
+    "- s.15 — WRC ENFORCEMENT where water use poses a SERIOUS THREAT to the environment or public "
+    "health (require steps, or cessation). Surface s.15 on any pollution / serious-threat issue.\n"
+    "- s.16 — the GRANT of a water right and the power to grant it SUBJECT TO CONDITIONS. This — NOT "
+    "s.14 — is the application/grant/refusal/conditions provision.\n"
+    "- (Act 703) s.17 — a mineral-right holder's entitlement to divert/impound/convey/use water is "
+    "expressly CONDITIONAL on obtaining the requisite Act 522 authorisation.\n"
+    "Do not pad a water issue with tangential mining provisions (e.g. Act 703 ss 43, 45, 47-49) "
+    "unless the facts make them directly relevant."
+)
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
@@ -11373,6 +11405,10 @@ def api_exam_breakdown():
         "matters of independent verification, NOT assumptions to hedge — unless the "
         "scenario is clearly hypothetical/fictional. "
         "Return STRICT JSON only, no prose, no markdown fences.")
+    # If this matter is about WATER, anchor the Act 522 section roles so the issue's 'law' hints
+    # stop guessing section numbers (the fragmented Act 522 scan is why they drift).
+    if _WATER_SUBJ.search(q) or any("WATER" in (cn or "").upper() for cn in courses):
+        system = system + WATER_ACT522_MAP
     user = (
         f"COURSE MATERIALS (the only law you may rely on):\n{ctx}\n\n"
         f"EXAM QUESTION / CASE STUDY:\n{q}\n\n"
