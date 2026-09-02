@@ -3981,6 +3981,126 @@ def arrangement_text(course, fname):
     return out
 
 
+# ---- Deterministic Table-of-Contents check: the bot reads the instrument's OWN Arrangement of
+# Sections and reconciles every cited provision's description against the official heading. This is
+# how a mis-labelled citation (e.g. "reg 2 (prohibition)" when reg 2 is "Application procedure") is
+# caught and corrected WITHOUT a hardcoded answer key — the truth comes from the document itself.
+ARR_MAPS = {}
+_ARR_NUM_ONLY = re.compile(r'^(\d{1,4})[A-Za-z]?\s*[.)\-—:]?$')
+_ARR_NUM_HEAD = re.compile(r'^(\d{1,4})[A-Za-z]?\s*[.)\-—:]?\s+(.+)$')
+_ARR_STOP = re.compile(r'^(SCHEDULE|SCHEDULES|ARRANGEMENT|TABLE OF CONTENTS|SECTION HEADINGS)\b', re.I)
+
+def _parse_arrangement_map(arr_text):
+    """Parse an Arrangement-of-Sections/Regulations block into {number:int -> heading:str}.
+    Handles 'N. Heading', 'N Heading', and 'N.'<newline>'Heading' layouts (OCR'd Acts use all)."""
+    if not arr_text:
+        return {}
+    lines = [l.strip() for l in arr_text.splitlines() if l.strip()]
+    out, i = {}, 0
+    while i < len(lines):
+        l = lines[i]
+        if _ARR_STOP.match(l):
+            i += 1; continue
+        m1 = _ARR_NUM_ONLY.match(l)
+        if m1 and i + 1 < len(lines) and not _ARR_NUM_ONLY.match(lines[i+1]) and not _ARR_STOP.match(lines[i+1]):
+            n = int(m1.group(1)); head = lines[i+1].strip()
+            if 1 <= n <= 2000 and len(head) >= 2 and not head[0].isdigit():
+                out.setdefault(n, head); i += 2; continue
+        m2 = _ARR_NUM_HEAD.match(l)
+        if m2:
+            n = int(m2.group(1)); head = m2.group(2).strip()
+            if 1 <= n <= 2000 and len(head) >= 2:
+                out.setdefault(n, head)
+        i += 1
+    return out
+
+def arrangement_map(course, fname):
+    """Cached {number -> heading} for an instrument's Arrangement of Sections."""
+    key = (course, fname)
+    if key not in ARR_MAPS:
+        ARR_MAPS[key] = _parse_arrangement_map(arrangement_text(course, fname) or "")
+    return ARR_MAPS[key]
+
+def _map_is_clean_complete(m):
+    """True when a parsed ToC is dense AND its headings look like real titles — only then is it safe
+    to REWRITE a citation's description to a heading. A sparse/fragmented map (e.g. a body-header
+    fallback) is used for annotation only, never rewrite, so it can't degrade a good description."""
+    if len(m) < 6:
+        return False
+    mx = max(m)
+    if len(m) < 0.5 * mx:
+        return False
+    def titleish(h):
+        return (len(h) <= 55 and h[:1].isupper() and not h.rstrip().endswith((',', '-', '—', ':'))
+                and not re.search(r'\b(shall|may|includes?|include|hereby)\b', h, re.I))
+    return sum(1 for h in m.values() if titleish(h)) / len(m) >= 0.7
+
+_TOC_CITE = re.compile(r'\b(?:s\.?|ss\.?|section[s]?|reg\.?|regs\.?|regulation[s]?)\s*\.?\s*(\d{1,4})[A-Za-z]?\b', re.I)
+
+def build_toc_specs(courses, query, limit=8):
+    """The instruments (with parsed ToCs) relevant to the question — the bot's own source of truth
+    for provision numbers. Each spec: name, an anchor regex matching the Act/L.I. in a citation
+    string, its {num->heading} map, and whether the map is clean+complete enough to rewrite from."""
+    specs, seen = [], set()
+    try:
+        hits = search_multi(courses, query, k=40)
+    except Exception:
+        hits = []
+    for ch in hits:
+        d = ch.get("doc", "")
+        if d in seen or _source_tier_weight(d) < 1.0 or display_type(d) == "constitution":
+            continue
+        seen.add(d)
+        m = arrangement_map(ch.get("_course", courses[0]), d)
+        if not m:
+            continue
+        disp = display_name(d)
+        mm = re.search(r'\b(?:Act|L\.?\s*I\.?)\s*(\d{2,4})\b', disp)
+        anchor = re.compile(r'\b(?:Act|L\.?\s*I\.?)\s*' + re.escape(mm.group(1)) + r'\b', re.I) if mm else None
+        specs.append({"name": disp, "anchor": anchor, "map": m, "clean": _map_is_clean_complete(m)})
+        if len(specs) >= limit:
+            break
+    return specs
+
+def toc_reconcile_law(law, specs):
+    """Reconcile a 'law' string against the instruments' own Arrangements. For each cited provision,
+    within the segment governed by its instrument, look up the number's official heading and REWRITE
+    a mismatched parenthetical to that heading (clean+complete ToCs only). Returns (new_law, notes)."""
+    if not law or not specs:
+        return law, []
+    marks = []
+    for sp in specs:
+        if sp.get("anchor"):
+            for mt in sp["anchor"].finditer(law):
+                marks.append((mt.start(), sp))
+    marks.sort(key=lambda x: x[0])
+    if not marks:
+        return law, []
+    segs = [(pos, (marks[i+1][0] if i+1 < len(marks) else len(law)), sp)
+            for i, (pos, sp) in enumerate(marks)]
+    edits, notes = [], []
+    for pos, end, sp in segs:
+        if not sp.get("clean"):
+            continue
+        seg = law[pos:end]
+        for cm in _TOC_CITE.finditer(seg):
+            head = sp["map"].get(int(cm.group(1)))
+            if not head:
+                continue
+            cite = cm.group(0).strip()
+            pm = re.match(r'\s*\(([^)]{0,90})\)', seg[cm.end():cm.end()+95])
+            if pm:
+                desc = pm.group(1)
+                keys = [w for w in re.sub(r'[^a-z ]', '', head.lower()).split() if len(w) > 3]
+                if not any(w in desc.lower() for w in keys):
+                    s = pos + cm.end() + pm.start(1); e = pos + cm.end() + pm.end(1)
+                    edits.append((s, e, head))
+                    notes.append(f"{cite} → {head} (was: “{desc[:38]}”)")
+    for s, e, rep in sorted(edits, reverse=True):
+        law = law[:s] + rep + law[e:]
+    return law, notes
+
+
 def auto_pin_primary_hits(course, query, total=16, k_per=4, floor=0.28):
     """AUTO-PIN: force the query-RELEVANT provisions from the course's DOMESTIC-PRIMARY STATUTES
     (Acts / L.I.s) into context, so the governing provision — with its real section number — is
@@ -11632,28 +11752,19 @@ def api_exam_breakdown_audit():
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
     courses = _exam_courses(body, course)
 
-    # GROUNDING CONTEXT = the contents maps (Arrangement of Sections) of the domestic-primary
-    # instruments relevant to the whole question — the auditor's source of truth for numbers.
-    ctx_parts, seen, n_arr = [], set(), 0
-    try:
-        hits = search_multi(courses, q, k=40)
-    except Exception:
-        hits = []
-    for ch in hits:
-        d = ch.get("doc", "")
-        if d in seen or _source_tier_weight(d) < 1.0 or display_type(d) == "constitution":
-            continue
-        seen.add(d)
-        arr = arrangement_text(ch.get("_course", courses[0]), d)
-        if arr:
-            ctx_parts.append("CONTENTS MAP — " + display_name(d) + " (Arrangement of Sections/"
-                             "Regulations; topic → exact number):\n" + arr[:6000])
-            n_arr += 1
-        if n_arr >= 6:
-            break
+    # GROUNDING = the instruments' OWN Tables of Contents, PARSED into clean {number → heading}
+    # tables. The bot verifies every cited number against these headings (its own source of truth),
+    # and a deterministic pass reconciles the result afterwards — no hardcoded answer key.
+    specs = build_toc_specs(courses, q, limit=8)
+    ctx_parts = []
+    for sp in specs:
+        rows = "; ".join(f"{n} = {sp['map'][n]}" for n in sorted(sp["map"]))
+        ctx_parts.append("CONTENTS (Arrangement of Sections/Regulations) — " + sp["name"]
+                         + (" [complete]" if sp["clean"] else " [partial — verify numbers you can't see, do not guess]")
+                         + ":\n" + rows)
     contents_block = ("\n\n".join(ctx_parts) if ctx_parts else
-        "(No Arrangement-of-Sections contents maps were found — you cannot confirm section numbers "
-        "from a table of contents here, so mark every unconfirmable number '⚠ unconfirmed'.)")
+        "(No Arrangement-of-Sections tables were found — you cannot confirm section numbers from a "
+        "table of contents here, so mark every unconfirmable number '⚠ unconfirmed'.)")
 
     issues_block = "\n".join(json.dumps(
         {"n": it.get("n"), "issue": it.get("issue", ""), "law": it.get("law", "")},
@@ -11716,6 +11827,16 @@ def api_exam_breakdown_audit():
             o["law"] = m["law"]
             o["changed"] = True
             o["note"] = ((o["note"] + " · removed Constitution from a water issue").strip(" ·"))
+    # DETERMINISTIC ToC RECONCILE — the decisive check: read each instrument's own Arrangement of
+    # Sections and correct any cited provision whose description contradicts its official heading
+    # (e.g. 'reg 2 (prohibition)' → 'reg 2 (Application procedure)'). Computed from the document,
+    # not from the model and not from a hardcoded map, so it catches what the LLM audit misses.
+    for o in out:
+        newlaw, tnotes = toc_reconcile_law(o["law"], specs)
+        if tnotes:
+            o["law"] = newlaw
+            o["changed"] = True
+            o["note"] = ((o["note"] + " · ToC: " + "; ".join(tnotes[:4])).strip(" ·"))
     return jsonify({"issues": out, "cost": {"this_usd": cost}})
 
 
