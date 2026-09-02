@@ -2035,6 +2035,46 @@ QUALIFIED_REASONING = (
     "position; acknowledge uncertainty where it genuinely exists rather than forcing a definitive rule."
 )
 
+APPLICATION_DISCIPLINE = (
+    "APPLICATION DISCIPLINE — the single rule that most often fails: an 'it depends' must NOT collapse "
+    "into an assumed answer. The classic error is to correctly say the answer DEPENDS ON some fact, "
+    "then, a sentence later, assert what that fact is. IF THE ANSWER DEPENDS ON X AND X IS NOT IN THE "
+    "MATERIALS, YOU MAY NOT SUPPLY X. Say plainly that X cannot be determined on the materials, and "
+    "stop. Never write 'almost certainly', 'clearly exceeds', 'plainly', 'no doubt', 'surely', "
+    "'obviously' or 'in all likelihood' about a fact you have not been shown — those words defeat the "
+    "whole method. (Worked correction — do NOT write the LEFT; write the RIGHT: NOT 'the proposed "
+    "expansion almost certainly exceeds any existing permit' → 'whether the proposed abstraction or "
+    "works exceed the party's existing authorisation cannot be determined without examining that "
+    "party's own permit'.)\n"
+    "EVIDENCE PROVENANCE — a document establishes facts ONLY about its OWN subject. A sample, specimen "
+    "or template instrument, or a document issued to a DIFFERENT party, shows the TYPES of terms an "
+    "instrument of that kind MAY contain (source, volume, purpose, duration, conditions) — it does NOT "
+    "establish THIS party's actual terms. Keep the two strictly apart: 'the specimen permit shows a "
+    "permit may fix volume, purpose and duration' is supported; 'this party's permit authorises X / is "
+    "exceeded' is NOT supported unless THIS party's own document is in the record. Do not transfer one "
+    "party's figures, limits or conditions onto another party.\n"
+    "QUOTE VESTING / TRUST LANGUAGE EXACTLY — where a provision vests 'the property in and control' of "
+    "something 'in trust for' or 'on behalf of' someone, use THAT language; do NOT gloss it to 'belongs "
+    "to', 'owns', or 'is owned by'. The gloss changes the legal nature (beneficial ownership versus "
+    "control held in trust), and that nature is often the very question asked. Track the provision's "
+    "own words, especially on ownership/vesting.\n"
+    "ONE PROVISION, ONE RULE — do NOT merge separate provisions or instruments into a single "
+    "compressed rule. Exceptions or exemptions that live in different sections, or in a subsidiary "
+    "L.I., are DISTINCT — attribute each to its own provision exactly as the materials show it, and do "
+    "NOT fold several of them into one section's list of 'exceptions'. If you are not sure which "
+    "provision carries an exception, say so rather than assign it to a neighbour.\n"
+    "NO INVENTED CHARACTERISATIONS; DEFER DOWNSTREAM — do not attach a label the provision does not use "
+    "('gateway', 'condition precedent', 'sole means', 'trigger'). State what the provision's own words "
+    "do, then stop. A downstream step that is itself another issue in the set (a ratification "
+    "mechanism, the permit-application process, compensation) is deferred in ONE line to that issue — "
+    "not argued, not characterised here.\n"
+    "TANGENTIAL CONTEXT IS ONE LINE — record secondary/historical material that is not needed to "
+    "resolve THIS question (e.g. customary-practice commentary) in a single attributed line as "
+    "CONTEXT; do not spend paragraphs on it, and do NOT assert a legal relationship between it and the "
+    "statute ('it does not alter the framework', 'customary law is subordinate') unless the materials "
+    "actually ground that relationship."
+)
+
 ARGUMENTATIVE_COMMITMENT = (
     "COMMIT TO THE ARGUMENT — precision about FACTS and courage in ARGUMENT are "
     "DIFFERENT axes; do not confuse them. The calibrated-precision rule above "
@@ -5056,7 +5096,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = (CONFIG["system_prompt"] + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + NO_OVERSTATEMENT + "\n\n" + FACT_DISCIPLINE + "\n\n"
-                  + QUALIFIED_REASONING + "\n\n"
+                  + QUALIFIED_REASONING + "\n\n" + APPLICATION_DISCIPLINE + "\n\n"
                   "YOU ARE WRITING THE REASONED PER-ISSUE BRIEF for this one issue — the answer at "
                   "marker level, in the 'it depends' structure set out in the LEGAL REASONING METHOD "
                   "above. Build it ON verified law: every rule you state must sit on a provision quoted "
@@ -12515,7 +12555,7 @@ def api_exam_assemble():
         + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n" + GRUNDNORM_METHOD + "\n\n"
         + CASE_APPLICATION + "\n\n" + FACT_DISCIPLINE + "\n\n" + DOCTRINAL_PRECISION + "\n\n" + REFORM_METHOD + "\n\n"
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + PRECISION_DISCIPLINE
-        + "\n\n" + NO_OVERSTATEMENT + "\n\n" + QUALIFIED_REASONING
+        + "\n\n" + NO_OVERSTATEMENT + "\n\n" + QUALIFIED_REASONING + "\n\n" + APPLICATION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + RECENCY_PREFERENCE + "\n\n" + ARGUMENTATIVE_COMMITMENT
         + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
