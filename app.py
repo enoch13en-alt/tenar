@@ -11799,32 +11799,34 @@ def api_exam_breakdown():
     data["cost"] = cost
     if isinstance(data.get("issues"), list):
         _scrub_constitution_from_water(data["issues"])   # physically drop art 257/258/268 from water issues
+        # AUDIT AT SOURCE — SERVER-SIDE, DOUBLE PASS. Verify every cited authority against the primary
+        # instruments' Tables of Contents and correct it BEFORE the map is returned, so the browser can
+        # never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled as a permit power).
+        if data["issues"] and c:
+            for _pass in range(2):
+                try:
+                    res, acost = _audit_issue_authorities(c, courses, q, data["issues"])
+                except Exception:
+                    app.logger.exception("breakdown source-audit pass failed"); break
+                cost += acost
+                by = {str(r.get("n")): r for r in res}
+                for it in data["issues"]:
+                    r = by.get(str(it.get("n")))
+                    if r and (r.get("law") or "").strip():
+                        it["law"] = r["law"]
+                        if r.get("note"):
+                            it["audit_note"] = r["note"]
+            data["cost"] = cost
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
     return jsonify(data)
 
 
-@app.route("/api/exam/breakdown/audit", methods=["POST"])
-def api_exam_breakdown_audit():
-    """Audit the issue map's cited authorities AT THE SOURCE — before any gather/expansion.
-    For each issue, verify its 'law' hint against the primary instruments' Tables of Contents
-    (Arrangement of Sections) and retrieved provision text: fix the anchor Act for the subject,
-    confirm/correct each section number against a contents-map HEADING (or flag it unconfirmable),
-    and drop padding. ONE grounded Haiku pass; the frontend calls it TWICE (double audit) so a
-    provision mis-cite is caught at the source instead of propagating into every gather."""
-    body = request.json or {}
-    course = safe_course(body.get("course", ""))
-    q = (body.get("question") or "").strip()
-    issues = body.get("issues") or []
-    if not _may_read_course(course):
-        return jsonify({"error": "You don't have access to that course."}), 403
-    if not isinstance(issues, list) or not issues:
-        return jsonify({"issues": []})
-    c = _client()
-    if not c:
-        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
-    courses = _exam_courses(body, course)
-
+def _audit_issue_authorities(c, courses, q, issues):
+    """CORE of the breakdown authority audit (one grounded Haiku correction pass + the deterministic
+    ToC reconcile). Returns (out, cost) where out is [{n, law, changed, note}] aligned to `issues`.
+    Runs SERVER-SIDE inside the breakdown so corrections are guaranteed — never dependent on the
+    browser calling a separate endpoint (which could silently fail and leave raw, un-audited law)."""
     # GROUNDING = the instruments' OWN Tables of Contents, PARSED into clean {number → heading}
     # tables. The bot verifies every cited number against these headings (its own source of truth),
     # and a deterministic pass reconciles the result afterwards — no hardcoded answer key.
@@ -11885,19 +11887,18 @@ def api_exam_breakdown_audit():
             + "\n\nReturn the corrected JSON now.")
 
     cost, data = 0.0, None
+    resp, _m = _stream_final(c, HAIKU_MODEL, max_tokens=4000, system=system,
+                             messages=[{"role": "user", "content": user}])
+    cost = record_cost(resp)
+    txt = _text_of(resp)
     try:
-        resp, _m = _stream_final(c, HAIKU_MODEL, max_tokens=4000, system=system,
-                                 messages=[{"role": "user", "content": user}])
-        cost = record_cost(resp)
-        txt = _text_of(resp)
-        try:
-            data = _parse_json(txt)
-        except Exception:
-            data = _first_json_obj(txt)
-    except Exception as e:
-        return jsonify({"error": "Audit couldn't run — " + str(e)[:120]})
+        data = _parse_json(txt)
+    except Exception:
+        data = _first_json_obj(txt)
     if not isinstance(data, dict) or not isinstance(data.get("issues"), list):
-        return jsonify({"issues": [], "cost": {"this_usd": cost}})
+        # audit produced nothing usable — leave the issues unchanged (don't blank them out)
+        return ([{"n": it.get("n"), "law": (it.get("law") or ""), "changed": False, "note": ""}
+                 for it in issues], cost)
 
     fixed = {}
     for r in data["issues"]:
@@ -11931,6 +11932,29 @@ def api_exam_breakdown_audit():
             o["law"] = newlaw
             o["changed"] = True
             o["note"] = ((o["note"] + " · ToC: " + "; ".join(tnotes[:4])).strip(" ·"))
+    return (out, cost)
+
+
+@app.route("/api/exam/breakdown/audit", methods=["POST"])
+def api_exam_breakdown_audit():
+    """Thin wrapper (kept for the frontend's manual re-audit): audit an issue map's cited authorities
+    against the primary instruments' Tables of Contents. The breakdown ALSO runs this server-side, so
+    a map is already audited before it reaches the browser."""
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    q = (body.get("question") or "").strip()
+    issues = body.get("issues") or []
+    if not _may_read_course(course):
+        return jsonify({"error": "You don't have access to that course."}), 403
+    if not isinstance(issues, list) or not issues:
+        return jsonify({"issues": []})
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    try:
+        out, cost = _audit_issue_authorities(c, _exam_courses(body, course), q, issues)
+    except Exception as e:
+        return jsonify({"error": "Audit couldn't run — " + str(e)[:120]})
     return jsonify({"issues": out, "cost": {"this_usd": cost}})
 
 

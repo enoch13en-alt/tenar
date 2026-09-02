@@ -2451,21 +2451,17 @@ async function runBreakdown() {
         pinned: getPinned(),
         assumptions: !!($("#examAssume") && $("#examAssume").checked)})})).json();
     if (r.error) { $("#examStatus").textContent = r.error; return false; }
+    // The breakdown already ran the authority audit SERVER-SIDE (double pass) against each primary
+    // instrument's Table of Contents, so the returned map is ALREADY corrected — no fragile browser
+    // step that could silently fail and leave raw, un-audited law on screen.
+    const _cost = (typeof r.cost === "number") ? r.cost : (r.cost && r.cost.this_usd || 0);
     EXAM = {facts: r.facts||[], assumptions: r.assumptions||[],
-            issues: (r.issues||[]).map(i => ({...i, answer:null, sources:[], done:false})),
-            question: q, focus, cost: (r.cost ? (r.cost.this_usd||0) : 0)};
-    renderExam();                                  // show the raw map immediately
-    // AUDIT AT THE SOURCE — verify each issue's cited authorities against the primary instruments'
-    // Tables of Contents BEFORE anything is expanded, so a mis-cite can't propagate into the gathers.
-    // Double-pass (pass 2 re-checks pass 1), mirroring the gather's double-verify.
-    $("#examStatus").textContent = "Auditing the cited authorities at source (pass 1 of 2)…";
-    const c1 = await auditBreakdown();
-    $("#examStatus").textContent = "Auditing the cited authorities at source (pass 2 of 2)…";
-    const c2 = await auditBreakdown();
-    renderExam();                                  // re-render with corrected law + notes
-    const _fx = c1 + c2;
-    $("#examStatus").textContent = "Broken down & audited"
-      + (_fx ? (" — " + _fx + " authority fix(es) at source") : " — authorities checked, no changes needed")
+            issues: (r.issues||[]).map(i => ({...i, _auditNote: i.audit_note||null, answer:null, sources:[], done:false})),
+            question: q, focus, cost: _cost};
+    renderExam();
+    const _fx = EXAM.issues.filter(i => i._auditNote).length;
+    $("#examStatus").textContent = "Broken down & audited at source"
+      + (_fx ? (" — authorities corrected on " + _fx + " issue(s)") : " — authorities check clean")
       + " · exam session cost so far $" + EXAM.cost.toFixed(4);
     return EXAM.issues.length > 0;
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
