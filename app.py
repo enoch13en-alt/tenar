@@ -4818,14 +4818,18 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     # but NEVER for the per-issue GATHER: gathering runs many times, so a Fable writer there is a 10x
     # cost leak (it was un-metered too). Gather writer is ALWAYS Opus; Fable is reserved for the final
     # compile, which is a separate, metered opt-in.
-    # The GATHER is data collection (verified law + cases + a one-line pointer) — reproduction, not
-    # reasoning — so its writer runs on HAIKU too (both phases cheap). The reasoning/writing spend is
-    # reserved for the COMPILE. A plain answer/essay stays on Opus (or Fable if max quality).
-    primary_model = (HAIKU_MODEL if mode == "gather"
+    # The GATHER now produces a REASONED per-issue brief (the "it depends" structure), not a bare
+    # data sheet — so its WRITER runs on SONNET (reasoning model), while Phase-1 rule EXTRACTION
+    # stays on Haiku (cheap reproduction). This is the deliberate quality/cost trade the user asked
+    # for: the gather itself reaches the model-answer level, not just the compile. A plain
+    # answer/essay stays on Opus (or Fable if max quality).
+    primary_model = (AUDIT_MODEL if mode == "gather"
                      else FABLE_MODEL if max_quality else ANSWER_MODEL)
-    # HIGH-PRECISION GATHER (opt-in): route the gather WRITER to a stronger model. Default keeps
-    # Haiku (cheap). Used for the A/B and for a graded-submission toggle.
-    if mode == "gather" and writer_model in ("opus", "opus_x"):
+    # GATHER WRITER overrides (opt-in): "haiku" drops back to the cheap data-sheet-grade writer;
+    # "opus"/"fable" push higher for a graded submission.
+    if mode == "gather" and writer_model == "haiku":
+        primary_model = HAIKU_MODEL
+    elif mode == "gather" and writer_model in ("opus", "opus_x"):
         primary_model = ANSWER_MODEL
     elif mode == "gather" and writer_model == "fable":
         primary_model = FABLE_MODEL
@@ -5045,37 +5049,39 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
                   + DOCTRINAL_PRECISION + "\n\n" + TEMPORAL_SUCCESSION)
     elif mode == "gather":
-        # DATA-SHEET gather: GROUNDING modules ONLY — deliberately NO analysis modules (no LEGAL_METHOD,
-        # CASE_APPLICATION, DOCTRINAL_PRECISION, CALC_AWARE), because those tell the model to REASON and
-        # it then writes a long analytical answer. The gather just collects verified law + cases; the
-        # COMPILE does all the reasoning/writing.
+        # REASONED gather (Sonnet writer): grounding modules + QUALIFIED_REASONING so the gather itself
+        # produces the per-issue "it depends" brief (the model-answer level), not a bare data sheet.
+        # Phase-1 extraction (Haiku) still reproduces the raw law verbatim; the writer then REASONS on
+        # it. The COMPILE later synthesises these briefs into the full opinion.
         system = (CONFIG["system_prompt"] + "\n\n"
                   + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n"
                   + PRECISION_DISCIPLINE + "\n\n" + NO_OVERSTATEMENT + "\n\n" + FACT_DISCIPLINE + "\n\n"
-                  "YOU ARE A VERBATIM EXTRACTOR, NOT AN INTERPRETER. Your ONLY job is to COPY the "
-                  "verified raw material — the governing provisions in their EXACT words with their "
-                  "EXACT pinpoints, and the cases/sources exactly as cited — for the COMPILE stage "
-                  "(a stronger model) to read and interpret. Because interpretation is where mistakes "
-                  "happen, you must NOT interpret: do NOT decide which provision 'governs' a topic, do "
-                  "NOT restate a provision as applying to a subject it does not name (a clause vesting "
-                  "'minerals ... in watercourses' is NOT about water), do NOT characterise, rank, "
-                  "compare, or say one use 'ranks above' another, do NOT apply the law to the facts, do "
-                  "NOT reach or hint at a conclusion. Reproduce; don't reason. If you are tempted to "
-                  "add a word that is not doing one of {stating the exact rule, naming its pinpoint, "
-                  "one-line what-it-says}, STOP — that judgment is the compile's job.\n"
-                  "THIS IS A DATA SHEET FOR THE ISSUE — NOT AN ANSWER, NOT AN ESSAY, NOT ANALYSIS. "
-                  "NO 'assessment', 'adequacy', 'analysis', 'discussion' or 'conclusion'; NO developed "
-                  "argument; NO running the facts through the rule.\n\n"
-                  "FORMATTING — FOLLOW EXACTLY so the sheet renders clean and is easy to read:\n"
-                  "- Use these FIVE section headings, each written as a Markdown H2 on ITS OWN LINE, in "
-                  "this order: '## Issue', '## Rule', '## Cases', '## Scholarly & secondary', "
-                  "'## Comparative'. Put a BLANK LINE after each heading and a BLANK LINE between items. "
-                  "NEVER put any text on the same line as a heading. Do NOT invent extra sub-headings "
-                  "(no 'Primary Law — Operative Provisions', no 'Statutory Synthesis'), and do NOT use "
-                  "'---' divider lines.\n"
-                  "- '## Issue' — ONE line: the precise legal question these facts raise. No preamble.\n"
-                  "- '## Rule' — list each governing provision as a TWO-LINE block, blank line between "
-                  "provisions:\n"
+                  + QUALIFIED_REASONING + "\n\n"
+                  "YOU ARE WRITING THE REASONED PER-ISSUE BRIEF for this one issue — the answer at "
+                  "marker level, in the 'it depends' structure set out in the LEGAL REASONING METHOD "
+                  "above. Build it ON verified law: every rule you state must sit on a provision quoted "
+                  "verbatim from the retrieved materials (Phase 1 hands you the exact text). You reason "
+                  "from that text; you do NOT invent it. GUARDRAILS that still bind absolutely: do NOT "
+                  "restate a provision as applying to a subject it does not name (a clause vesting "
+                  "'minerals ... in watercourses' is NOT about water); do NOT manufacture a ranking "
+                  "('use X ranks above use Y') unless a provision says so; do NOT state a section number "
+                  "or wording from memory — if the exact text is not in the materials, say the wording "
+                  "is unconfirmed and reason on the governing PRINCIPLE. Interpretation is where marks "
+                  "are won AND lost: keep it grounded, qualified, and tied to the pinpoint.\n"
+                  "THIS IS THE REASONED BRIEF FOR THE ISSUE — the marker-level answer, structured as the "
+                  "FIVE labelled parts from the LEGAL REASONING METHOD above. It IS analysis: grounded, "
+                  "qualified reasoning that runs the facts through the law and reaches a qualified "
+                  "conclusion. It is NOT a flat data-dump and NOT an un-reasoned list.\n\n"
+                  "FORMATTING — FOLLOW EXACTLY so the brief renders clean and is easy to read:\n"
+                  "- Open with ONE H2 heading '## Issue' on its OWN line — then ONE line stating the "
+                  "precise legal question these facts raise (no preamble).\n"
+                  "- Then the FIVE labelled parts, EACH as a bold heading on its OWN line with a BLANK "
+                  "LINE after it, in THIS order: '**What the statute expressly says**', '**Reasonable "
+                  "legal interpretation**', '**What depends on the facts**', '**Not established by the "
+                  "available authorities**', '**Conclusion (qualified)**'. NEVER put text on the same "
+                  "line as a heading. Do NOT use '---' divider lines or invent other sub-headings.\n"
+                  "- Under '**What the statute expressly says**' — set out each governing provision as a "
+                  "TWO-LINE block, blank line between provisions:\n"
                   "    · line 1 is a bullet: '- ' then a DIRECT one-line statement of WHAT THIS "
                   "PROVISION SAYS ABOUT ITS OWN NAMED SUBJECT in **bold**, then ' — ' and the pinpoint "
                   "(e.g. 's.17, Act 703'). This is a FAITHFUL restatement, not a conclusion: say only "
@@ -5170,21 +5176,23 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "'land and water rights' pieces); take ONLY the part on the issue's real subject and "
                   "leave the land-tenure/customary-land material out. If it is about land, it is not "
                   "this water/mining issue.\n"
-                  "Under '## Cases' — ONE bullet per decided case that bears on this issue: '- **Case "
-                  "name** (citation exactly as the corpus/articles give it) — one line on what it HELD.' "
-                  "Mine the readings for cases they cite — a case named inside an article counts.\n"
-                  "Under '## Scholarly & secondary' — ONE bullet per academic point, each ATTRIBUTED to "
-                  "its author/work by name and pinpoint: '- Ainuson argues … (p.28)'. Give the analytical "
-                  "PROPOSITION the compile will draw on, not a bare title.\n"
-                  "Under '## Comparative' — ONE bullet per other-jurisdiction rule on the SAME point "
-                  "(name the country and state its rule/authority).\n"
-                  "For Cases / Scholarly / Comparative: these are DATA the compile will apply — cite "
-                  "them, do NOT argue them out. Where a source type is genuinely absent for this issue, "
-                  "put ONE line under its heading — '⚠ none in the materials' — rather than invent one.\n"
-                  "KEEP IT LEAN — GATHER ONLY, NO APPLICATION and NO CONCLUSION here, not even a one-line "
-                  "'how it applies' hook or a likely holding. Applying the law to the facts and reaching "
-                  "conclusions is done ENTIRELY at the compile stage. No intro, no background, no "
-                  "restating the facts, no developed argument.")
+                  "CASES AND SECONDARY SOURCES ARE WOVEN INTO THE REASONING, not parked in separate "
+                  "sections. A decided case that bears on the issue goes into '**Reasonable legal "
+                  "interpretation**' — name it (citation exactly as the corpus/articles give it) and "
+                  "state what it HELD, then use it. A scholarly/secondary point (Ainuson, Agyenim, a "
+                  "report) is used ONLY to CONFIRM or criticise the primary-law reading and belongs "
+                  "under '**Not established by the available authorities**' or as support in the "
+                  "interpretation — attribute it by author and pinpoint ('Ainuson, p.28'), and NEVER "
+                  "let it carry a core rule (that is the statute's job). Mine the readings for cases "
+                  "they cite — a case named inside an article counts. Where a source type is genuinely "
+                  "absent, say so in one honest line rather than invent one.\n"
+                  "NOW DO THE REASONING. After setting out the statute text, WORK THE FIVE PARTS: give "
+                  "the better-view interpretation (qualified, tied to the pinpoints), say what turns on "
+                  "the facts, say honestly what the materials do NOT settle, and end with a QUALIFIED "
+                  "conclusion that states what the answer DEPENDS ON and then the best-supported "
+                  "position. Do NOT force certainty and do NOT overstate (obey the NO-OVERSTATEMENT and "
+                  "LEGAL REASONING rules above). Keep it TIGHT — no intro, no background essay, no "
+                  "re-stating all the facts; reason, don't pad.")
         if prior:
             system = system + "\n\n" + (
                 "ISSUE CONTINUITY — these issues are parts of ONE continuous piece of work (a single "
@@ -5210,17 +5218,16 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     if simple and mode != "cases" and fmt != "chat":
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
     if mode == "gather":
-        # NB: do NOT append ISSUE_SCOPE here — that is an ANSWER-mode module ("Keep the IRAC …
-        # this issue's conclusion is a building block"), and it was overriding the data-sheet
-        # directive and making the gather write a full Application + Conclusion. Use a gather-only
-        # scope note with NO IRAC/application/conclusion language instead.
+        # The gather now writes the REASONED per-issue brief, so it MAY apply the law to the facts and
+        # reach a qualified conclusion — but strictly WITHIN this one issue. This scope note keeps the
+        # brief on its own question and defers matters that belong to sibling issues.
         system = system + "\n\n" + (
-            "GATHER SCOPE — collect the law + authorities for THIS issue ONLY. If material plainly "
-            "belongs to another issue in the set, do NOT gather it here — that issue carries it. Do "
-            "NOT re-state law already established under an earlier issue; note it in ONE line as a "
-            "cross-reference. This is DATA COLLECTION, not an answer: no IRAC, no application of the "
-            "law to the facts, no conclusion, no 'building block' reasoning — just the verified Rule, "
-            "Cases, Scholarly and Comparative material. The compile does all the reasoning later.")
+            "BRIEF SCOPE — answer THIS issue's precise question ONLY, in the five-part 'it depends' "
+            "structure. Reason and conclude, but stay in this issue's lane: a matter that plainly "
+            "belongs to another issue in the set is deferred in ONE line ('gates issue 2'), not argued "
+            "here. Do NOT re-state law already established under an earlier issue — apply it by a brief "
+            "cross-reference. Your qualified conclusion is a clean building block the later issues rely "
+            "on.")
         system = system + "\n\n" + SOURCE_COVERAGE   # primary+secondary law, books, cases, comparative
         system = system + "\n\n" + RECENCY_PREFERENCE  # prefer the most recent on-point source
         if siblings and isinstance(siblings, list):
@@ -6709,10 +6716,10 @@ def api_ask():
     # essay — so it stays short and completes. report needs the most room for a full
     # pyramid; other formats get a generous cap so nothing truncates.
     if body.get("brief"):
-        # The gather is TIGHT law-gathering — Rule + direct Application + its sources — NOT an essay
-        # (the compile writes the prose). A big ceiling let each issue balloon to a 17k-char essay, so
-        # every issue cost ~2x and the compile then re-wrote it all. Cap it so gathers stay lean.
-        max_out = 4000
+        # The gather is the TIGHT reasoned per-issue brief (five-part 'it depends' + law drawers) —
+        # NOT a full essay (the compile still writes the combined opinion). Keep a firm cap so each
+        # issue stays lean, but enough headroom that the qualified conclusion never truncates.
+        max_out = 5000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
@@ -7477,12 +7484,14 @@ def api_audit():
                        "conclusion and the style verbatim. Do NOT add new authorities. Return ONLY "
                        "the corrected answer text — no preamble, no notes.\n\n" + KEEP_LAW_MARKERS)
             if _data_sheet:
-                sys_fix += ("\n\nTHIS IS A GATHER DATA SHEET, NOT AN ANSWER. Preserve EXACTLY its "
-                            "headings and structure (## Issue / ## Rule / ## Cases / ## Scholarly & "
-                            "secondary / ## Comparative). Correct/remove ONLY citations. Do NOT add an "
-                            "Application, Conclusion, Assessment, Analysis or ANY prose section, do NOT "
-                            "run the facts through the law, and do NOT turn it into an answer — it stays "
-                            "a data sheet of verified law.")
+                sys_fix += ("\n\nTHIS IS A REASONED PER-ISSUE BRIEF. Preserve EXACTLY its structure — "
+                            "the '## Issue' line and the five labelled parts (**What the statute "
+                            "expressly says** / **Reasonable legal interpretation** / **What depends on "
+                            "the facts** / **Not established by the available authorities** / "
+                            "**Conclusion (qualified)**), including the ⟦LAW⟧ drawers. Correct/remove "
+                            "ONLY citations. Do NOT restructure it, do NOT add new sections, and do NOT "
+                            "strip the reasoning or the qualified conclusion — keep every argument and "
+                            "the style verbatim.")
             try:
                 # auto-continue: a long (calc-heavy) answer must be reproduced WHOLE, or the truncated
                 # 'corrected' text cascades into the calibrate step as a cut-off document.
