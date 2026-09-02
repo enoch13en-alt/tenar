@@ -5717,11 +5717,26 @@ def api_admin_pagecheck():
             "tail": lines[-2:],
         })
     _arr = arrangement_text(course, d) or ""
-    return jsonify({"course": course, "doc": d, "display": display_name(d),
-                    "mapping": _mapping(d), "sample_chunks": samples,
-                    "arrangement_chars": len(_arr),
-                    "arrangement_max_num": max([int(n) for n in re.findall(r"(?m)^\s*(\d{1,4})[A-Z]?\s*[.)\-—:]", _arr)] or [0]),
-                    "arrangement_tail": _arr[-400:]})
+    out = {"course": course, "doc": d, "display": display_name(d),
+           "mapping": _mapping(d), "sample_chunks": samples,
+           "arrangement_chars": len(_arr),
+           "arrangement_max_num": max([int(n) for n in re.findall(r"(?m)^\s*(\d{1,4})[A-Z]?\s*[.)\-—:]", _arr)] or [0]),
+           "arrangement_tail": _arr[-400:]}
+    if request.args.get("raw"):
+        # full arrangement text, its PARSED {num->heading} map, and the raw text of the chunk(s)
+        # around the 'Arrangement' header — so I can see why low numbers drop from the parse.
+        pos = [i for i, c in enumerate(chunks) if c.get("doc") == d]
+        hdr_i = next((i for i in pos if _ARR_HEADER.search(chunks[i].get("text", "") or "")), None)
+        raw_chunks = []
+        if hdr_i is not None:
+            for i in pos:
+                if hdr_i <= i <= hdr_i + 3:
+                    raw_chunks.append({"idx": i, "text": (chunks[i].get("text", "") or "")[:2500]})
+        out["arrangement_full"] = _arr
+        out["arrangement_parsed_map"] = {str(k): v for k, v in sorted(arrangement_map(course, d).items())}
+        out["header_chunk_index"] = hdr_i
+        out["raw_arrangement_chunks"] = raw_chunks
+    return jsonify(out)
 
 
 @app.before_request
