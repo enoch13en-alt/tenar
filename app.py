@@ -4129,16 +4129,39 @@ def build_toc_specs(courses, query=None, limit=24):
             break
     return specs
 
+# a whole citation CLUSTER: a keyword + a list/range of numbers ("ss. 5, 12–16", "regs 2–6 and 12")
+_TOC_CLUSTER = re.compile(r'\b(ss?\.?|sections?|regs?\.?|regulations?)\s*\.?\s*'
+                          r'(\d{1,4}[A-Za-z]?(?:\s*(?:,|&|and|to|–|-|—)\s*\d{1,4}[A-Za-z]?)*)', re.I)
+# a hedge tail the model sometimes appends despite the ban ("; not in corpus — provision: …", "[… not detailed …]")
+_TOC_HEDGE = re.compile(r'\s*[;,]?\s*(?:\[[^\]]*?(?:not (?:in|detailed|listed|fully)|to confirm)[^\]]*\]'
+                        r'|not (?:in|detailed)[^;.)]*)', re.I)
+
+def _toc_nums(s):
+    """Parse a number-list string ('5, 12–16', '28-30', '35 and 36') into individual ints, expanding
+    small ranges. Years (1900-2099) are dropped by the caller."""
+    out = []
+    for part in re.split(r'\s*(?:,|&|and)\s*', s or "", flags=re.I):
+        part = part.strip()
+        m = re.match(r'(\d+)\s*[A-Za-z]?\s*(?:–|-|—|to)\s*(\d+)', part)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            out += list(range(a, b + 1)) if (a <= b and b - a <= 40) else [a, b]
+        else:
+            m2 = re.match(r'(\d+)', part)
+            if m2:
+                out.append(int(m2.group(1)))
+    return out
+
 def toc_reconcile_law(law, specs):
     """AUTHORITATIVE, instrument-scoped ToC reconciliation. Segment the 'law' string by INSTRUMENT
     (each spec's own name/number aliases, plus any generic 'Act N'/'L.I. N' reference). Then for every
-    cited provision, set its description to the official heading from THAT instrument's own Arrangement
-    — never from another instrument (this kills cross-instrument heading contamination, e.g. an
-    Environmental-Assessment reg being labelled with a Water-Use-Regulations heading). A citation whose
-    instrument has no verified ToC in the corpus, or whose number isn't in its ToC, is FLAGGED, not
-    guessed. Returns (new_law, notes)."""
+    cited provision — including COMBINED/RANGE citations ('ss. 5, 12–16'), which are EXPANDED into each
+    section with its own official heading — set the description from THAT instrument's own Arrangement,
+    never from another instrument. This exposes a wrong section hidden in a bundle (s.5 'Filling of
+    vacancies' cited for 'functions'). A citation under an instrument with no verified ToC, or a number
+    not in its ToC, is FLAGGED. A '[not in corpus]' hedge is stripped. Returns (new_law, notes)."""
     if not law or not specs:
-        return law, []
+        return _TOC_HEDGE.sub("", law or ""), []
     marks = []                                             # (pos, spec-or-None, matched_text)
     for sp in specs:
         for al in sp.get("aliases", []):
@@ -4159,39 +4182,52 @@ def toc_reconcile_law(law, specs):
             continue
         collapsed.append((pos, sp, txt))
     if not collapsed:
-        return law, []
+        return _TOC_HEDGE.sub("", law), []
     segs = [(collapsed[i][0], (collapsed[i+1][0] if i+1 < len(collapsed) else len(law)),
              collapsed[i][1], collapsed[i][2]) for i in range(len(collapsed))]
     edits, notes = [], []
     for pos, end, sp, inst_txt in segs:
         seg = law[pos:end]
-        for cm in _TOC_CITE.finditer(seg):
-            n = int(cm.group(1)); cite = cm.group(0).strip()
-            if 1900 <= n <= 2099:                          # a year in the instrument title, not a provision
+        for cm in _TOC_CLUSTER.finditer(seg):
+            kw = cm.group(1)
+            nums = [n for n in _toc_nums(cm.group(2)) if not (1900 <= n <= 2099)]  # drop title years
+            if not nums:
                 continue
-            pm = re.match(r'\s*\(([^)]{0,90})\)', seg[cm.end():cm.end()+95])
-            s = (pos + cm.end() + pm.start(1)) if pm else None
-            e = (pos + cm.end() + pm.end(1)) if pm else None
-            if sp is not None and sp.get("clean") and n in sp["map"]:
-                head = sp["map"][n]
-                if pm:
+            lbl = "reg" if kw.lower().startswith("r") else "s"
+            pm = re.match(r'\s*\(([^)]{0,140})\)', seg[cm.end():cm.end()+145])   # a description in ()
+            cs = pos + cm.start()
+            ce = pos + cm.end() + (pm.end() if pm else 0)
+            if sp is None:                                  # unverified instrument — flag, don't guess
+                edits.append((cs, ce, cm.group(0).strip() + " ⚠ confirm against " + inst_txt))
+                notes.append(f"⚠ {inst_txt} {cm.group(0).strip()}: unverified instrument — confirm the number")
+                continue
+            if not sp.get("clean"):                         # partial ToC — leave it, can't rewrite safely
+                continue
+            if len(nums) == 1 and pm:                       # single cite: relabel only when the description is wrong
+                n = nums[0]; head = sp["map"].get(n)
+                if head:
                     desc = pm.group(1)
                     keys = [w for w in re.sub(r'[^a-z ]', '', head.lower()).split() if len(w) > 3]
-                    if not any(w in desc.lower() for w in keys):   # description doesn't match the heading → fix it
-                        edits.append((s, e, head))
-                        notes.append(f"{cite} → {head} (was “{desc[:36]}”)")
+                    if not any(w in desc.lower() for w in keys):
+                        edits.append((cs, ce, f"{lbl}.{n} ({head})"))
+                        notes.append(f"{lbl}.{n} → {head} (was “{desc[:32]}”)")
                 else:
-                    notes.append(f"{cite} = {head}")
-            elif sp is not None and sp.get("clean"):           # instrument known + complete, but this number isn't in it
-                if pm:
-                    edits.append((s, e, f"⚠ {cite} not in {sp['name'][:40]} contents"))
-                notes.append(f"⚠ {cite} not found in {sp['name'][:40]}")
-            elif sp is None:                                    # UNKNOWN / unverified instrument (e.g. an unconfirmed L.I.)
-                if pm:
-                    edits.append((s, e, f"⚠ unverified — confirm {cite} against {inst_txt}"))
-                notes.append(f"⚠ {inst_txt} {cite}: not a verified instrument in the corpus — confirm the number")
+                    edits.append((cs, ce, f"{lbl}.{n} (⚠ not in {sp['name'][:30]})"))
+                    notes.append(f"⚠ {lbl}.{n} not in {sp['name'][:30]}")
+            else:                                           # combined / range: EXPAND each number with its real heading
+                parts = []
+                for n in nums:
+                    head = sp["map"].get(n)
+                    parts.append(f"{lbl}.{n} ({head})" if head else f"{lbl}.{n} (⚠ not in contents)")
+                    if not head:
+                        notes.append(f"⚠ {lbl}.{n} not in {sp['name'][:30]}")
+                edits.append((cs, ce, ", ".join(parts)))
+                notes.append(f"expanded {cm.group(0).strip()} → {len(nums)} provisions with real headings")
     for s, e, rep in sorted(edits, key=lambda x: x[0], reverse=True):
         law = law[:s] + rep + law[e:]
+    law = _TOC_HEDGE.sub("", law)                           # strip any leftover '[not in corpus]' hedge
+    law = re.sub(r'\s*;\s*;', ';', law)
+    law = re.sub(r'\s{2,}', ' ', law).strip(" ;,")
     return law, notes
 
 
