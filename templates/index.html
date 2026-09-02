@@ -483,13 +483,7 @@
        into issues grounded in this course, gathers the law for each, then
        assembles one OSCOLA-referenced answer. Facts come only from your
        question; law only from your course.</p>
-    <details id="examCoursesWrap" style="margin-bottom:8px">
-      <summary id="examCourse" style="cursor:pointer;font-size:12px;color:#8fb4ff"></summary>
-      <div id="examCoursesList" style="margin:6px 0 2px;padding:6px 8px;background:#0d1017;
-        border:1px solid #2a3344;border-radius:6px;max-height:150px;overflow:auto;
-        font-size:12px;color:#cdd5e6"></div>
-      <div style="font-size:11px;color:#6b7488">Tick every course the answer may draw law from — e.g. a cross-cutting problem spanning several papers.</div>
-    </details>
+    <div id="examCourse" style="margin-bottom:8px;font-size:12px;color:#8fb4ff"></div>
     <div id="examResume" style="display:none"></div>
     <textarea id="examQ" style="height:120px" placeholder="Paste the exam question / case study here — or upload it below…"></textarea>
     <input type="file" id="examFile" accept=".pdf,.docx,.txt,.md" class="hidden">
@@ -565,9 +559,6 @@
       <details style="margin:3px 0"><summary style="cursor:pointer;color:#8b93a7;font-size:12px">⚙ Advanced options</summary>
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
-      </label>
-      <label style="color:#aab4c6;font-size:12px" title="Draw on the course's separate Context store (official reports, government statements, institutional responses) as clearly-attributed BACKGROUND — never as law or as the problem's facts.">
-        <input type="checkbox" id="examUseContext"> 🗂 Use context (background)
       </label>
       <label style="color:#aab4c6;font-size:12px" title="Turn ON only when the question expressly asks you to identify additional facts / assumptions. OFF (default) = pure IRAC with firm conclusions and NO assumptions/additional-facts section. When ON, a single disciplined 'Additional Facts Material to the Advice' section is produced (genuine, outcome-changing omissions only).">
         <input type="checkbox" id="examAssume"> ＋ Additional facts (assumptions)
@@ -2286,45 +2277,15 @@ function resumeExam(snap) {
   $("#examStatus").textContent = "↩ Restored " + (EXAM.issues.length) + " issue(s)" + (EXAM.doc ? " + the compiled document" : "") + ". Continue where you left off.";
 }
 // courses Exam Coach will scan — defaults to the current course, user can tick more
-let EXAM_COURSES = null;   // null → not yet initialised (falls back to [COURSE])
-function examCourses() {
-  const picked = (EXAM_COURSES && EXAM_COURSES.length) ? EXAM_COURSES : [COURSE];
-  return picked.filter(c => ALL_COURSES.includes(c));
-}
+let EXAM_COURSES = null;   // (retained for compatibility; the exam now always uses the single current course)
+// Exam Coach now works on the CURRENTLY SELECTED course only — no multi-course scanning, which was
+// the thing that could pull a journal's paraphrase into a water question. One course, one clean corpus.
+function examCourses() { return COURSE ? [COURSE] : []; }
 function renderExamCourses() {
-  const list = $("#examCoursesList"); if (!list) return;
-  if (!EXAM_COURSES) EXAM_COURSES = [COURSE];
-  const allOn = ALL_COURSES.length && ALL_COURSES.every(c => EXAM_COURSES.includes(c));
-  list.innerHTML =
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
-    + '<button type="button" class="btn ' + (allOn ? 'gold' : 'alt') + ' mini" id="examAllCourses" '
-    + 'style="width:auto" title="Search EVERY course you have, so a cross-cutting problem pulls law '
-    + 'from any paper without you ticking each one.">✓ All my courses</button>'
-    + '<button type="button" class="btn alt mini" id="examThisCourse" style="width:auto" '
-    + 'title="Reset to just the current course.">Just this course</button>'
-    + '</div>'
-    + ALL_COURSES.map(c =>
-      '<label style="display:block;margin:2px 0;cursor:pointer">'
-      + '<input type="checkbox" class="examCourseCb" value="' + esc(c) + '"'
-      + (EXAM_COURSES.includes(c) ? " checked" : "") + '> ' + esc(c) + '</label>').join("");
-  list.querySelectorAll(".examCourseCb").forEach(cb => cb.onchange = () => {
-    EXAM_COURSES = Array.from(list.querySelectorAll(".examCourseCb"))
-      .filter(x => x.checked).map(x => x.value);
-    if (!EXAM_COURSES.length) { EXAM_COURSES = [COURSE]; renderExamCourses(); }
-    updateExamCourseLabel();
-  });
-  const allBtn = $("#examAllCourses");
-  if (allBtn) allBtn.onclick = () => { EXAM_COURSES = ALL_COURSES.slice(); renderExamCourses(); };
-  const thisBtn = $("#examThisCourse");
-  if (thisBtn) thisBtn.onclick = () => { EXAM_COURSES = [COURSE]; renderExamCourses(); };
-  updateExamCourseLabel();
+  const el = $("#examCourse");
+  if (el) el.textContent = "📚 Course: " + (COURSE || "");
 }
-function updateExamCourseLabel() {
-  const n = examCourses().length;
-  $("#examCourse").textContent = n <= 1
-    ? ("📚 Searching course: " + (examCourses()[0] || COURSE) + "  (click to scan more)")
-    : ("📚 Scanning " + n + " courses: " + examCourses().join(", "));
-}
+function updateExamCourseLabel() { renderExamCourses(); }
 $("#openExam").onclick = () => {
   EXAM_COURSES = [COURSE];              // reset to the current course each open
   renderExamCourses();
@@ -3144,7 +3105,7 @@ async function gatherIssue(i, force) {
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
         prior: priorRulesLedger(i),
-        use_context: !!($("#examUseContext") && $("#examUseContext").checked),
+        use_context: false,
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),
         issue_index: i,
@@ -3920,7 +3881,7 @@ async function compileExam(finalize) {
         font_size: parseInt(($("#docFontSize")||{}).value) || 0,
         footnotes_inclusive: (($("#fnCount")||{}).value === "count"),
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
-        use_context: !!($("#examUseContext") && $("#examUseContext").checked),
+        use_context: false,
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         simple: !!($("#examSimple") && $("#examSimple").checked),
