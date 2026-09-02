@@ -5370,17 +5370,21 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     _rule_cache_put(_ck, rule_text)
             if rule_text and not rule_text.upper().startswith("NO NEW LAW"):
                 content = list(content) + [{"type": "text", "text":
-                    "GOVERNING LAW ALREADY EXTRACTED FROM THE MATERIALS ABOVE (treat this as the "
-                    "settled Rule — reproduce it VERBATIM in your Rule section; do NOT add, remove "
-                    "or alter any law; your job is to APPLY this to the facts):\n\n" + rule_text}]
+                    "GOVERNING LAW ALREADY EXTRACTED FROM THE MATERIALS ABOVE — this is the settled "
+                    "law for your '## Rule' section. Reproduce it VERBATIM in the two-line ⟦LAW⟧-drawer "
+                    "format; do NOT add, remove or alter any law. THIS IS A DATA SHEET: collect the law, "
+                    "cases, comparative and secondary material under the five '## ' headings — do NOT "
+                    "apply it to the facts, do NOT reason, and do NOT reach or hint at a conclusion. "
+                    "That is the compile's job, not yours:\n\n" + rule_text}]
             elif rule_text:
                 # this issue is fully governed by already-established law — tell the writer to
                 # cross-reference it (Rule = one line) rather than restate anything
                 content = list(content) + [{"type": "text", "text":
                     "NO NEW GOVERNING LAW for this issue — it is governed ENTIRELY by law already "
-                    "established in earlier issues. In the Rule section, do NOT restate any rule: "
-                    "give a one-line cross-reference to where it was established and spend your "
-                    "words on applying it to THIS issue's facts."}]
+                    "established in earlier issues. In the '## Rule' section, do NOT restate any rule: "
+                    "give a one-line cross-reference to where it was established. This is a DATA SHEET — "
+                    "do NOT apply the law to the facts and do NOT conclude; just note the "
+                    "cross-reference and gather any NEW cases/secondary material for this issue."}]
         except Exception:
             pass          # extraction failed → writer still works from the passages directly
     # ---- PHASE 2: WRITE THE ANSWER -----------------------------------------------------

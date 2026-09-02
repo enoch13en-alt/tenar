@@ -3112,11 +3112,11 @@ async function gatherIssue(i, force) {
     const exq = (EXAM.question || $("#examQ").value || "").trim();
     const _subs = Array.isArray(it.subs) ? it.subs : [];
     const _subText = _subs.length
-      ? ('\n\nResolve EACH of these sub-questions in turn, each anchored on its governing law (Act first, then the L.I. that implements it):\n'
+      ? ('\n\nFor EACH of these sub-questions, GATHER the governing law (Act first, then the L.I. that implements it) — do NOT answer or analyse them, just collect the provisions that bear on each:\n'
          + _subs.map(s => '- ' + (s.q || '') + (s.law ? ('   [governing law: ' + s.law + ']') : '')).join('\n'))
       : '';
     const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
-      + 'Analyse this issue in depth: "' + (it.issue || '') + '".'
+      + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
       + _subText;
