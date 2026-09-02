@@ -1076,7 +1076,7 @@ async function viewSourcePage(doc, page){
       if (!j.error){ data = j; break; }
     } catch (e) {}
   }
-  if (!data){ bodyEl.innerHTML = '<div style="color:#e0a05a">Couldn\'t load that page — the document may not be in the selected course(s). Tick ✓ All my courses and try again.</div>'; return; }
+  if (!data){ bodyEl.innerHTML = '<div style="color:#e0a05a">Couldn\'t load that page — the document may not be in this course. Check the course selection and try again.</div>'; return; }
   title.textContent = "📄 " + data.doc + " — p." + data.label
     + (data.physical ? (' · PDF sheet ' + data.physical + '/' + data.pages) : '');
   if (data.kind === "image"){
