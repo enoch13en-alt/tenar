@@ -4036,6 +4036,25 @@ def _map_is_clean_complete(m):
     return sum(1 for h in m.values() if titleish(h)) / len(m) >= 0.7
 
 _TOC_CITE = re.compile(r'\b(?:s\.?|ss\.?|section[s]?|reg\.?|regs\.?|regulation[s]?)\s*\.?\s*(\d{1,4})[A-Za-z]?\b', re.I)
+# a generic instrument reference (Act NNN / L.I. NNNN) — used to segment on instruments we may NOT
+# have a verified ToC for, so a citation under an unknown instrument is FLAGGED, not mis-attributed.
+_TOC_GENERIC_INST = re.compile(r'\b(?:Act\s+\d{2,4}|L\.?\s*I\.?\s*\d{3,4})\b', re.I)
+
+def _has_real_cite(text):
+    """A provision citation whose number is NOT a 4-digit year (years appear in instrument titles)."""
+    return any(not (1900 <= int(cm.group(1)) <= 2099) for cm in _TOC_CITE.finditer(text))
+
+def _title_alias(disp):
+    """A regex matching an instrument by its TITLE (so a doc with no enacting number in its name —
+    e.g. the Environmental Assessment Regulations — can still be scoped by name). Requires a distinctive
+    multi-word title ending in a document-type word, matched as an ordered word sequence tolerant of
+    spaces/commas/parentheses."""
+    t = re.split(r'\s+—\s+', disp)[0]                     # drop "— author/source" suffix
+    t = re.sub(r',?\s*\d{4}\b.*$', '', t).strip()         # drop ", 1996 (Act 522)" / ", 2025" tails
+    words = re.findall(r'[A-Za-z]{2,}', t)
+    if len(words) < 2 or not re.search(r'(?i)\b(Act|Regulations|Constitution|Code|Law|Instrument)\b', t):
+        return None
+    return re.compile(r'\b' + r'[\s(),]*'.join(re.escape(w) for w in words), re.I)
 
 def _course_primary_docs(course):
     """Every DOMESTIC-PRIMARY instrument (Act / L.I., not the Constitution) indexed in a course."""
@@ -4083,47 +4102,79 @@ def build_toc_specs(courses, query=None, limit=24):
         disp = display_name(d)
         mm = (re.search(r'\((?:Act|L\.?\s*I\.?)\s*(\d{2,4})\)', disp)      # prefer the (Act NNN)/(L.I. NNN) enacting number
               or re.search(r'\b(?:Act|L\.?\s*I\.?)\s*(\d{2,4})\b', disp))
-        anchor = re.compile(r'\b(?:Act|L\.?\s*I\.?)\s*' + re.escape(mm.group(1)) + r'\b', re.I) if mm else None
-        specs.append({"name": disp, "anchor": anchor, "map": m, "clean": _map_is_clean_complete(m)})
+        aliases = []
+        if mm:
+            aliases.append(re.compile(r'\b(?:Act|L\.?\s*I\.?)\s*' + re.escape(mm.group(1)) + r'\b', re.I))
+        ta = _title_alias(disp)
+        if ta:
+            aliases.append(ta)
+        specs.append({"name": disp, "aliases": aliases, "map": m, "clean": _map_is_clean_complete(m)})
         if len(specs) >= limit:
             break
     return specs
 
 def toc_reconcile_law(law, specs):
-    """Reconcile a 'law' string against the instruments' own Arrangements. For each cited provision,
-    within the segment governed by its instrument, look up the number's official heading and REWRITE
-    a mismatched parenthetical to that heading (clean+complete ToCs only). Returns (new_law, notes)."""
+    """AUTHORITATIVE, instrument-scoped ToC reconciliation. Segment the 'law' string by INSTRUMENT
+    (each spec's own name/number aliases, plus any generic 'Act N'/'L.I. N' reference). Then for every
+    cited provision, set its description to the official heading from THAT instrument's own Arrangement
+    — never from another instrument (this kills cross-instrument heading contamination, e.g. an
+    Environmental-Assessment reg being labelled with a Water-Use-Regulations heading). A citation whose
+    instrument has no verified ToC in the corpus, or whose number isn't in its ToC, is FLAGGED, not
+    guessed. Returns (new_law, notes)."""
     if not law or not specs:
         return law, []
-    marks = []
+    marks = []                                             # (pos, spec-or-None, matched_text)
     for sp in specs:
-        if sp.get("anchor"):
-            for mt in sp["anchor"].finditer(law):
-                marks.append((mt.start(), sp))
+        for al in sp.get("aliases", []):
+            for mt in al.finditer(law):
+                marks.append((mt.start(), sp, mt.group(0)))
+    for mt in _TOC_GENERIC_INST.finditer(law):
+        marks.append((mt.start(), None, mt.group(0)))
     marks.sort(key=lambda x: x[0])
-    if not marks:
-        return law, []
-    segs = [(pos, (marks[i+1][0] if i+1 < len(marks) else len(law)), sp)
-            for i, (pos, sp) in enumerate(marks)]
-    edits, notes = [], []
-    for pos, end, sp in segs:
-        if not sp.get("clean"):
+    collapsed = []
+    for pos, sp, txt in marks:
+        # a generic '(L.I. NNNN)' with NO provision citation since the last titled instrument is part
+        # of that instrument's header (e.g. "…Regulations 2025 (L.I. 2504)") — not a new instrument
+        if sp is None and collapsed and collapsed[-1][1] is not None and not _has_real_cite(law[collapsed[-1][0]:pos]):
             continue
+        if collapsed and pos - collapsed[-1][0] <= 2:      # same spot → prefer a real spec over generic None
+            if collapsed[-1][1] is None and sp is not None:
+                collapsed[-1] = (collapsed[-1][0], sp, txt)
+            continue
+        collapsed.append((pos, sp, txt))
+    if not collapsed:
+        return law, []
+    segs = [(collapsed[i][0], (collapsed[i+1][0] if i+1 < len(collapsed) else len(law)),
+             collapsed[i][1], collapsed[i][2]) for i in range(len(collapsed))]
+    edits, notes = [], []
+    for pos, end, sp, inst_txt in segs:
         seg = law[pos:end]
         for cm in _TOC_CITE.finditer(seg):
-            head = sp["map"].get(int(cm.group(1)))
-            if not head:
+            n = int(cm.group(1)); cite = cm.group(0).strip()
+            if 1900 <= n <= 2099:                          # a year in the instrument title, not a provision
                 continue
-            cite = cm.group(0).strip()
             pm = re.match(r'\s*\(([^)]{0,90})\)', seg[cm.end():cm.end()+95])
-            if pm:
-                desc = pm.group(1)
-                keys = [w for w in re.sub(r'[^a-z ]', '', head.lower()).split() if len(w) > 3]
-                if not any(w in desc.lower() for w in keys):
-                    s = pos + cm.end() + pm.start(1); e = pos + cm.end() + pm.end(1)
-                    edits.append((s, e, head))
-                    notes.append(f"{cite} → {head} (was: “{desc[:38]}”)")
-    for s, e, rep in sorted(edits, reverse=True):
+            s = (pos + cm.end() + pm.start(1)) if pm else None
+            e = (pos + cm.end() + pm.end(1)) if pm else None
+            if sp is not None and sp.get("clean") and n in sp["map"]:
+                head = sp["map"][n]
+                if pm:
+                    desc = pm.group(1)
+                    keys = [w for w in re.sub(r'[^a-z ]', '', head.lower()).split() if len(w) > 3]
+                    if not any(w in desc.lower() for w in keys):   # description doesn't match the heading → fix it
+                        edits.append((s, e, head))
+                        notes.append(f"{cite} → {head} (was “{desc[:36]}”)")
+                else:
+                    notes.append(f"{cite} = {head}")
+            elif sp is not None and sp.get("clean"):           # instrument known + complete, but this number isn't in it
+                if pm:
+                    edits.append((s, e, f"⚠ {cite} not in {sp['name'][:40]} contents"))
+                notes.append(f"⚠ {cite} not found in {sp['name'][:40]}")
+            elif sp is None:                                    # UNKNOWN / unverified instrument (e.g. an unconfirmed L.I.)
+                if pm:
+                    edits.append((s, e, f"⚠ unverified — confirm {cite} against {inst_txt}"))
+                notes.append(f"⚠ {inst_txt} {cite}: not a verified instrument in the corpus — confirm the number")
+    for s, e, rep in sorted(edits, key=lambda x: x[0], reverse=True):
         law = law[:s] + rep + law[e:]
     return law, notes
 
@@ -11791,8 +11842,18 @@ def api_exam_breakdown_audit():
         "If a cited number's heading does not match the point, replace it with the number whose "
         "heading does. If a number cannot be confirmed from a contents map, mark it "
         "'⚠ unconfirmed' — never keep a guessed number and never invent one.\n"
-        "3. COMPLETE — if a clearly-governing provision for the subject is present in a contents map "
-        "but missing from 'law', add it; drop tangential/padding provisions.\n"
+        "3. COMPLETE, DON'T STRIP — if a clearly-governing provision for the subject is present in a "
+        "contents map but missing from 'law', add it. Be CONSERVATIVE about removal: remove a "
+        "provision only when it is CLEARLY wrong for the issue (wrong instrument, or a number whose "
+        "heading plainly does not fit) — do NOT remove a relevant provision merely because another "
+        "seems more central (keep the whole relevant chain, e.g. the prohibition AND the grant AND the "
+        "enforcement section).\n"
+        "4. NAME EACH INSTRUMENT EXACTLY as titled in the contents maps, and take each provision's "
+        "description from that SAME instrument's table only — never lift a heading from a different "
+        "instrument. For the environmental assessment regulations, cite them by their TITLE "
+        "('Environmental Protection (Environmental Assessment) Regulations, 2025'); do NOT attach an "
+        "'L.I.' number to them (the L.I. number is not verified) — a bare 'L.I. 2504' number will be "
+        "flagged as unverified.\n"
         "Do NOT rewrite the issue question — only fix its 'law'. Keep each 'law' concise. Return "
         "STRICT JSON: {\"issues\":[{\"n\":<int>,\"law\":<corrected string>,\"changed\":<true|false>,"
         "\"note\":<short reason if changed, else empty>}]}. JSON only, no prose, no fences.")
