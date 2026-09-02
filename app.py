@@ -2021,7 +2021,18 @@ QUALIFIED_REASONING = (
     "METHOD for each issue: STATE THE RULE → IDENTIFY THE QUALIFICATION/EXCEPTION → APPLY THE FACTS → "
     "reach the BEST-SUPPORTED conclusion. Where the law or facts leave it open, say what the answer "
     "DEPENDS ON and then give the conclusion the facts and authorities better support — do not "
-    "manufacture certainty, and do not turn every provision you find into a universal rule."
+    "manufacture certainty, and do not turn every provision you find into a universal rule.\n"
+    "PRESENT each issue's analysis in these LABELLED PARTS, so the reasoning is transparent and never "
+    "reads as a flat absolute:\n"
+    "  • **What the statute expressly says** — quote/point to the operative words and their pinpoints.\n"
+    "  • **Reasonable legal interpretation** — the 'better view' drawn from the text (qualified, not "
+    "categorical).\n"
+    "  • **What depends on the facts** — the fact-sensitive points (e.g. the use, the scope of any "
+    "existing permit, the volume/purpose/works proposed).\n"
+    "  • **Not established by the available authorities** — what the materials do NOT let you conclude "
+    "(and any secondary source used only to CONFIRM, not as a rule).\n"
+    "  • **Conclusion (qualified)** — state what the answer DEPENDS ON, then the best-supported "
+    "position; acknowledge uncertainty where it genuinely exists rather than forcing a definitive rule."
 )
 
 ARGUMENTATIVE_COMMITMENT = (
