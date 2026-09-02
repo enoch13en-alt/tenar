@@ -4037,25 +4037,52 @@ def _map_is_clean_complete(m):
 
 _TOC_CITE = re.compile(r'\b(?:s\.?|ss\.?|section[s]?|reg\.?|regs\.?|regulation[s]?)\s*\.?\s*(\d{1,4})[A-Za-z]?\b', re.I)
 
-def build_toc_specs(courses, query, limit=8):
-    """The instruments (with parsed ToCs) relevant to the question — the bot's own source of truth
-    for provision numbers. Each spec: name, an anchor regex matching the Act/L.I. in a citation
-    string, its {num->heading} map, and whether the map is clean+complete enough to rewrite from."""
-    specs, seen = [], set()
+def _course_primary_docs(course):
+    """Every DOMESTIC-PRIMARY instrument (Act / L.I., not the Constitution) indexed in a course."""
     try:
-        hits = search_multi(courses, query, k=40)
+        ensure_loaded(course)
     except Exception:
-        hits = []
-    for ch in hits:
+        return []
+    idx = INDEXES.get(course) or {}
+    seen, out = set(), []
+    for ch in idx.get("chunks", []):
         d = ch.get("doc", "")
-        if d in seen or _source_tier_weight(d) < 1.0 or display_type(d) == "constitution":
-            continue
-        seen.add(d)
-        m = arrangement_map(ch.get("_course", courses[0]), d)
+        if d and d not in seen:
+            seen.add(d)
+            if _source_tier_weight(d) >= 1.0 and display_type(d) != "constitution":
+                out.append(d)
+    return out
+
+def build_toc_specs(courses, query=None, limit=24):
+    """The instruments (with parsed ToCs) the bot uses as its OWN source of truth for provision
+    numbers. Enumerates EVERY domestic-primary Act/L.I. in the selected course(s) that has a parsed
+    Arrangement of Sections — so a primary law's table of contents is ALWAYS available to verify a
+    citation, never dependent on whether it ranked into a query's top hits. Query-relevant
+    instruments are ordered first (so prompt-side capping keeps the most on-point). Each spec: name,
+    an anchor regex matching the Act/L.I. in a citation string, its {num->heading} map, and whether
+    the map is clean+complete enough to rewrite a description from."""
+    ordered, seen = [], set()
+    if query:                                   # query-relevant first (for prompt-size ordering)
+        try:
+            for ch in search_multi(courses, query, k=40):
+                key = (ch.get("_course", courses[0]), ch.get("doc", ""))
+                if key[1] and key not in seen and _source_tier_weight(key[1]) >= 1.0 and display_type(key[1]) != "constitution":
+                    seen.add(key); ordered.append(key)
+        except Exception:
+            pass
+    for c in courses:                           # then EVERY primary law in the course(s)
+        for d in _course_primary_docs(c):
+            key = (c, d)
+            if key not in seen:
+                seen.add(key); ordered.append(key)
+    specs = []
+    for c, d in ordered:
+        m = arrangement_map(c, d)
         if not m:
             continue
         disp = display_name(d)
-        mm = re.search(r'\b(?:Act|L\.?\s*I\.?)\s*(\d{2,4})\b', disp)
+        mm = (re.search(r'\((?:Act|L\.?\s*I\.?)\s*(\d{2,4})\)', disp)      # prefer the (Act NNN)/(L.I. NNN) enacting number
+              or re.search(r'\b(?:Act|L\.?\s*I\.?)\s*(\d{2,4})\b', disp))
         anchor = re.compile(r'\b(?:Act|L\.?\s*I\.?)\s*' + re.escape(mm.group(1)) + r'\b', re.I) if mm else None
         specs.append({"name": disp, "anchor": anchor, "map": m, "clean": _map_is_clean_complete(m)})
         if len(specs) >= limit:
@@ -11770,9 +11797,9 @@ def api_exam_breakdown_audit():
     # GROUNDING = the instruments' OWN Tables of Contents, PARSED into clean {number → heading}
     # tables. The bot verifies every cited number against these headings (its own source of truth),
     # and a deterministic pass reconciles the result afterwards — no hardcoded answer key.
-    specs = build_toc_specs(courses, q, limit=8)
+    specs = build_toc_specs(courses, q, limit=24)     # ALL primary laws' ToCs (used for the deterministic reconcile)
     ctx_parts = []
-    for sp in specs:
+    for sp in specs[:8]:                               # show the model the most query-relevant tables (bound prompt size)
         rows = "; ".join(f"{n} = {sp['map'][n]}" for n in sorted(sp["map"]))
         ctx_parts.append("CONTENTS (Arrangement of Sections/Regulations) — " + sp["name"]
                          + (" [complete]" if sp["clean"] else " [partial — verify numbers you can't see, do not guess]")
