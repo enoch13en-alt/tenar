@@ -2790,15 +2790,10 @@ function renderExam() {
         // Render the ANNOTATED text when available (it carries the 【Title — p.N】 citation markers
         // that mdToHtml turns into clickable "📄 p.N" source-page chips); fall back to the clean answer.
         const _shown = (it.answer_annotated && it.answer_annotated.trim()) ? it.answer_annotated : it.answer;
-        // OBJECTIVE staleness flag: every current-format gather carries ⟦LAW⟧ drawers. If neither the
-        // answer nor its annotated form has them, this is an OLD-format saved gather — show a clear
-        // badge + one-click ↻ Re-gather, so we never have to argue "old vs fresh": the data shows it.
-        const _oldFormat = !(/⟦LAW⟧/.test(it.answer || "") || /⟦LAW⟧/.test(it.answer_annotated || ""));
-        const _staleBadge = _oldFormat
-          ? '<div style="font-size:11px;background:#4a2410;color:#f4b183;border:1px solid #6a3a18;border-radius:6px;padding:5px 9px;margin-bottom:6px">'
-            + '⚠ This is an OLD-format saved gather (no verbatim-law drawers / section pinpoints). Click <b>↻ Re-gather</b> to refresh it on the current version.</div>'
-          : '';
-        body = _staleBadge + '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
+        // (Removed the "OLD-format saved gather" badge — it confused, and it false-flagged legitimate
+        // gathers that carry no ⟦LAW⟧ drawer, e.g. a "NO NEW LAW — governed by an earlier issue"
+        // cross-reference. The ↻ Re-gather button below is always available to refresh any answer.)
+        body = '<div class="ans" style="white-space:normal">'+mdToHtml(_shown)+'</div>' + calibratedBadge(it) + issueAuditHtml(it, idx) + issueCalibrateHtml(it, idx)
           + '<button class="btn mini copyIssueBtn" data-i="'+idx+'" style="margin-top:6px;margin-right:6px"'
           + (it._audited ? ' title="Audited — ungrounded claims removed and citations checked.">📋 Copy verified answer'
                          : ' title="Not audited yet — may contain unverified authorities. Click \'Audit &amp; fix\' first for a verified copy.">📋 Copy (unaudited)')
