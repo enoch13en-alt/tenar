@@ -683,11 +683,14 @@
 <!-- polish / shorten a work -->
 <div class="modal" id="polishModal">
   <div class="card" style="max-width:820px">
-    <h3>✍️ Polish / Shorten a work</h3>
-    <p style="font-size:12.5px;color:#aab4c6">Paste an answer here (including one of mine), or
-       <b>upload an old work</b> (PDF / Word / text). It's restyled to the house writing standard and,
-       if you set a length below, <b>shortened to fit</b> — your arguments, facts, citations, the
-       verbatim law and footnotes are preserved exactly; nothing is invented. Then export to PDF/Word.</p>
+    <h3>📑 Finalise a work — fit pages · verify · OSCOLA</h3>
+    <p style="font-size:12.5px;color:#aab4c6">One place to finish a piece. Paste an answer (including one of
+       mine) or <b>upload an old work</b> (PDF / Word / text), then:
+       <b>①&nbsp;reduce it to fit</b> a page/word limit · <b>②&nbsp;verify</b> — strip overstatement and
+       check every citation against your materials · <b>③&nbsp;export OSCOLA Word</b> with
+       <b>superscript footnotes at the foot of the page</b>, at your chosen spacing. The law, citations and
+       conclusions are preserved exactly; nothing is invented. Want it formatted <i>without</i> any rewrite?
+       Use <b>⬇ OSCOLA Word (as-is)</b>.</p>
     <div class="rowbtn" style="margin-bottom:6px">
       <button class="btn alt mini" id="polishUpload" style="width:auto">📎 Upload an old work (PDF/Word/text)</button>
       <input type="file" id="polishFile" accept=".pdf,.docx,.txt,.md" class="hidden">
@@ -709,7 +712,7 @@
         <option value="words">words</option>
         <option value="pages">pages</option>
       </select>
-      <select id="polishSpacing" style="width:auto;display:inline-block" title="Spacing — only used to convert a PAGE target into words.">
+      <select id="polishSpacing" style="width:auto;display:inline-block" title="Line spacing — used both to convert a PAGE target into words AND for the Word/PDF export.">
         <option value="1.5">1.5 spacing</option>
         <option value="1">single</option>
         <option value="2">double</option>
@@ -721,6 +724,7 @@
         </select>
       </label>
       <button class="btn" id="polishGo" style="width:auto">Polish / Shorten</button>
+      <button class="btn gold" id="polishExportAsIs" style="width:auto" title="Export exactly what is in the box RIGHT NOW to an OSCOLA Word file — superscript [n] markers become real footnotes at the foot of the page, at the chosen spacing. No rewrite, no audit: your text is untouched.">⬇ OSCOLA Word (as-is)</button>
       <button class="btn alt" id="polishClose" style="width:auto">Close</button>
     </div>
     <label style="color:#aab4c6;font-size:12px;display:block;margin-top:2px" title="After styling/shortening, run an audit that removes overstatement (unsupported absolutes / categorical conclusions), fixes clear misattributions, and keeps the verbatim law, citations and conclusions — then lists what it changed.">
@@ -4845,9 +4849,24 @@ async function polishDraft() {
     } catch (e) { $("#polishAuditNote").innerHTML += "<div>⚠ citation check failed — overstatement-audited version is shown.</div>"; }
     btn.disabled = false; btn.textContent = "Polish / Shorten";
   }
+  if ($("#docSpacing") && $("#polishSpacing")) $("#docSpacing").value = $("#polishSpacing").value;  // export at chosen spacing
   renderExportBar(docEl, finalOut, finalTitle, "");
 }
 $("#polishGo").onclick = polishDraft;
+// Export exactly what's in the box to OSCOLA Word (real page-bottom footnotes) — NO rewrite, NO audit.
+$("#polishExportAsIs").onclick = async () => {
+  const text = $("#polishIn").value.trim();
+  if (!text) { $("#polishStatus").textContent = "Paste or upload a work first."; return; }
+  const sp = (($("#polishSpacing")||{}).value) || "1.5";
+  if ($("#docSpacing")) $("#docSpacing").value = sp;     // drive the export spacing from this panel
+  const btn = $("#polishExportAsIs"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Building…";
+  $("#polishStatus").textContent = "Building OSCOLA Word — [n] markers → real footnotes at page foot…";
+  try {
+    await downloadDocx(text, "Finalised work");
+    $("#polishStatus").textContent = "✓ OSCOLA Word downloaded — superscript footnotes at the foot of the page, " + sp + " spacing. Nothing was rewritten.";
+  } catch (e) { $("#polishStatus").textContent = "Export failed — try again."; }
+  btn.disabled = false; btn.textContent = orig;
+};
 
 // ---- advisory (for lawyers): private matter workspaces ----
 $("#openAdvisory").onclick = async () => {
