@@ -5851,7 +5851,7 @@ def course_context_multi(courses, query, k=15):
 app = Flask(__name__)
 
 # API endpoints that don't require a login
-_OPEN_ENDPOINTS = {"api_login", "api_signup", "static"}
+_OPEN_ENDPOINTS = {"api_login", "api_signup", "static", "api_build"}
 
 
 RECENT_ERRORS = []   # owner-only diagnostic ring buffer (no Render log access from the dev box)
