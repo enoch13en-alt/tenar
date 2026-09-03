@@ -4797,20 +4797,52 @@ async function polishDraft() {
       const ar = await (await fetch("/api/shorten/audit", {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: out})})).json();
       if (ar.error) {
-        $("#polishAuditNote").textContent = "⚠ audit skipped: " + ar.error;
+        $("#polishAuditNote").innerHTML = "⚠ overstatement audit skipped: " + esc(ar.error);
       } else {
         finalOut = ar.corrected || out;
         docEl.innerHTML = mdToHtml(finalOut);
         const ch = ar.changes || [];
         $("#polishAuditNote").innerHTML = ch.length
-          ? ("✅ audited — " + ch.length + " correction(s) applied:<ul style='margin:4px 0 0 16px'>"
+          ? ("✅ overstatement audit — " + ch.length + " correction(s):<ul style='margin:4px 0 0 16px'>"
              + ch.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>")
-          : "✅ audited — no overstatement or misattribution found; nothing to change.";
+          : "✅ overstatement audit — nothing overstated; no change.";
         const wc2 = finalOut.split(/\s+/).filter(Boolean).length;
         $("#polishStatus").textContent += "  · audited (~" + wc2.toLocaleString() + " words)"
           + (ar.cost ? (" · +$" + (ar.cost.this_usd||0)) : "");
       }
-    } catch (e) { $("#polishAuditNote").textContent = "⚠ audit pass failed — the un-audited version is shown."; }
+    } catch (e) { $("#polishAuditNote").innerHTML = "⚠ overstatement audit failed — the un-audited version is shown."; }
+
+    // 2) AUTOMATIC CITATION CHECK against your materials — corrects wrong pinpoints and flags/removes
+    // ungrounded citations. Prefers the currently-open course; else all your courses. NON-silent:
+    // every correction and removal is listed so nothing vanishes without you seeing it.
+    try {
+      btn.textContent = "Checking citations…";
+      $("#polishAuditNote").innerHTML += "<div style='margin-top:4px'>🔍 checking citations against your materials…</div>";
+      let cs = [];
+      try {
+        if (typeof examCourses === "function" && examCourses().length) cs = examCourses();
+        else cs = ((await (await fetch("/api/courses")).json()).courses) || [];
+      } catch (e2) {}
+      if (cs.length) {
+        const cr = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({answer: finalOut, courses: cs, fix: true, verify_model: "haiku"})})).json();
+        if (cr && !cr.error) {
+          if (cr.corrected && (cr.fixed_count || cr.removed_count)) { finalOut = cr.corrected; docEl.innerHTML = mdToHtml(finalOut); }
+          const bits = [];
+          if (cr.fixed_count) bits.push(cr.fixed_count + " citation(s) corrected");
+          if (cr.removed_count) bits.push(cr.removed_count + " ungrounded citation(s) removed");
+          $("#polishAuditNote").innerHTML += "<div style='color:#8fce8f'>✅ citation check (" + esc(cs.join(", ")) + "): "
+            + (bits.length ? bits.join(", ") : "all citations verified") + "</div>";
+          if ((cr.removed || []).length)
+            $("#polishAuditNote").innerHTML += "<div style='color:#e0a05a'>⚠ removed as ungrounded (restore if your corpus lacks the source): "
+              + cr.removed.map(x => esc(typeof x === "string" ? x : (x.authority || x.claim || JSON.stringify(x)))).join("; ") + "</div>";
+        } else if (cr && cr.error) {
+          $("#polishAuditNote").innerHTML += "<div>ℹ citation check skipped: " + esc(cr.error) + "</div>";
+        }
+      } else {
+        $("#polishAuditNote").innerHTML += "<div>ℹ no course corpus available to check citations against.</div>";
+      }
+    } catch (e) { $("#polishAuditNote").innerHTML += "<div>⚠ citation check failed — overstatement-audited version is shown.</div>"; }
     btn.disabled = false; btn.textContent = "Polish / Shorten";
   }
   renderExportBar(docEl, finalOut, finalTitle, "");
