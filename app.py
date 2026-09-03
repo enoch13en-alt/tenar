@@ -8210,6 +8210,47 @@ def api_polish():
                     headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
+@app.route("/api/shorten/extract", methods=["POST"])
+def api_shorten_extract():
+    """Extract plain text from an uploaded document (PDF/Word/txt/md) for the
+    Polish/Shorten tool. One-off ONLY — it does NOT index the file into any course."""
+    f = (request.files.getlist("files") or [None])[0]
+    if not f or not f.filename:
+        return jsonify({"error": "Choose a file to upload."}), 400
+    fname = os.path.basename(f.filename)
+    ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+    if ext not in ("pdf", "docx", "txt", "md"):
+        return jsonify({"error": "Upload a PDF, Word (.docx), .txt or .md file."}), 400
+    import tempfile
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix="." + ext) as tmp:
+            f.save(tmp.name)
+            path = tmp.name
+        if ext == "pdf":
+            d = fitz.open(path)
+            text = "\n".join(d[i].get_text("text") for i in range(len(d)))
+            d.close()
+        elif ext == "docx":
+            import docx
+            text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+        else:
+            text = open(path, encoding="utf-8", errors="ignore").read()
+    except Exception:
+        app.logger.exception("shorten extract failed")
+        return jsonify({"error": "Could not read that file — try a different format."}), 400
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+    text = (text or "").strip()
+    if not text:
+        return jsonify({"error": "No selectable text found (a scanned PDF may need OCR first)."}), 400
+    return jsonify({"name": fname, "text": text, "words": len(text.split())})
+
+
 # ---------------------------------------------------------------- Weekly Update
 WEEK_EXTRACT = (
     "Extract the TEACHING SCHEDULE from this course outline. Return ONLY a JSON "

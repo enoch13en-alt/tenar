@@ -496,57 +496,6 @@
     </div>
     <div class="rowbtn">
       <button class="btn alt" id="examUpload" style="width:auto">📎 Upload exam (PDF/Word)</button>
-      <details id="docSettings" style="border:1px solid #2a3344;border-radius:8px;padding:6px 10px;color:#aab4c6;font-size:12px">
-        <summary style="cursor:pointer">📄 Document settings <span style="color:#7a8296">(applied on 🧬 Synthesise)</span></summary>
-        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:center">
-          <label title="Essay, memorandum, report, or a concise exam answer.">Type:
-            <select id="examLen" style="width:auto;display:inline-block">
-              <option value="essay">Essay</option>
-              <option value="memo">Memorandum</option>
-              <option value="report">Report</option>
-              <option value="exam">Exam answer (concise)</option>
-              <option value="notes">Internal research notes</option>
-              <option value="guide">🧭 Research guide (where to look &amp; why)</option>
-            </select>
-          </label>
-          <label title="Target word count for the synthesised document. Leave blank for no limit.">Words:
-            <input type="number" id="wordLimit" placeholder="none" min="100" step="50" style="width:74px;display:inline-block">
-          </label>
-          <label title="Whether footnotes count toward the word limit — lecturers differ.">
-            <select id="fnCount" style="width:auto;display:inline-block">
-              <option value="nocount">footnotes NOT counted</option>
-              <option value="count">footnotes counted</option>
-            </select>
-          </label>
-          <label title="Approximate page limit. Pages depend on font/size/spacing, so this is converted to a word target for writing.">Pages:
-            <input type="number" id="pageLimit" placeholder="none" min="1" step="1" style="width:56px;display:inline-block">
-          </label>
-          <label title="Font for the exported Word/PDF document.">Font:
-            <select id="docFont" style="width:auto;display:inline-block">
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Arial">Arial</option>
-              <option value="Calibri">Calibri</option>
-              <option value="Garamond">Garamond</option>
-              <option value="Georgia">Georgia</option>
-            </select>
-          </label>
-          <label title="Font size (points) for the exported document.">Size:
-            <select id="docFontSize" style="width:auto;display:inline-block">
-              <option value="11">11</option>
-              <option value="12" selected>12</option>
-              <option value="13">13</option>
-              <option value="14">14</option>
-            </select>
-          </label>
-          <label title="Line spacing for the exported document.">Spacing:
-            <select id="docSpacing" style="width:auto;display:inline-block">
-              <option value="1">Single</option>
-              <option value="1.5" selected>1.5</option>
-              <option value="2">Double</option>
-            </select>
-          </label>
-        </div>
-      </details>
       <label style="color:#aab4c6;font-size:12px" title="Runs verified web searches at compile and weaves other-jurisdiction data + key cases into the final document (uses one comparative credit).">
         <input type="checkbox" id="examWeb"> Comparative (web)
       </label>
@@ -569,6 +518,58 @@
       <button class="btn alt" id="examClearSaved" style="width:auto" title="Delete ALL saved answers on this computer, for every course, so everything re-gathers fresh on the latest version. Does NOT touch your uploaded documents or pins.">🗑 Clear ALL saved answers</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
+    <!-- Document settings moved to the BOTTOM (out of the way) — font/size/spacing feed the Word/PDF export; words/pages/type apply on 🧬 Synthesise. -->
+    <details id="docSettings" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:6px 10px;color:#aab4c6;font-size:12px">
+      <summary style="cursor:pointer">📄 Document settings <span style="color:#7a8296">(fonts / length — applied on 🧬 Synthesise &amp; on export)</span></summary>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:center">
+        <label title="Essay, memorandum, report, or a concise exam answer.">Type:
+          <select id="examLen" style="width:auto;display:inline-block">
+            <option value="essay">Essay</option>
+            <option value="memo">Memorandum</option>
+            <option value="report">Report</option>
+            <option value="exam">Exam answer (concise)</option>
+            <option value="notes">Internal research notes</option>
+            <option value="guide">🧭 Research guide (where to look &amp; why)</option>
+          </select>
+        </label>
+        <label title="Target word count for the synthesised document. Leave blank for no limit.">Words:
+          <input type="number" id="wordLimit" placeholder="none" min="100" step="50" style="width:74px;display:inline-block">
+        </label>
+        <label title="Whether footnotes count toward the word limit — lecturers differ.">
+          <select id="fnCount" style="width:auto;display:inline-block">
+            <option value="nocount">footnotes NOT counted</option>
+            <option value="count">footnotes counted</option>
+          </select>
+        </label>
+        <label title="Approximate page limit. Pages depend on font/size/spacing, so this is converted to a word target for writing.">Pages:
+          <input type="number" id="pageLimit" placeholder="none" min="1" step="1" style="width:56px;display:inline-block">
+        </label>
+        <label title="Font for the exported Word/PDF document.">Font:
+          <select id="docFont" style="width:auto;display:inline-block">
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Arial">Arial</option>
+            <option value="Calibri">Calibri</option>
+            <option value="Garamond">Garamond</option>
+            <option value="Georgia">Georgia</option>
+          </select>
+        </label>
+        <label title="Font size (points) for the exported document.">Size:
+          <select id="docFontSize" style="width:auto;display:inline-block">
+            <option value="11">11</option>
+            <option value="12" selected>12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+          </select>
+        </label>
+        <label title="Line spacing for the exported document.">Spacing:
+          <select id="docSpacing" style="width:auto;display:inline-block">
+            <option value="1">Single</option>
+            <option value="1.5" selected>1.5</option>
+            <option value="2">Double</option>
+          </select>
+        </label>
+      </div>
+    </details>
     <details id="ctxWrap" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:8px">
       <summary style="cursor:pointer;font-size:13px;color:#c9a86a;font-weight:600">🗂 Context &amp; background sources <span style="font-weight:400;color:#8b93a7">— tick “Use context” above to draw on these</span></summary>
       <p style="font-size:11.5px;color:#8b93a7;margin:6px 0">Official reports, government statements, institutional responses, academic/policy pieces — <b>stored separately</b> from your course materials (law stays law; this is background). Find them online or upload your own. Kept per course.</p>
@@ -679,23 +680,47 @@
   </div>
 </div>
 
-<!-- polish my draft -->
+<!-- polish / shorten a work -->
 <div class="modal" id="polishModal">
   <div class="card" style="max-width:820px">
-    <h3>✍️ Polish my draft</h3>
-    <p style="font-size:12.5px;color:#aab4c6">Paste your OWN written work. It's rewritten to the
-       house writing standard (clarity + persuasion) — your arguments, facts, citations and
-       footnotes are preserved exactly; nothing is invented. Then export to PDF/Word.</p>
-    <textarea id="polishIn" style="height:180px" placeholder="Paste your draft here — include your [n] footnote markers, a 'Footnotes' section and a 'Bibliography' if you have them…"></textarea>
-    <div class="rowbtn">
-      <label style="color:#aab4c6;font-size:12px">Format:
+    <h3>✍️ Polish / Shorten a work</h3>
+    <p style="font-size:12.5px;color:#aab4c6">Paste an answer here (including one of mine), or
+       <b>upload an old work</b> (PDF / Word / text). It's restyled to the house writing standard and,
+       if you set a length below, <b>shortened to fit</b> — your arguments, facts, citations, the
+       verbatim law and footnotes are preserved exactly; nothing is invented. Then export to PDF/Word.</p>
+    <div class="rowbtn" style="margin-bottom:6px">
+      <button class="btn alt mini" id="polishUpload" style="width:auto">📎 Upload an old work (PDF/Word/text)</button>
+      <input type="file" id="polishFile" accept=".pdf,.docx,.txt,.md" class="hidden">
+      <span id="polishFileName" style="font-size:11.5px;color:#8b93a7"></span>
+    </div>
+    <textarea id="polishIn" style="height:180px" placeholder="Paste the work here (or upload above) — include any [n] footnote markers, a 'Footnotes' section and a 'Bibliography' if you have them…"></textarea>
+    <div class="rowbtn" style="align-items:center">
+      <label style="color:#aab4c6;font-size:12px">Style:
         <select id="polishFmt" style="width:auto;display:inline-block">
           <option value="essay">Essay</option>
           <option value="report">Report</option>
           <option value="memo">Memo</option>
         </select>
       </label>
-      <button class="btn" id="polishGo" style="width:auto">Polish &amp; format</button>
+      <label style="color:#aab4c6;font-size:12px" title="Leave blank to only restyle. Set a number to SHORTEN the work to that length while keeping the law, citations and conclusions.">Shorten to:
+        <input type="number" id="polishTarget" placeholder="none" min="100" step="50" style="width:78px;display:inline-block">
+      </label>
+      <select id="polishUnit" style="width:auto;display:inline-block" title="Words, or approximate pages (converted to a word target by spacing).">
+        <option value="words">words</option>
+        <option value="pages">pages</option>
+      </select>
+      <select id="polishSpacing" style="width:auto;display:inline-block" title="Spacing — only used to convert a PAGE target into words.">
+        <option value="1.5">1.5 spacing</option>
+        <option value="1">single</option>
+        <option value="2">double</option>
+      </select>
+      <label style="color:#aab4c6;font-size:12px" title="Whether footnotes count toward the length target — lecturers differ.">
+        <select id="polishFn" style="width:auto;display:inline-block">
+          <option value="nocount">footnotes NOT counted</option>
+          <option value="count">footnotes counted</option>
+        </select>
+      </label>
+      <button class="btn" id="polishGo" style="width:auto">Polish / Shorten</button>
       <button class="btn alt" id="polishClose" style="width:auto">Close</button>
     </div>
     <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
@@ -4690,41 +4715,75 @@ function mountReviewPanel(host, flags, verdict) {
 // ---- polish my draft ----
 $("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; };
 $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
+// Upload an old work → extract its text (no indexing) → drop it into the box to polish/shorten.
+$("#polishUpload").onclick = () => $("#polishFile").click();
+$("#polishFile").onchange = async (e) => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  $("#polishFileName").textContent = "reading " + f.name + "…";
+  const fd = new FormData(); fd.append("files", f);
+  try {
+    const r = await (await fetch("/api/shorten/extract", {method:"POST", body: fd})).json();
+    if (r.error) { $("#polishFileName").textContent = "⚠ " + r.error; return; }
+    $("#polishIn").value = r.text || "";
+    $("#polishFileName").textContent = "✓ loaded " + r.name + " (" + (r.words||0).toLocaleString() + " words) — set a length below and Polish / Shorten";
+  } catch (err) { $("#polishFileName").textContent = "⚠ upload failed — try again"; }
+  e.target.value = "";
+};
 async function polishDraft() {
   const text = $("#polishIn").value.trim();
-  if (!text) { $("#polishStatus").textContent = "Paste your draft first."; return; }
-  const btn = $("#polishGo"); btn.disabled = true; btn.textContent = "Polishing…";
-  $("#polishOut").innerHTML = "<h4 style='margin:12px 0 4px'>Polished draft "
+  if (!text) { $("#polishStatus").textContent = "Paste a work or upload one first."; return; }
+  // A length target → SHORTEN via /api/exam/reshape (keeps law + citations + conclusions).
+  // No target → restyle only via /api/polish.
+  const tgt = parseInt($("#polishTarget").value, 10) || 0;
+  const unit = $("#polishUnit").value, fmt = $("#polishFmt").value;
+  const fnCount = $("#polishFn").value === "count";
+  let words = 0;
+  if (tgt > 0) {
+    if (unit === "pages") {
+      const sp = parseFloat($("#polishSpacing").value) || 1.5;
+      const wpp = sp >= 2 ? 280 : sp >= 1.5 ? 350 : 500;   // matches the compile page→word conversion
+      words = tgt * wpp;
+    } else { words = tgt; }
+  }
+  const shorten = words > 0;
+  const endpoint = shorten ? "/api/exam/reshape" : "/api/polish";
+  const payload = shorten
+    ? {text, instruction: "Shorten to about " + words + " words.", format: fmt, footnotes_count: fnCount}
+    : {text, format: fmt};
+  const verb = shorten ? "Shortening" : "Polishing";
+  const btn = $("#polishGo"); btn.disabled = true; btn.textContent = verb + "…";
+  $("#polishOut").innerHTML = "<h4 style='margin:12px 0 4px'>" + (shorten ? "Shortened & styled" : "Polished") + " work "
     + "<span id='pDot' style='color:#6fcf97'>● writing…</span></h4>"
     + "<div id='polishDoc' style='white-space:pre-wrap'></div>";
   const docEl = $("#polishDoc");
   let secs = 0, gotText = false; const t0 = Date.now();
   const timer = setInterval(() => { secs = Math.round((Date.now()-t0)/1000);
-    if (!gotText) $("#polishStatus").textContent = "🧠 Editing for clarity… " + secs + "s"; }, 1000);
-  const DELIM = "\x1e\x1eMETA\x1e\x1e"; let buf = "", meta = {};
+    if (!gotText) $("#polishStatus").textContent = "🧠 " + (shorten ? "Condensing to fit" : "Editing for clarity") + "… " + secs + "s"; }, 1000);
+  const DELIM = "\x1e\x1eMETA\x1e\x1e", PING = "\x1e\x1ePING\x1e\x1e"; let buf = "", meta = {};
   try {
-    const resp = await fetch("/api/polish", {method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({text, format: $("#polishFmt").value})});
+    const resp = await fetch(endpoint, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+    if (!resp.ok && !resp.body) throw new Error("server " + resp.status);
     const reader = resp.body.getReader(); const dec = new TextDecoder();
     while (true) {
       const {done, value} = await reader.read(); if (done) break;
       buf += dec.decode(value, {stream:true});
+      buf = buf.split(PING).join("");                 // drop heartbeat pings (reshape stream)
       const b = buf.split(DELIM)[0]; docEl.textContent = b;
       if (!gotText && b.trim()) { gotText = true; $("#polishStatus").textContent = "✍️ Writing live…"; }
     }
   } catch (e) { clearInterval(timer); $("#polishStatus").textContent = "Error: " + e;
-    btn.disabled = false; btn.textContent = "Polish & format"; return; }
-  clearInterval(timer); btn.disabled = false; btn.textContent = "Polish & format";
+    btn.disabled = false; btn.textContent = "Polish / Shorten"; return; }
+  clearInterval(timer); btn.disabled = false; btn.textContent = "Polish / Shorten";
   const parts = buf.split(DELIM); const out = (parts[0]||"").trim();
   try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) {}
   const dot = $("#pDot"); if (dot) dot.remove();
   if (meta.error) { $("#polishStatus").textContent = meta.error; return; }
   docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(out);
-  $("#polishStatus").textContent = meta.cost
-    ? ("Done · this polish cost $" + (meta.cost.this_usd||0) + " · total $" + meta.cost.total_usd)
-    : "Done.";
-  renderExportBar(docEl, out, "Polished draft", "");
+  const wc = out.split(/\s+/).filter(Boolean).length;
+  $("#polishStatus").textContent = (shorten ? ("Done · ~" + wc.toLocaleString() + " words. ") : "Done. ")
+    + (meta.cost ? ("Cost $" + (meta.cost.this_usd||0) + " · total $" + meta.cost.total_usd) : "");
+  renderExportBar(docEl, out, (shorten ? "Shortened work" : "Polished draft"), "");
 }
 $("#polishGo").onclick = polishDraft;
 
