@@ -8251,6 +8251,71 @@ def api_shorten_extract():
     return jsonify({"name": fname, "text": text, "words": len(text.split())})
 
 
+@app.route("/api/shorten/audit", methods=["POST"])
+def api_shorten_audit():
+    """Audit-and-correct pass for the Polish/Shorten tool: check a finished work for OVERSTATEMENT
+    and unsupported/misattributed legal claims, correct ONLY those, and report what changed. Keeps
+    the verbatim law, every citation/footnote and the conclusions. Corpus-free (works on any text)."""
+    body = request.json or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Nothing to audit."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    CHANGES = "===CHANGES==="
+    system = (
+        CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE + "\n\n" + NO_OVERSTATEMENT + "\n\n"
+        + APPLICATION_DISCIPLINE + "\n\n" + KEEP_LAW_MARKERS + "\n\n"
+        "AUDIT-AND-CORRECT TASK. You are checking a FINISHED legal work for two things only: "
+        "(1) OVERSTATEMENT — absolutes/intensifiers/categorical conclusions the cited authority does "
+        "not support (apply the NO-OVERSTATEMENT and APPLICATION-DISCIPLINE rules above), and (2) clear "
+        "INTERNAL errors — a proposition attributed to the wrong section, an 'it depends' that then "
+        "asserts an unproven fact, a sample/other-party document treated as this party's fact. FIX ONLY "
+        "those. Do NOT rewrite for style, do NOT change the length, do NOT add or remove authorities, "
+        "do NOT touch the verbatim law in ⟦LAW⟧ drawers, the citations, the footnotes or the "
+        "conclusions except to qualify an overstated one. If a claim cannot be checked without the "
+        "source, leave it and note it. "
+        "OUTPUT FORMAT — output the FULL corrected work verbatim (every word unchanged except the "
+        "specific fixes), then on a new line output exactly '" + CHANGES + "' and, after it, a SHORT "
+        "bullet list of the corrections you made (each: what it said → what you changed it to, and why "
+        "in a few words). If you changed nothing, write 'none' after the marker.")
+    cached_sys = cached_system(system)
+    messages = [{"role": "user", "content": "WORK TO AUDIT AND CORRECT:\n\n" + text}]
+    pieces, this_usd, total_usd = [], 0.0, None
+    try:
+        for _round in range(4):
+            resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=20000,
+                                     thinking={"type": "adaptive"},
+                                     system=cached_sys, messages=messages)
+            cost = record_cost(resp, ANSWER_MODEL)
+            this_usd += cost.get("this_usd", 0) or 0
+            total_usd = cost.get("total_usd", total_usd)
+            pieces.append(_text_of(resp))
+            if getattr(resp, "stop_reason", None) != "max_tokens":
+                break
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({"role": "user", "content":
+                "Continue EXACTLY where you stopped, mid-sentence if needed; do not repeat anything."})
+        full = "".join(pieces).strip()
+    except Exception:
+        app.logger.exception("shorten audit failed")
+        return jsonify({"error": "The audit pass failed — please try again."}), 500
+    if CHANGES in full:
+        corrected, changes_raw = full.split(CHANGES, 1)
+    else:
+        corrected, changes_raw = full, ""
+    corrected = corrected.strip()
+    changes = [ln.strip(" -*\t") for ln in changes_raw.strip().splitlines()
+               if ln.strip(" -*\t") and ln.strip().lower() != "none"]
+    return jsonify({"corrected": corrected, "changes": changes,
+                    "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
+
+
 # ---------------------------------------------------------------- Weekly Update
 WEEK_EXTRACT = (
     "Extract the TEACHING SCHEDULE from this course outline. Return ONLY a JSON "

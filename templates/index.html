@@ -723,7 +723,11 @@
       <button class="btn" id="polishGo" style="width:auto">Polish / Shorten</button>
       <button class="btn alt" id="polishClose" style="width:auto">Close</button>
     </div>
+    <label style="color:#aab4c6;font-size:12px;display:block;margin-top:2px" title="After styling/shortening, run an audit that removes overstatement (unsupported absolutes / categorical conclusions), fixes clear misattributions, and keeps the verbatim law, citations and conclusions — then lists what it changed.">
+      <input type="checkbox" id="polishAudit" checked> 🔍 Audit &amp; fix overstatement after (recommended)
+    </label>
     <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="polishAuditNote" style="font-size:11.5px;color:#8fb4e0;margin-top:4px"></div>
     <div id="polishOut"></div>
   </div>
 </div>
@@ -4783,7 +4787,33 @@ async function polishDraft() {
   const wc = out.split(/\s+/).filter(Boolean).length;
   $("#polishStatus").textContent = (shorten ? ("Done · ~" + wc.toLocaleString() + " words. ") : "Done. ")
     + (meta.cost ? ("Cost $" + (meta.cost.this_usd||0) + " · total $" + meta.cost.total_usd) : "");
-  renderExportBar(docEl, out, (shorten ? "Shortened work" : "Polished draft"), "");
+  let finalOut = out, finalTitle = (shorten ? "Shortened work" : "Polished draft");
+  // AUDIT + DE-OVERSTATEMENT PASS — check the result for overstatement / misattribution, correct it,
+  // and report what changed. Keeps the verbatim law, citations and conclusions.
+  if ($("#polishAudit") && $("#polishAudit").checked) {
+    $("#polishAuditNote").textContent = "🔍 auditing for overstatement & misattribution…";
+    btn.disabled = true; btn.textContent = "Auditing…";
+    try {
+      const ar = await (await fetch("/api/shorten/audit", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: out})})).json();
+      if (ar.error) {
+        $("#polishAuditNote").textContent = "⚠ audit skipped: " + ar.error;
+      } else {
+        finalOut = ar.corrected || out;
+        docEl.innerHTML = mdToHtml(finalOut);
+        const ch = ar.changes || [];
+        $("#polishAuditNote").innerHTML = ch.length
+          ? ("✅ audited — " + ch.length + " correction(s) applied:<ul style='margin:4px 0 0 16px'>"
+             + ch.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>")
+          : "✅ audited — no overstatement or misattribution found; nothing to change.";
+        const wc2 = finalOut.split(/\s+/).filter(Boolean).length;
+        $("#polishStatus").textContent += "  · audited (~" + wc2.toLocaleString() + " words)"
+          + (ar.cost ? (" · +$" + (ar.cost.this_usd||0)) : "");
+      }
+    } catch (e) { $("#polishAuditNote").textContent = "⚠ audit pass failed — the un-audited version is shown."; }
+    btn.disabled = false; btn.textContent = "Polish / Shorten";
+  }
+  renderExportBar(docEl, finalOut, finalTitle, "");
 }
 $("#polishGo").onclick = polishDraft;
 
