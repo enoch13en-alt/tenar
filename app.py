@@ -6034,6 +6034,15 @@ def home():
     return resp
 
 
+@app.route("/api/build")
+def api_build():
+    """Tiny, auth-free, no-store endpoint so an OPEN tab can poll for a new deploy and offer to
+    update itself — without a full /api/me call and without needing a live session."""
+    resp = jsonify({"build": BUILD_SHA})
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 def _visible_courses_for(user):
     """Course packs are a SHARED library: every logged-in account sees all of
     them, so invited testers automatically get whatever the owner uploads —

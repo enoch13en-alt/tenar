@@ -5388,25 +5388,57 @@ $("#pwSave").onclick = async () => {
     } else { msg.style.color = "#e88"; msg.textContent = d.error || "Could not update password."; }
   } catch (e) { msg.style.color = "#e88"; msg.textContent = "Network error — try again."; }
 };
+// ---- keep the page always up to date (fixes "I don't see updates" without a hard refresh) ----
+var PAGE_BUILD = "{{ page_build|default('') }}";
+function showUpdateBanner(newBuild) {
+  if (document.getElementById("updBanner")) return;
+  var b = document.createElement("div");
+  b.id = "updBanner";
+  b.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99999;"
+    + "background:#1f6f4a;color:#eafff2;padding:10px 16px;border-radius:10px;font-size:13px;cursor:pointer;"
+    + "box-shadow:0 6px 20px rgba(0,0,0,.45);display:flex;gap:10px;align-items:center";
+  b.innerHTML = "🔄 A new version is ready. <b style='text-decoration:underline'>Update now</b>"
+    + "<span style='opacity:.7;font-size:11px'>(your saved work is kept)</span>";
+  b.onclick = function () {
+    try { sessionStorage.removeItem("tenar_reloaded_" + newBuild); } catch (e) {}
+    location.replace(location.pathname + "?v=" + encodeURIComponent(newBuild));
+  };
+  document.body.appendChild(b);
+}
+var _updChecking = false;
+async function checkForUpdate() {
+  if (_updChecking) return; _updChecking = true;
+  try {
+    const d = await (await fetch("/api/build", {cache: "no-store"})).json();
+    if (d && d.build) {
+      window.CURRENT_BUILD = d.build;
+      if (PAGE_BUILD && d.build !== PAGE_BUILD) showUpdateBanner(d.build);
+    }
+  } catch (e) {}
+  _updChecking = false;
+}
+setInterval(checkForUpdate, 60000);                                  // poll every 60s
+document.addEventListener("visibilitychange", function () { if (!document.hidden) checkForUpdate(); });
+window.addEventListener("focus", checkForUpdate);
+window.addEventListener("pageshow", function (e) { if (e.persisted) checkForUpdate(); });  // bfcache restore
 (async () => {
   try {
     const me = await (await fetch("/api/me")).json();
     if (me.email) $("#who").textContent = "👤 " + me.email + (me.is_admin ? " (admin)" : "");
     if (me.build) window.CURRENT_BUILD = me.build;   // the live build — used to mark answers "from the latest update"
-    // AUTO-UPDATE: this page was rendered by build PAGE_BUILD; if the LIVE build differs, the browser is
-    // showing a cached older page — reload ONCE (with a cache-busting URL) so a new deploy reaches you
-    // without a manual hard-refresh. sessionStorage guard prevents any reload loop.
-    try {
-      var PAGE_BUILD = "{{ page_build|default('') }}";
-      if (me.build && PAGE_BUILD && me.build !== PAGE_BUILD) {
-        var _rk = "tenar_reloaded_" + me.build;
-        if (!sessionStorage.getItem(_rk)) {
-          sessionStorage.setItem(_rk, "1");
-          location.replace(location.pathname + "?_fresh=" + encodeURIComponent(me.build));
-          return;
-        }
+    // AUTO-UPDATE: a page kept open across a deploy goes stale. checkForUpdate() polls the live build
+    // and, when it differs from the build that rendered THIS page, shows a one-click "Update" banner.
+    // Runs on load, on a 60s interval, and whenever the tab regains focus / is restored from bfcache.
+    if (me.build && PAGE_BUILD && me.build !== PAGE_BUILD) {
+      // page arrived already stale (cached HTML slipped through) — reload once, seamlessly
+      var _rk = "tenar_reloaded_" + me.build;
+      if (!sessionStorage.getItem(_rk)) {
+        sessionStorage.setItem(_rk, "1");
+        location.replace(location.pathname + "?_fresh=" + encodeURIComponent(me.build));
+        return;
       }
-    } catch (e) {}
+      showUpdateBanner(me.build);   // reload didn't refresh it (edge cache) → offer the manual button
+    }
     const bt = $("#buildTag");
     if (bt && me.build) bt.textContent = "build " + me.build + " · " + (me.started || "");
     applyRole(me.role || "student", !!me.is_admin);
