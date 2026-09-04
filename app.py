@@ -13201,7 +13201,7 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
     # Build /word/footnotes.xml (two separators + one footnote per referenced marker) and attach it.
     W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
     def _esc(s): return _xml_safe(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    fn_pt = max(8, base_pt - 3)          # footnotes distinctly smaller than the body
+    fn_pt = max(8, base_pt - 4)          # footnotes distinctly smaller than the body (8pt at a 12pt body — saves space)
     hp = str(fn_pt * 2)                   # font size in half-points
     # single line spacing, no space before/after — overrides any body line-spacing so notes are tight
     ppr = ('<w:pPr><w:pStyle w:val="FootnoteText"/>'
@@ -13550,7 +13550,7 @@ def _build_exam_pdf(meta, doc):
 
     body_st = ParagraphStyle('body', fontName=F["r"], fontSize=11.5, leading=17.5, alignment=TA_JUSTIFY)
     h_st = ParagraphStyle('h', fontName=F["b"], fontSize=12, leading=16, spaceBefore=10, spaceAfter=4)
-    fn_st = ParagraphStyle('fn', fontName=F["r"], fontSize=8, leading=10.5, alignment=TA_JUSTIFY)
+    fn_st = ParagraphStyle('fn', fontName=F["r"], fontSize=7.5, leading=9, alignment=TA_JUSTIFY)
 
     def esc(t):
         return t.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
