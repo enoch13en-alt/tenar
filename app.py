@@ -8325,6 +8325,77 @@ def api_shorten_audit():
                     "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
 
 
+@app.route("/api/oscola/footnote", methods=["POST"])
+def api_oscola_footnote():
+    """Convert a document that cites authorities INLINE into OSCOLA footnote form — add superscript
+    [n] markers and a numbered '## Footnotes' section — so the Word/PDF export then renders real
+    page-bottom footnotes. Adds markers + notes ONLY; never invents a citation, never reweords the body."""
+    body = request.json or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Nothing to convert."}), 400
+    if "## Footnotes" in text and re.search(r"\[\d{1,3}\]", text):
+        return jsonify({"converted": text, "note": "already footnoted", "changed": False,
+                        "cost": {"this_usd": 0, "total_usd": None}})
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    system = (
+        CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
+        "CONVERT TO OSCOLA FOOTNOTES. This document cites legal authorities INLINE in the prose. Convert "
+        "it to OSCOLA footnote style WITHOUT changing the substance:\n"
+        "- Wherever a sentence or clause makes a citable assertion tied to an authority (a statute / "
+        "section / subsection / article, a regulation, a decided case, or a named official source or "
+        "report), place a footnote marker '[n]' IMMEDIATELY AFTER the closing punctuation of that "
+        "sentence or clause, numbered sequentially from 1 in order of appearance.\n"
+        "- Add a '## Footnotes' section at the very end, BEFORE any '## Bibliography' / '## Table of "
+        "Legislation', with one numbered line per marker: 'n. <full OSCOLA citation>.' Give proper "
+        "OSCOLA form, e.g. 'Minerals and Mining Act 2006 (Act 703) s 82(1)'; 'Constitution of the "
+        "Republic of Ghana 1992, art 257(6)'; 'Minerals and Mining (Licensing) Regulations 2012 (LI "
+        "2176) reg 251(1)'; 'Ghana Gold Board Act 2025 (Act 1140) s 25(2)'. End each footnote with a "
+        "full stop.\n"
+        "- OSCOLA cross-references for repeats: after an instrument's first full citation, a later "
+        "footnote to the SAME instrument may use a short form, and an immediately-repeated identical "
+        "citation uses 'ibid'.\n"
+        "- KEEP ALL BODY TEXT, headings, quotations, the Bibliography and the Table of Legislation "
+        "EXACTLY as written — do NOT reword, reorder, summarise, add to, or delete any of it. You are "
+        "ONLY inserting the [n] markers and appending the Footnotes section. A pinpoint the prose "
+        "already reads naturally with (e.g. 'Section 82(1)') stays in the text; the footnote supplies "
+        "the full citation.\n"
+        "- Do NOT invent, add or 'upgrade' any authority. Footnote ONLY what the document already "
+        "cites. A sentence that cites nothing checkable gets no marker. Never fabricate a case, a "
+        "section number, a year or a report title.\n"
+        "OUTPUT the full converted document ONLY — no preamble, no notes.")
+    cached_sys = cached_system(system)
+    messages = [{"role": "user", "content": "DOCUMENT TO CONVERT:\n\n" + text}]
+    pieces, this_usd, total_usd = [], 0.0, None
+    try:
+        for _round in range(5):
+            resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=24000,
+                                     thinking={"type": "adaptive"},
+                                     system=cached_sys, messages=messages)
+            cost = record_cost(resp, ANSWER_MODEL)
+            this_usd += cost.get("this_usd", 0) or 0
+            total_usd = cost.get("total_usd", total_usd)
+            pieces.append(_text_of(resp))
+            if getattr(resp, "stop_reason", None) != "max_tokens":
+                break
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({"role": "user", "content":
+                "Continue EXACTLY where you stopped, mid-sentence if needed; do not repeat anything."})
+        out = "".join(pieces).strip()
+    except Exception:
+        app.logger.exception("oscola footnote convert failed")
+        return jsonify({"error": "The footnote conversion failed — please try again."}), 500
+    nmarks = len(re.findall(r"\[\d{1,3}\]", out))
+    return jsonify({"converted": out, "changed": True, "markers": nmarks,
+                    "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
+
+
 # ---------------------------------------------------------------- Weekly Update
 WEEK_EXTRACT = (
     "Extract the TEACHING SCHEDULE from this course outline. Return ONLY a JSON "

@@ -724,6 +724,7 @@
         </select>
       </label>
       <button class="btn" id="polishGo" style="width:auto">Polish / Shorten</button>
+      <button class="btn alt" id="polishFootnote" style="width:auto" title="If your document cites authorities INLINE (no [n] markers / no Footnotes section — e.g. a compiled policy paper or opinion), this converts those inline citations into proper OSCOLA footnotes: it adds superscript [n] markers and a numbered Footnotes section, WITHOUT changing your text. Then export to get real page-bottom footnotes.">🔖 Add OSCOLA footnotes</button>
       <button class="btn gold" id="polishExportAsIs" style="width:auto" title="Export exactly what is in the box RIGHT NOW to an OSCOLA Word file — superscript [n] markers become real footnotes at the foot of the page, at the chosen spacing. No rewrite, no audit: your text is untouched.">⬇ OSCOLA Word (as-is)</button>
       <button class="btn alt" id="polishClose" style="width:auto">Close</button>
     </div>
@@ -4853,6 +4854,26 @@ async function polishDraft() {
   renderExportBar(docEl, finalOut, finalTitle, "");
 }
 $("#polishGo").onclick = polishDraft;
+// Convert INLINE citations → OSCOLA footnotes ([n] markers + a Footnotes section) so the export footnotes them.
+$("#polishFootnote").onclick = async () => {
+  const text = $("#polishIn").value.trim();
+  if (!text) { $("#polishStatus").textContent = "Paste or upload a work first."; return; }
+  const btn = $("#polishFootnote"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Converting…";
+  $("#polishStatus").textContent = "🔖 Converting inline citations into OSCOLA footnotes (Opus)…";
+  try {
+    const r = await (await fetch("/api/oscola/footnote", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({text})})).json();
+    if (r.error) { $("#polishStatus").textContent = "⚠ " + r.error; }
+    else if (r.changed === false) { $("#polishStatus").textContent = "Already footnoted — export as-is to get page-bottom footnotes."; }
+    else {
+      $("#polishIn").value = r.converted || text;
+      $("#polishStatus").textContent = "✓ Added " + (r.markers||0) + " OSCOLA footnotes (superscript markers + a Footnotes section). "
+        + "Now click ⬇ OSCOLA Word (as-is) or ⬇ PDF to export with real page-bottom footnotes."
+        + (r.cost ? (" · $" + (r.cost.this_usd||0)) : "");
+    }
+  } catch (e) { $("#polishStatus").textContent = "Conversion failed — try again."; }
+  btn.disabled = false; btn.textContent = orig;
+};
 // Export exactly what's in the box to OSCOLA Word (real page-bottom footnotes) — NO rewrite, NO audit.
 $("#polishExportAsIs").onclick = async () => {
   const text = $("#polishIn").value.trim();
