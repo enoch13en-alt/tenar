@@ -8374,8 +8374,8 @@ def api_oscola_footnote():
     messages = [{"role": "user", "content": "DOCUMENT TO CONVERT:\n\n" + text}]
     pieces, this_usd, total_usd = [], 0.0, None
     try:
-        for _round in range(5):
-            resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=24000,
+        for _round in range(6):
+            resp, _m = _create_final(c, model=ANSWER_MODEL, max_tokens=16000,
                                      thinking={"type": "adaptive"},
                                      system=cached_sys, messages=messages)
             cost = record_cost(resp, ANSWER_MODEL)
