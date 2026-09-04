@@ -731,6 +731,9 @@
     <label style="color:#aab4c6;font-size:12px;display:block;margin-top:2px" title="After styling/shortening, run an audit that removes overstatement (unsupported absolutes / categorical conclusions), fixes clear misattributions, and keeps the verbatim law, citations and conclusions — then lists what it changed.">
       <input type="checkbox" id="polishAudit" checked> 🔍 Audit &amp; fix overstatement after (recommended)
     </label>
+    <label style="color:#aab4c6;font-size:12px;display:block" title="After shortening/polishing, if the document cites authorities inline (no [n] markers), convert them into proper OSCOLA footnotes — superscript markers + a numbered Footnotes section — so the result is a refined, OSCOLA-compliant document that exports with real page-bottom footnotes. Skipped automatically if the document is already footnoted.">
+      <input type="checkbox" id="polishOscola" checked> 📑 Make the result OSCOLA-footnoted (superscript + page-bottom on export)
+    </label>
     <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="polishAuditNote" style="font-size:11.5px;color:#8fb4e0;margin-top:4px"></div>
     <div id="polishOut"></div>
@@ -4848,6 +4851,26 @@ async function polishDraft() {
         $("#polishAuditNote").innerHTML += "<div>ℹ no course corpus available to check citations against.</div>";
       }
     } catch (e) { $("#polishAuditNote").innerHTML += "<div>⚠ citation check failed — overstatement-audited version is shown.</div>"; }
+    btn.disabled = false; btn.textContent = "Polish / Shorten";
+  }
+  // OSCOLA FOOTNOTE STEP — make the shortened/polished result a refined OSCOLA document: if it cites
+  // inline (no [n] markers), convert those into superscript footnotes + a Footnotes section so the
+  // export produces real page-bottom footnotes. Skipped automatically if already footnoted.
+  if ($("#polishOscola") && $("#polishOscola").checked
+      && !(/\[\d{1,3}\]/.test(finalOut) && /##\s+Footnotes/i.test(finalOut))) {
+    btn.disabled = true; btn.textContent = "OSCOLA footnotes…";
+    $("#polishAuditNote").innerHTML += "<div style='margin-top:4px'>📑 converting inline citations into OSCOLA footnotes…</div>";
+    try {
+      const fr = await (await fetch("/api/oscola/footnote", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: finalOut})})).json();
+      if (fr && fr.converted && fr.changed !== false) {
+        finalOut = fr.converted; docEl.innerHTML = mdToHtml(finalOut);
+        $("#polishAuditNote").innerHTML += "<div style='color:#8fce8f'>✅ OSCOLA footnotes added ("
+          + (fr.markers||0) + ") — export gives real page-bottom footnotes." + (fr.cost ? (" · $" + (fr.cost.this_usd||0)) : "") + "</div>";
+      } else if (fr && fr.error) {
+        $("#polishAuditNote").innerHTML += "<div>ℹ OSCOLA step skipped: " + esc(fr.error) + "</div>";
+      }
+    } catch (e) { $("#polishAuditNote").innerHTML += "<div>⚠ OSCOLA footnote step failed — the text is shown; you can click 🔖 Add OSCOLA footnotes.</div>"; }
     btn.disabled = false; btn.textContent = "Polish / Shorten";
   }
   if ($("#docSpacing") && $("#polishSpacing")) $("#docSpacing").value = $("#polishSpacing").value;  // export at chosen spacing
