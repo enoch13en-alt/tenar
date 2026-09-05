@@ -2478,15 +2478,23 @@ $("#examBreak").onclick = runBreakdown;
 function renderInterviewPanel() {
   const p = $("#examInterviewPanel"); if (!p) return;
   const vs = EXAM.userViews || [];
-  if (!vs.length && !EXAM._interviewQs) { p.style.display = "none"; return; }
+  let items = EXAM._interviewItems;
+  if (!items || !items.length) {
+    // fall back to older saved shape (questions only, or from saved views)
+    const qs = EXAM._interviewQs || vs.map(v => v.q);
+    items = (qs || []).map(q => ({background: "", question: q}));
+  }
+  if (!items.length && !vs.length) { p.style.display = "none"; return; }
   p.style.display = "block";
-  const qs = EXAM._interviewQs || vs.map(v => v.q);
-  let h = "<div style='font-size:12.5px;color:#c9a86a;font-weight:600;margin-bottom:6px'>🎤 Your view — answer in your own words (these are argued through the final document)</div>";
-  qs.forEach((q, i) => {
-    const ans = (vs[i] && vs[i].a) || "";
-    h += "<div style='margin-bottom:8px'><div style='font-size:12px;color:#cdd6e6;margin-bottom:3px'>"
-      + (i + 1) + ". " + esc(q) + "</div>"
-      + "<textarea class='ivAns' data-q=\"" + esc(q) + "\" style='width:100%;height:52px;font-size:12px'>" + esc(ans) + "</textarea></div>";
+  // match saved answers to questions by text
+  const ansFor = (q) => { const v = vs.find(x => x.q === q); return v ? v.a : ""; };
+  let h = "<div style='font-size:12.5px;color:#c9a86a;font-weight:600;margin-bottom:8px'>🎤 Your view — read each brief, then give your position in your own words (these are argued through the final document)</div>";
+  items.forEach((it, i) => {
+    const ans = ansFor(it.question);
+    h += "<div style='margin-bottom:12px;border-left:2px solid #3a4658;padding-left:10px'>";
+    if (it.background) h += "<div style='font-size:12px;color:#aeb8c8;margin-bottom:4px;line-height:1.5'>" + esc(it.background) + "</div>";
+    h += "<div style='font-size:12.5px;color:#e8ecf4;font-weight:600;margin-bottom:3px'>" + (i + 1) + ". " + esc(it.question) + "</div>"
+      + "<textarea class='ivAns' data-q=\"" + esc(it.question) + "\" placeholder='Your view…' style='width:100%;height:60px;font-size:12px'>" + esc(ans) + "</textarea></div>";
   });
   h += "<div class='rowbtn'><button class='btn gold mini' id='ivSave' style='width:auto'>✓ Save my view</button>"
     + "<button class='btn alt mini' id='ivRegen' style='width:auto'>↻ New questions</button>"
@@ -2504,17 +2512,17 @@ function renderInterviewPanel() {
 async function interviewMe() {
   const q = (EXAM.question || $("#examQ").value || "").trim();
   if (!q) { $("#examStatus").textContent = "Paste the exam question first."; return; }
-  const btn = $("#examInterview"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Thinking of questions…";
+  const btn = $("#examInterview"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Building your briefing…";
   const p = $("#examInterviewPanel"); p.style.display = "block";
-  p.innerHTML = "<div style='font-size:12px;color:#8b93a7'>🎤 preparing interview questions on this problem…</div>";
+  p.innerHTML = "<div style='font-size:12px;color:#8b93a7'>🎤 reading the problem and the law, and preparing detailed briefings + questions… (up to ~1 min)</div>";
   try {
     const r = await (await fetch("/api/exam/interview", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question: q, issues: EXAM.issues || []})})).json();
+      body: JSON.stringify({question: q, issues: EXAM.issues || [], course: COURSE, courses: examCourses()})})).json();
     if (r.error) { p.innerHTML = "<div style='color:#e0a05a;font-size:12px'>⚠ " + esc(r.error) + "</div>"; }
     else {
-      EXAM._interviewQs = r.questions || [];
-      // keep any answers already given to matching questions
-      renderInterviewPanel();
+      EXAM._interviewItems = r.items || (r.questions || []).map(q2 => ({background: "", question: q2}));
+      EXAM._interviewQs = (EXAM._interviewItems).map(it => it.question);
+      renderInterviewPanel();   // preserves any answers already typed (matched by question text)
       try { saveExam(); } catch (e) {}
     }
   } catch (e) { p.innerHTML = "<div style='color:#e0a05a;font-size:12px'>⚠ couldn't load the interview — try again.</div>"; }

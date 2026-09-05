@@ -11949,9 +11949,11 @@ CALC_AWARE = (
 
 @app.route("/api/exam/interview", methods=["POST"])
 def api_exam_interview():
-    """ORIGINALITY step: generate a short set of interview questions that draw out the STUDENT'S OWN
-    views / instincts / ideology on the problem — not knowledge tests. Their answers are later mapped
-    onto the law (used in line with or against it) and matched to scholars who share their leaning."""
+    """ORIGINALITY step: generate DETAILED, briefing-style interview items that draw out the STUDENT'S
+    OWN view. Each item first BRIEFS the student on a real tension in the problem — the facts, the
+    governing law/amendments in the materials, and the competing interests — then asks their view.
+    Their answers are later mapped onto the law (used in line with or against it) and matched to
+    scholars who share their leaning."""
     body = request.json or {}
     q = (body.get("question") or "").strip()
     issues = body.get("issues") or []
@@ -11964,34 +11966,64 @@ def api_exam_interview():
     if not ok:
         return jsonify({"error": msg, "limit": True})
     consume("questions")
+    courses = _exam_courses(body, safe_course(body.get("course", "")))
+    ctx = ""
+    try:
+        ctx = course_context_multi(courses, q, 20) if courses else ""
+    except Exception:
+        ctx = ""
     issue_lines = ""
     if isinstance(issues, list) and issues:
         issue_lines = "\n\nISSUES IDENTIFIED:\n" + "\n".join(
             "- " + (str(x.get("issue")) if isinstance(x, dict) else str(x)) for x in issues[:12])
+    law_block = ("\n\nRELEVANT LAW / MATERIALS (ground the briefings in THESE — use their real "
+                 "instrument names, sections and content; do not go beyond them):\n" + ctx[:12000]) if ctx else ""
     system = (
-        "You are an examiner-coach drawing out a law student's OWN position before they write, so their "
-        "answer is original — argued from a genuine viewpoint, not a neutral recital. Read the problem and "
-        "produce 5–7 SHORT interview questions that surface what THE STUDENT THINKS: their instinct on the "
-        "hard/contested points, where they think the law is right or wrong, whose interests they lean "
-        "toward, what outcome they find just, and any reform they'd back. Probe VIEWS and VALUES, never "
-        "black-letter knowledge (do NOT ask 'what does s X say'). Each question is one sentence, plain, "
-        "answerable in 1–3 sentences, and tied to a real tension in THIS problem. Return ONLY a JSON array "
-        "of strings — the questions — no prose, no numbering, no markdown fence.")
+        "You are an examiner-coach preparing a law student to write an ORIGINAL, argued answer. Before "
+        "they write, you interview them to draw out THEIR OWN position. Produce 5–7 interview ITEMS on the "
+        "real tensions in THIS problem. EACH item has TWO parts:\n"
+        "1) BACKGROUND — a detailed briefing (4–7 sentences) that fully informs the student on that "
+        "tension so they can form a view: set out the relevant FACTS from the problem, the governing LAW "
+        "and any AMENDMENTS / increased penalties / official positions that appear in the materials "
+        "(name the real instruments and sections), and the COMPETING INTERESTS at stake (e.g. livelihood "
+        "and land claims vs environmental harm vs state revenue). Write it as an informative brief, the "
+        "way your worked example reads: 'Ghana has amended the Minerals and Mining Act and increased "
+        "penalties over the years; however, illegal mining persists in many rural communities, whose "
+        "residents say it is their only source of income and that they own the land…'.\n"
+        "2) QUESTION — one clear sentence asking the student's VIEW / stance / values on that tension "
+        "(e.g. 'What is your view on this?', 'Where do you land, and why?'). Never a knowledge test.\n"
+        "GROUNDING: build each briefing from the PROBLEM facts and the RELEVANT LAW/MATERIALS provided. "
+        "Use the real instrument names, sections, amendments and positions found there. Do NOT invent "
+        "statistics, or named reports with fabricated dates, or provisions that are not in the materials; "
+        "where you refer to empirical reality not pinned to a given source, frame it generally ('reports "
+        "indicate…', 'despite successive amendments…') rather than fabricating a citation.\n"
+        "Return ONLY a JSON array of objects, each {\"background\": \"…\", \"question\": \"…\"} — no prose, "
+        "no numbering, no markdown fence.")
+    items = []
     try:
-        r, m = _create_final(c, model=HAIKU_MODEL, max_tokens=1200,
-                             system=system, fallbacks=[],
-                             messages=[{"role": "user", "content": "PROBLEM:\n" + q[:6000] + issue_lines}])
+        r, m = _create_final(c, model=AUDIT_MODEL, max_tokens=4000, fallbacks=[],
+                             system=system,
+                             messages=[{"role": "user", "content": "PROBLEM:\n" + q[:6000] + issue_lines + law_block}])
         record_cost(r, m)
         txt = (_text_of(r) or "").strip()
         txt = re.sub(r"^```(?:json)?|```$", "", txt.strip()).strip()
-        qs = json.loads(txt)
-        qs = [str(x).strip() for x in qs if str(x).strip()][:8]
+        data = json.loads(txt)
+        for it in data:
+            if isinstance(it, dict):
+                bg = (it.get("background") or "").strip()
+                qq = (it.get("question") or "").strip()
+                if qq:
+                    items.append({"background": bg, "question": qq})
+            elif str(it).strip():
+                items.append({"background": "", "question": str(it).strip()})
+        items = items[:8]
     except Exception:
         app.logger.exception("interview question generation failed")
-        qs = []
-    if not qs:
+        items = []
+    if not items:
         return jsonify({"error": "Could not generate interview questions — try again."}), 500
-    return jsonify({"questions": qs})
+    # keep backward-compatible "questions" list too
+    return jsonify({"items": items, "questions": [i["question"] for i in items]})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
