@@ -515,9 +515,11 @@
       </details>
       <button class="btn gold" id="examAuto" style="width:auto" title="LEAN hands-off run (cost-cut): break down → gather every issue (cheap Haiku extraction + Opus writer) → (if ⚖️ on) find & pre-apply cases → compile → verify every citation against the corpus, then calibrate the language — audit + calibrate + Final check now run automatically at the end, so the document comes out grounded and calibrated. Page-fit and case-weaving stay optional. Asks before it starts.">⚡ Auto-run (lean)</button>
       <button class="btn" id="examBreak" style="width:auto">Break it down</button>
+      <button class="btn gold" id="examInterview" style="width:auto" title="ORIGINALITY: the bot interviews YOU about the problem — your instincts, where you think the law is right or wrong, whose side you lean to, what outcome is just. Your answers are then argued through the final document: mapped onto the law (used in line with it where it agrees, argued against it where it doesn't), with scholars who share your view cited in support. Do this before you compile.">🎤 Interview me (my view)</button>
       <button class="btn alt" id="examClearSaved" style="width:auto" title="Delete ALL saved answers on this computer, for every course, so everything re-gathers fresh on the latest version. Does NOT touch your uploaded documents or pins.">🗑 Clear ALL saved answers</button>
       <button class="btn alt" id="examClose" style="width:auto">Close</button>
     </div>
+    <div id="examInterviewPanel" style="display:none;margin-top:8px;border:1px solid #3a4658;border-radius:8px;padding:10px;background:#141b28"></div>
     <!-- Document settings moved to the BOTTOM (out of the way) — font/size/spacing feed the Word/PDF export; words/pages/type apply on 🧬 Synthesise. -->
     <details id="docSettings" style="margin-top:8px;border:1px solid #2a3344;border-radius:8px;padding:6px 10px;color:#aab4c6;font-size:12px">
       <summary style="cursor:pointer">📄 Document settings <span style="color:#7a8296">(fonts / length — applied on 🧬 Synthesise &amp; on export)</span></summary>
@@ -2340,6 +2342,7 @@ $("#openExam").onclick = () => {
   $("#examModal").style.display = "flex";
   if (EXAM && EXAM.issues && EXAM.issues.length) unstickBlockedIssues();  // free any cap/error-stuck issues
   maybeOfferResume();                  // offer to restore a saved run (survives crash/power cut)
+  try { renderInterviewPanel(); } catch (e) {}   // restore captured views/questions if any
   // if a question is already sitting in the box, fill focus areas right away
   if ($("#examQ").value.trim().length >= 30) autoFillFocus();
 };
@@ -2470,6 +2473,54 @@ async function runBreakdown() {
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
 }
 $("#examBreak").onclick = runBreakdown;
+
+// ORIGINALITY — interview the student, capture their view, feed it to the compile.
+function renderInterviewPanel() {
+  const p = $("#examInterviewPanel"); if (!p) return;
+  const vs = EXAM.userViews || [];
+  if (!vs.length && !EXAM._interviewQs) { p.style.display = "none"; return; }
+  p.style.display = "block";
+  const qs = EXAM._interviewQs || vs.map(v => v.q);
+  let h = "<div style='font-size:12.5px;color:#c9a86a;font-weight:600;margin-bottom:6px'>🎤 Your view — answer in your own words (these are argued through the final document)</div>";
+  qs.forEach((q, i) => {
+    const ans = (vs[i] && vs[i].a) || "";
+    h += "<div style='margin-bottom:8px'><div style='font-size:12px;color:#cdd6e6;margin-bottom:3px'>"
+      + (i + 1) + ". " + esc(q) + "</div>"
+      + "<textarea class='ivAns' data-q=\"" + esc(q) + "\" style='width:100%;height:52px;font-size:12px'>" + esc(ans) + "</textarea></div>";
+  });
+  h += "<div class='rowbtn'><button class='btn gold mini' id='ivSave' style='width:auto'>✓ Save my view</button>"
+    + "<button class='btn alt mini' id='ivRegen' style='width:auto'>↻ New questions</button>"
+    + "<span id='ivStatus' style='font-size:11.5px;color:#8fce8f'></span></div>";
+  p.innerHTML = h;
+  $("#ivSave").onclick = () => {
+    const vs2 = [];
+    p.querySelectorAll(".ivAns").forEach(t => { const a = t.value.trim(); if (a) vs2.push({q: t.getAttribute("data-q"), a}); });
+    EXAM.userViews = vs2;
+    try { saveExam(); } catch (e) {}
+    $("#ivStatus").textContent = "✓ saved " + vs2.length + " view(s) — they'll be argued through the compiled answer.";
+  };
+  $("#ivRegen").onclick = interviewMe;
+}
+async function interviewMe() {
+  const q = (EXAM.question || $("#examQ").value || "").trim();
+  if (!q) { $("#examStatus").textContent = "Paste the exam question first."; return; }
+  const btn = $("#examInterview"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Thinking of questions…";
+  const p = $("#examInterviewPanel"); p.style.display = "block";
+  p.innerHTML = "<div style='font-size:12px;color:#8b93a7'>🎤 preparing interview questions on this problem…</div>";
+  try {
+    const r = await (await fetch("/api/exam/interview", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({question: q, issues: EXAM.issues || []})})).json();
+    if (r.error) { p.innerHTML = "<div style='color:#e0a05a;font-size:12px'>⚠ " + esc(r.error) + "</div>"; }
+    else {
+      EXAM._interviewQs = r.questions || [];
+      // keep any answers already given to matching questions
+      renderInterviewPanel();
+      try { saveExam(); } catch (e) {}
+    }
+  } catch (e) { p.innerHTML = "<div style='color:#e0a05a;font-size:12px'>⚠ couldn't load the interview — try again.</div>"; }
+  btn.disabled = false; btn.textContent = orig;
+}
+$("#examInterview").onclick = interviewMe;
 
 // Double-audit the breakdown's cited authorities against the primary instruments' contents maps.
 // Returns the number of issues whose 'law' was corrected this pass; updates EXAM.issues in place.
@@ -3946,6 +3997,7 @@ async function compileExam(finalize) {
         footnotes_inclusive: (($("#fnCount")||{}).value === "count"),
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: false,
+        user_views: EXAM.userViews || [],
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         simple: !!($("#examSimple") && $("#examSimple").checked),

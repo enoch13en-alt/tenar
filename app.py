@@ -11947,6 +11947,53 @@ CALC_AWARE = (
 )
 
 
+@app.route("/api/exam/interview", methods=["POST"])
+def api_exam_interview():
+    """ORIGINALITY step: generate a short set of interview questions that draw out the STUDENT'S OWN
+    views / instincts / ideology on the problem — not knowledge tests. Their answers are later mapped
+    onto the law (used in line with or against it) and matched to scholars who share their leaning."""
+    body = request.json or {}
+    q = (body.get("question") or "").strip()
+    issues = body.get("issues") or []
+    if not q:
+        return jsonify({"error": "Paste the exam question first."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    issue_lines = ""
+    if isinstance(issues, list) and issues:
+        issue_lines = "\n\nISSUES IDENTIFIED:\n" + "\n".join(
+            "- " + (str(x.get("issue")) if isinstance(x, dict) else str(x)) for x in issues[:12])
+    system = (
+        "You are an examiner-coach drawing out a law student's OWN position before they write, so their "
+        "answer is original — argued from a genuine viewpoint, not a neutral recital. Read the problem and "
+        "produce 5–7 SHORT interview questions that surface what THE STUDENT THINKS: their instinct on the "
+        "hard/contested points, where they think the law is right or wrong, whose interests they lean "
+        "toward, what outcome they find just, and any reform they'd back. Probe VIEWS and VALUES, never "
+        "black-letter knowledge (do NOT ask 'what does s X say'). Each question is one sentence, plain, "
+        "answerable in 1–3 sentences, and tied to a real tension in THIS problem. Return ONLY a JSON array "
+        "of strings — the questions — no prose, no numbering, no markdown fence.")
+    try:
+        r, m = _create_final(c, model=HAIKU_MODEL, max_tokens=1200,
+                             system=system, fallbacks=[],
+                             messages=[{"role": "user", "content": "PROBLEM:\n" + q[:6000] + issue_lines}])
+        record_cost(r, m)
+        txt = (_text_of(r) or "").strip()
+        txt = re.sub(r"^```(?:json)?|```$", "", txt.strip()).strip()
+        qs = json.loads(txt)
+        qs = [str(x).strip() for x in qs if str(x).strip()][:8]
+    except Exception:
+        app.logger.exception("interview question generation failed")
+        qs = []
+    if not qs:
+        return jsonify({"error": "Could not generate interview questions — try again."}), 500
+    return jsonify({"questions": qs})
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
@@ -12672,6 +12719,19 @@ def api_exam_assemble():
     length = body.get("length", "exam")      # "exam" | "essay" | "memo" | "report"
     include_web = bool(body.get("web", False))   # pull + synthesise comparators
     focus = [f.strip() for f in (body.get("focus") or []) if f and f.strip()]
+    # ORIGINALITY: the student's OWN views, captured in the interview step — [{q, a}, ...] or free text.
+    _uv = body.get("user_views") or []
+    user_views = []
+    if isinstance(_uv, list):
+        for it in _uv:
+            if isinstance(it, dict):
+                a = (it.get("a") or it.get("answer") or "").strip()
+                if a:
+                    user_views.append({"q": (it.get("q") or it.get("question") or "").strip(), "a": a})
+            elif str(it).strip():
+                user_views.append({"q": "", "a": str(it).strip()})
+    elif isinstance(_uv, str) and _uv.strip():
+        user_views.append({"q": "", "a": _uv.strip()})
     course = safe_course(body.get("course", ""))         # for the optional context store
     use_context = bool(body.get("use_context"))
     want_assumptions = bool(body.get("assumptions"))     # off by default → no assumptions section
@@ -12896,12 +12956,38 @@ def api_exam_assemble():
                          "or as the problem's facts; use only for a recent-events / policy / reform "
                          "point, briefly and attributed):\n" + "\n\n".join(_parts))[:6500]
             system = system + "\n\n" + CONTEXT_USAGE
+    views_block = ""
+    if user_views:
+        system = system + "\n\n" + (
+            "THE STUDENT'S OWN VIEW — ORIGINALITY MANDATE. Below (in 'STUDENT'S VIEWS') is what THIS "
+            "student actually thinks about the problem, captured in an interview. This answer must be "
+            "argued FROM THAT VIEWPOINT — original, not a neutral recital. Do this:\n"
+            "1) MAP each view onto the law. Where the primary law and authorities SUPPORT the student's "
+            "position, build the case for it — deploy the exact provisions, cases and sources from the "
+            "gathered material to ground and strengthen it.\n"
+            "2) Where the law is AGAINST the student's view, say so honestly and precisely (never pretend "
+            "the law agrees), THEN construct the strongest defensible argument for the student's position "
+            "anyway — on interpretation, on principle/policy, or as a reform proposal ('the better view "
+            "is…', 'the provision should be read as…', 'the law ought to be reformed to…'), grounded in "
+            "the materials, without overstating.\n"
+            "3) MATCH SCHOLARSHIP TO THE VIEW. From the gathered sources/analyses, surface writers, "
+            "reports or commentary whose position ALIGNS with the student's ideology and cite them in "
+            "support ('Ainuson likewise argues…'); where a source cuts against the view, engage it as "
+            "the counter-argument to answer. Cite ONLY sources present in the gathered material — never "
+            "invent an author, title or work to fit the view.\n"
+            "4) ATTRIBUTE the student's own contentions as theirs — carry a brief footnote/parenthetical "
+            "'argument contributed by the author' on the positions that are the student's own, so the "
+            "originality is visible. Weave the view through the analysis in the document's own voice; do "
+            "NOT bolt on a separate 'my opinion' section.")
+    if user_views:
+        views_block = "\n\nSTUDENT'S VIEWS (map onto the law per the ORIGINALITY MANDATE):\n" + "\n".join(
+            (("Q: " + v["q"] + "\n") if v.get("q") else "") + "MY VIEW: " + v["a"] for v in user_views)
     user = (
         f"EXAM QUESTION:\n{q}\n\n"
         f"FACT MAP:\n{json.dumps(facts, ensure_ascii=False)}\n\n"
         f"PER-ISSUE ANALYSES:\n" + "\n\n".join(blocks) +
         f"\n\nSOURCES AVAILABLE TO CITE (cite only these):\n{src_text}"
-        + ctx_block + focus_block +
+        + ctx_block + focus_block + views_block +
         f"\n\nWrite {kind}. Put OSCOLA footnote markers inline as [n], then list "
         "the numbered footnotes under a 'Footnotes' heading, followed by "
         "'Bibliography' (and Tables of Cases/Legislation if any). In the "
