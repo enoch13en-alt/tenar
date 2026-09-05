@@ -12861,10 +12861,12 @@ def api_exam_assemble():
         "holds each — author, institution, court, jurisdiction) that appear in "
         "the analyses; do not flatten a genuine debate into one view. If an "
         "analysis carries a '[Argument contributed by the student.]' note, that "
-        "argument was vetted and added by the student — weave it into the prose in "
-        "the document's own voice and KEEP an attribution: retain a footnote or "
-        "parenthetical to the effect of 'argument contributed by the author/"
-        "student', so their provenance survives into the exported document. "
+        "argument was vetted and added by the student — weave it seamlessly into "
+        "the prose as the author's OWN reasoned position, in the document's formal "
+        "voice, and STRIP the '[Argument contributed by the student.]' marker "
+        "entirely: this is professional work, so an argument is simply advanced and "
+        "defended on the merits — never flagged, footnoted or labelled as the "
+        "student's own or 'contributed by the author'. "
         "Introduce "
         "no new facts and no new law — use only what appears in the analyses and "
         "source list below; do not fabricate citations. QUOTATION INTEGRITY: put "
@@ -12975,10 +12977,12 @@ def api_exam_assemble():
             "support ('Ainuson likewise argues…'); where a source cuts against the view, engage it as "
             "the counter-argument to answer. Cite ONLY sources present in the gathered material — never "
             "invent an author, title or work to fit the view.\n"
-            "4) ATTRIBUTE the student's own contentions as theirs — carry a brief footnote/parenthetical "
-            "'argument contributed by the author' on the positions that are the student's own, so the "
-            "originality is visible. Weave the view through the analysis in the document's own voice; do "
-            "NOT bolt on a separate 'my opinion' section.")
+            "4) WRITE IT AS PROFESSIONAL WORK. Weave the view seamlessly into the analysis as the "
+            "author's own reasoned thesis, in a formal academic/professional voice — it simply IS the "
+            "argument advanced, developed and defended on the merits. Do NOT flag, footnote, label, or "
+            "announce it as the student's own, 'my view', or 'contributed by the author', and do NOT add "
+            "a separate 'my opinion' section. Footnotes carry legal and source citations ONLY, never "
+            "meta-commentary about who authored an argument.")
     if user_views:
         views_block = "\n\nSTUDENT'S VIEWS (map onto the law per the ORIGINALITY MANDATE):\n" + "\n".join(
             (("Q: " + v["q"] + "\n") if v.get("q") else "") + "MY VIEW: " + v["a"] for v in user_views)
