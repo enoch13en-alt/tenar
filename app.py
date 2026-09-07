@@ -8421,7 +8421,10 @@ INTENTIONALIST_PROFILE = (
     "the sponsoring Minister's/promoter's statements, then parliamentary debates (Hansard); rejected or "
     "amended drafts show what the legislature chose NOT to enact. In Ghana, situate this within the "
     "Interpretation Act, 2009 (Act 792) and the Act's long title/memorandum where they are in the "
-    "materials. Use history to RESOLVE ambiguity, not to contradict genuinely plain words.")
+    "materials. Use history to RESOLVE ambiguity, not to contradict genuinely plain words. Where the "
+    "legislative history is NOT in the materials, do NOT invent it: reason from the text and the Act's "
+    "scheme and FLAG precisely what would resolve it (which report, which memorandum, which debate), "
+    "with a 【FILL:…】 pointer — never fabricate a legislator's statement or a committee finding.")
 PURPOSIVIST_PROFILE = (
     "ENGINE — PURPOSIVIST / MISCHIEF (Hart & Sacks). A statute is a purposive act passed to cure a "
     "mischief: 'assume the legislature consisted of reasonable persons pursuing reasonable purposes "
@@ -8432,7 +8435,17 @@ PURPOSIVIST_PROFILE = (
     "would defeat the Act's object or yield an absurd, futile or self-defeating result "
     "(American-Trucking / King-v-Burwell-type 'read to save the scheme'). Purpose may stretch the "
     "literal words, but must stay anchored to a purpose EVIDENCED BY THE ACT ITSELF, not one invented "
-    "for the occasion.")
+    "for the occasion.\n"
+    "SOURCING THE MISCHIEF & CONTEXT (this engine asks what problem the law was passed to cure, and the "
+    "socio-economic/political situation at enactment): establish these from GROUNDED sources in this "
+    "order — (1) the Act's long title, preamble and objects clause; (2) the memorandum to the Bill and "
+    "explanatory notes; (3) a preceding law-reform / commission report; (4) secondary sources in the "
+    "materials; (5) the problem's own stated facts (accept the examiner's facts as given). Where the "
+    "external context is NOT in the materials, INFER the mischief from the Act's own structure (the "
+    "defect its provisions plainly address) and FLAG the gap — 'the pre-Act mischief is not evidenced "
+    "in the materials; the Bill's memorandum, a law-reform report or Hansard would establish it' with a "
+    "【FILL:…】 pointer. NEVER fabricate a historical fact, date, figure, event or 'situation at the "
+    "time' the materials do not support.")
 
 # FIXED RULES OF CONSTRUCTION — stable interpretive METHOD (not statute/case law), so hardcoded.
 # The engine states the rule from here (always exact) + its equal-and-opposite; it cites the APPLYING
