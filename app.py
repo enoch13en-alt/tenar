@@ -12415,31 +12415,46 @@ def api_exam_breakdown():
     # Try up to TWICE: a transient reply (empty text, a stray prose line, or a fenced block) shouldn't
     # make the student re-click. On a retry, nudge harder for pure JSON. Distinct handling for a genuine
     # truncation (max_tokens) or a refusal — those won't be fixed by retrying.
+    # Keep the issue map BOUNDED so it fits: group closely-related requirements under one umbrella
+    # (e.g. safety+security+safeguards as one '3×S' umbrella) rather than one issue per requirement.
+    CAP = ("\n\nSCOPE OF THE MAP: produce AT MOST 8 umbrella issues. GROUP closely-related requirements "
+           "under a single umbrella (e.g. safety, security and safeguards as one '3×S' umbrella; "
+           "waste + spent fuel + decommissioning as one) rather than splitting every requirement into "
+           "its own issue; give each umbrella about 3–5 sub-questions. Prefer a tight, grouped map over "
+           "a long one.")
     data, cost, last_txt, last_stop = None, 0, "", None
     for attempt in range(2):
-        umsg = user if attempt == 0 else (
-            user + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
+        umsg = (user + CAP) if attempt == 0 else (
+            user + CAP + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
             "fences, nothing before '{' or after '}'.")
+        # AUTO-CONTINUE across legs: a large issue map can exceed one max_tokens window; when it stops on
+        # 'max_tokens', resume the JSON exactly where it left off and concatenate, so a big case study
+        # (many requirements) is never lost to truncation. Only give up if it's still cut after several legs.
         try:
-            # Breakdown is structured decomposition (issue-spotting + grouping), not deep reasoning —
-            # run it on Haiku too. Everything before the compile is cheap; the compile does the writing.
-            resp, _model_used = _stream_final(c, HAIKU_MODEL, max_tokens=8000, system=system,
-                                              messages=[{"role": "user", "content": umsg}])
+            pieces, msgs, last_stop = [], [{"role": "user", "content": umsg}], None
+            for _leg in range(5):
+                resp, _model_used = _stream_final(c, HAIKU_MODEL, max_tokens=8000, system=system,
+                                                  messages=msgs)
+                cost += record_cost(resp)
+                piece = _text_of(resp)
+                pieces.append(piece)
+                last_stop = getattr(resp, "stop_reason", None)
+                if last_stop == "refusal":
+                    return jsonify({"error": "The model declined to break this one down. Rephrase "
+                                    "the question and retry."})
+                if last_stop != "max_tokens":
+                    break
+                msgs.append({"role": "assistant", "content": piece})
+                msgs.append({"role": "user", "content":
+                    "Continue the JSON EXACTLY where you stopped — resume mid-token/mid-line if needed, "
+                    "output ONLY the remaining JSON, add nothing else and do not repeat."})
+            last_txt = "".join(pieces)
         except Exception as e:
             emsg = str(getattr(e, "message", "") or e).lower()
             if "credit balance" in emsg or "insufficient" in emsg or "quota" in emsg:
                 return jsonify({"error": "The AI account is out of credits — top up in the "
                                 "Anthropic console."})
             raise
-        last_txt = _text_of(resp)
-        last_stop = getattr(resp, "stop_reason", None)
-        cost = record_cost(resp)
-        if last_stop == "max_tokens":
-            return jsonify({"error": "The breakdown was too long to finish. Try a "
-                            "shorter question, or fewer focus areas, and retry."})
-        if last_stop == "refusal":
-            return jsonify({"error": "The model declined to break this one down. Rephrase "
-                            "the question and retry."})
         try:
             data = _parse_json(last_txt)
             break
