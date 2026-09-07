@@ -770,6 +770,11 @@
        <b>equal-and-opposite rule</b>, applies it, shows the <b>problems</b> that reading would cause, and gives
        <b>reasons you didn't go that way</b> — grounded in your uploaded interpretation materials (canons, cases).
        Every canon has a counter-canon; this builds the argument that pre-empts it.</p>
+    <div class="rowbtn" style="margin-bottom:6px;align-items:center">
+      <button class="btn alt mini" id="interpMaterials" style="width:auto" title="Add your interpretation materials — canon lists, cases on construction, Eskridge / Hart & Sacks excerpts, your own notes on the maxims. Stored ONCE in a shared 'Legal Application' library (not a course) and used to ground interpretation for case studies across ALL courses.">📎 Add interpretation materials (canons / cases)</button>
+      <input type="file" id="interpMatFile" accept=".pdf,.docx,.txt,.md" multiple class="hidden">
+      <span id="interpMatNote" style="font-size:11.5px;color:#8b93a7">shared across all courses · not shown as a course</span>
+    </div>
     <label style="font-size:12px;color:#aab4c6">Provision to interpret (paste the exact words):</label>
     <textarea id="interpProvision" style="height:90px" placeholder="e.g. s 82(1): 'a person shall not engage in a small scale mining operation … unless there is in existence … a licence …'"></textarea>
     <label style="font-size:12px;color:#aab4c6">Facts / the question it must answer:</label>
@@ -1224,12 +1229,14 @@ function bubble(cls, html) {
 }
 
 let ALL_COURSES = [];
+const HIDDEN_STORES = ["Legal Application"];   // reserved application stores — not shown as courses
 async function loadCourses() {
   const r = await (await fetch("/api/courses")).json();
-  ALL_COURSES = r.courses || [];
+  const visible = (r.courses || []).filter(c => !HIDDEN_STORES.includes(c));
+  ALL_COURSES = visible;
   const sel = $("#course");
-  sel.innerHTML = r.courses.map(c => `<option>${esc(c)}</option>`).join("");
-  if (!r.courses.includes(COURSE)) COURSE = r.courses[0];
+  sel.innerHTML = visible.map(c => `<option>${esc(c)}</option>`).join("");
+  if (!visible.includes(COURSE)) COURSE = visible[0] || "General";
   sel.value = COURSE;
   $("#courseLabel").textContent = COURSE;
   localStorage.setItem("course", COURSE);
@@ -4853,6 +4860,24 @@ $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
 // ⚖️ Statutory interpretation — pick your line, argue it, pre-empt the counter-canon.
 $("#openInterpret").onclick = () => { $("#interpretModal").style.display = "flex"; };
 $("#interpClose").onclick = () => { $("#interpretModal").style.display = "none"; };
+// Add materials to the shared, hidden "Legal Application" store (used across all courses).
+$("#interpMaterials").onclick = () => $("#interpMatFile").click();
+$("#interpMatFile").onchange = async (e) => {
+  const files = Array.from(e.target.files || []); if (!files.length) return;
+  const note = $("#interpMatNote"); note.textContent = "uploading " + files.length + " file(s) to the Legal Application library…";
+  try {
+    const fd = new FormData();
+    files.forEach(f => fd.append("files", f));
+    fd.append("course", "Legal Application");
+    const r = await (await fetch("/api/upload", {method:"POST", body: fd})).json();
+    if (r.error) { note.textContent = "⚠ " + r.error; }
+    else {
+      const n = (r.saved || []).length;
+      note.textContent = "✓ added " + n + " file(s) — indexing… they'll ground interpretation across all courses. (Not shown as a course.)";
+    }
+  } catch (err) { note.textContent = "⚠ upload failed — try again."; }
+  e.target.value = "";
+};
 $("#interpLine").onchange = () => {
   const custom = $("#interpLine").value === "__custom__";
   $("#interpCustom").style.display = custom ? "inline-block" : "none";
