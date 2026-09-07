@@ -8397,6 +8397,57 @@ def api_oscola_footnote():
 
 
 # --------------------------------------------------- Statutory interpretation: pick a line, argue it
+# The three interpretive ENGINES (Jellum's intrinsic / extrinsic / policy taxonomy). Each profile fixes
+# WHAT SOURCES the engine may use and what it must ignore, so the same text yields different conclusions.
+# Foreign doctrines/cases named are METHOD illustrations only — cite as AUTHORITY only what is in the
+# materials (in Ghana, anchor to the Interpretation Act, 2009 (Act 792) and the Act's own long title).
+TEXTUALIST_PROFILE = (
+    "ENGINE — TEXTUALIST (Scalia). The enacted TEXT is the law; the OBJECTIVE, ORDINARY MEANING of the "
+    "words AT THE TIME OF ENACTMENT governs — not any legislator's subjective intention or hoped-for "
+    "outcome. Use ONLY INTRINSIC sources: the words themselves; the linguistic/textual canons (*ejusdem "
+    "generis*, *expressio unius*, *noscitur a sociis*, the last-antecedent and series-qualifier rules, "
+    "*in pari materia* within the Act); ordinary grammar and syntax; dictionary meaning current at "
+    "enactment; and the whole-statute context (the Act read as a coherent whole). IGNORE extrinsic "
+    "legislative history (memoranda, Hansard/debates, sponsor statements) and free-standing policy or "
+    "'purpose' as devices to override clear words. Give effect to the words even if the result is not "
+    "what the drafters might have wished; depart from ordinary meaning only for a true scrivener's error "
+    "or genuine ambiguity, and then resolve it by the canons — never by imagined intent.")
+INTENTIONALIST_PROFILE = (
+    "ENGINE — INTENTIONALIST (faithful agent). The task is to find what THIS legislature actually meant "
+    "and give effect to it. The text is the starting point, but where it is ambiguous, or a literal "
+    "reading defeats the demonstrated intention, INTENT controls — a case may fall within the letter of "
+    "a statute yet outside its spirit (Holy Trinity-type reasoning). Use EXTRINSIC sources in a "
+    "HIERARCHY of reliability: the memorandum to the Bill and committee/conference reports first, then "
+    "the sponsoring Minister's/promoter's statements, then parliamentary debates (Hansard); rejected or "
+    "amended drafts show what the legislature chose NOT to enact. In Ghana, situate this within the "
+    "Interpretation Act, 2009 (Act 792) and the Act's long title/memorandum where they are in the "
+    "materials. Use history to RESOLVE ambiguity, not to contradict genuinely plain words.")
+PURPOSIVIST_PROFILE = (
+    "ENGINE — PURPOSIVIST / MISCHIEF (Hart & Sacks). A statute is a purposive act passed to cure a "
+    "mischief: 'assume the legislature consisted of reasonable persons pursuing reasonable purposes "
+    "reasonably.' Identify the MISCHIEF and the remedial PURPOSE, then construe the words to SUPPRESS "
+    "the mischief and ADVANCE the remedy. Use POLICY sources: the mischief the Act addresses, its "
+    "remedial objective and scheme, the long title/preamble, and the consequences of rival readings. "
+    "Read remedial provisions broadly; apply the ABSURDITY doctrine to reject a literal reading that "
+    "would defeat the Act's object or yield an absurd, futile or self-defeating result "
+    "(American-Trucking / King-v-Burwell-type 'read to save the scheme'). Purpose may stretch the "
+    "literal words, but must stay anchored to a purpose EVIDENCED BY THE ACT ITSELF, not one invented "
+    "for the occasion.")
+
+def _interp_profile(line):
+    """Map a chosen interpretive line to its engine profile (intrinsic/extrinsic/policy). A specific
+    canon (ejusdem generis, etc.) is textualist-family, so it gets the textualist engine."""
+    s = (line or "").lower()
+    if any(k in s for k in ("intentionalist", "faithful agent", "legislative history", "legislative intent")):
+        return INTENTIONALIST_PROFILE
+    if any(k in s for k in ("purposive", "purposist", "mischief", "remedial")):
+        return PURPOSIVIST_PROFILE
+    if any(k in s for k in ("textualist", "literal", "plain-meaning", "plain meaning", "golden rule",
+                            "ejusdem", "expressio", "noscitur", "in pari materia", "contra proferentem",
+                            "last antecedent", "ordinary meaning")):
+        return TEXTUALIST_PROFILE
+    return ""
+
 INTERPRETATION_ARG = (
     "You are constructing a STATUTORY-INTERPRETATION argument along a CHOSEN interpretive line, for a "
     "law exam or legal opinion. Common-law method (Llewellyn's thrust-and-parry): EVERY canon or rule "
@@ -8465,6 +8516,9 @@ def api_interpret():
         ctx = ""
     system = (CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
               + "\n\n" + NO_OVERSTATEMENT + "\n\n" + INTERPRETATION_ARG)
+    _prof = _interp_profile(line)
+    if _prof:
+        system = system + "\n\n" + _prof
     law_block = ("\n\nRETRIEVED MATERIALS (ground the provision text, cases and any stated canon here):\n"
                  + ctx[:12000]) if ctx else ("\n\n(No course materials retrieved — reason on the provision "
                  "text supplied and settled construction method; do not invent authorities.)")
@@ -13119,6 +13173,9 @@ def api_exam_assemble():
             "run it mechanically on every trivial reference. Ground every canon, counter-canon, provision "
             "and case in the gathered/verified materials; never invent one. Keep the writing professional "
             "and qualified — interpretation is arguable, not certain.")
+        _cprof = _interp_profile(interp_approach)
+        if _cprof:
+            system = system + "\n\n" + _cprof
     views_block = ""
     if user_views:
         system = system + "\n\n" + (
