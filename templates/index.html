@@ -506,6 +506,24 @@
       <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
         <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
       </label>
+      <label style="color:#aab4c6;font-size:12px" title="Choose the interpretive line the answer should REASON THROUGH when it construes a provision. The whole analysis then interprets and applies the law using this approach; where a provision's meaning is contested, it also names the equal-and-opposite rule, applies it, shows the problems that reading causes, and says why it preferred your line. Leave 'Balanced' for no fixed line. Grounded in your uploaded interpretation materials.">⚖️ Interpretive approach:
+        <select id="examInterp" style="width:auto;display:inline-block;max-width:280px">
+          <option value="">Balanced (no fixed line)</option>
+          <optgroup label="Schools / approaches">
+            <option value="Literal / plain-meaning rule (textualist): the ordinary meaning of the words governs">Literal / plain meaning</option>
+            <option value="Golden rule: read literally unless that yields an absurdity, then modify to avoid it">Golden rule (avoid absurdity)</option>
+            <option value="Mischief rule / purposive approach: construe to advance the mischief the statute was passed to cure">Mischief rule / purposive</option>
+            <option value="Intentionalist: construe as a faithful agent of the legislature, using intent and legislative history">Intentionalist (intent/history)</option>
+          </optgroup>
+          <optgroup label="Linguistic canons">
+            <option value="Ejusdem generis: general words following a list are limited to the same kind as the listed items">Ejusdem generis</option>
+            <option value="Expressio unius est exclusio alterius: expressing one thing implies the exclusion of others">Expressio unius</option>
+            <option value="Noscitur a sociis: a word takes its meaning from the words around it">Noscitur a sociis</option>
+            <option value="In pari materia: statutes on the same subject are read together as a consistent whole">In pari materia</option>
+            <option value="Contra proferentem: ambiguity is construed against the party that drafted it">Contra proferentem</option>
+          </optgroup>
+        </select>
+      </label>
       <details style="margin:3px 0"><summary style="cursor:pointer;color:#8b93a7;font-size:12px">⚙ Advanced options</summary>
       <label style="color:#aab4c6;font-size:12px" title="Compile the final document with Claude Fable 5 (Anthropic's most capable model) for maximum quality. ~2× the compile cost; use it for a graded submission.">
         <input type="checkbox" id="examMaxQ"> 🔬 Max quality (Fable 5)
@@ -4049,6 +4067,7 @@ async function compileExam(finalize) {
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: false,
         user_views: EXAM.userViews || [],
+        interp_approach: (($("#examInterp")||{}).value || ""),
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
         simple: !!($("#examSimple") && $("#examSimple").checked),

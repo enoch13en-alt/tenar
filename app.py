@@ -12853,6 +12853,7 @@ def api_exam_assemble():
                 user_views.append({"q": "", "a": str(it).strip()})
     elif isinstance(_uv, str) and _uv.strip():
         user_views.append({"q": "", "a": _uv.strip()})
+    interp_approach = (body.get("interp_approach") or "").strip()   # interpretive line to reason THROUGH
     course = safe_course(body.get("course", ""))         # for the optional context store
     use_context = bool(body.get("use_context"))
     want_assumptions = bool(body.get("assumptions"))     # off by default → no assumptions section
@@ -13079,6 +13080,21 @@ def api_exam_assemble():
                          "or as the problem's facts; use only for a recent-events / policy / reform "
                          "point, briefly and attributed):\n" + "\n\n".join(_parts))[:6500]
             system = system + "\n\n" + CONTEXT_USAGE
+    if interp_approach:
+        system = system + "\n\n" + (
+            "INTERPRETIVE APPROACH — THE USER HAS CHOSEN A LINE TO REASON THROUGH: '" + interp_approach + "'. "
+            "Wherever this answer construes a provision, INTERPRET AND APPLY THE LAW using this approach — "
+            "make the reasoning visibly reflect it (apply its rule/canon to the provision's operative words "
+            "and to the facts), not as a labelled aside but woven into the analysis of each issue it "
+            "touches. Where a provision's meaning is genuinely CONTESTED and its construction decides the "
+            "issue, use the thrust-and-parry: reach the reading the chosen approach yields, THEN name the "
+            "EQUAL-AND-OPPOSITE canon/approach, apply it to show the different outcome, state the problems "
+            "that rival reading would cause (absurdity, inconsistency with the Act's scheme, defeat of its "
+            "purpose, unworkability), and give reasons for preferring the chosen line here. Reserve the "
+            "full thrust-and-parry for the provisions whose construction actually turns an issue — do not "
+            "run it mechanically on every trivial reference. Ground every canon, counter-canon, provision "
+            "and case in the gathered/verified materials; never invent one. Keep the writing professional "
+            "and qualified — interpretation is arguable, not certain.")
     views_block = ""
     if user_views:
         system = system + "\n\n" + (
