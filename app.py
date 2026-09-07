@@ -8396,6 +8396,95 @@ def api_oscola_footnote():
                     "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
 
 
+# --------------------------------------------------- Statutory interpretation: pick a line, argue it
+INTERPRETATION_ARG = (
+    "You are constructing a STATUTORY-INTERPRETATION argument along a CHOSEN interpretive line, for a "
+    "law exam or legal opinion. Common-law method (Llewellyn's thrust-and-parry): EVERY canon or rule "
+    "of construction has an EQUAL AND OPPOSITE one that can yield a different result. A strong answer "
+    "commits to a line, argues it to a conclusion, THEN pre-empts the counter-rule and defeats it.\n"
+    "GROUND EVERYTHING IN THE MATERIALS: the provision's operative WORDS, any CASES, and — where the "
+    "materials state it — the canon/approach itself come from the RETRIEVED MATERIALS below; quote the "
+    "provision's exact words. Do NOT invent a provision, a case, or a canon/rule that is neither in the "
+    "materials nor settled construction method. If the exact wording of the provision or a canon is not "
+    "in the materials, say so plainly and reason on the principle. Plain, precise legal English; no "
+    "overstatement; qualify conclusions (interpretation is arguable, not certain).\n"
+    "Write the argument in these LABELLED parts:\n"
+    "**1. The rule applied** — name the CHOSEN rule/canon/approach and state what it directs (ground it "
+    "in the materials if stated there), then APPLY it to the provision's words and to THESE facts, step "
+    "by step.\n"
+    "**2. Conclusion on this line** — the interpretation the chosen rule yields on these facts (qualified).\n"
+    "**3. The equal-and-opposite rule** — name the counter-canon / rival approach that pulls the other "
+    "way (e.g. expressio unius vs ejusdem generis; noscitur a sociis vs plain meaning; literal/plain "
+    "meaning vs purposive/mischief; golden-rule absurdity vs strict literalism) and state what it "
+    "directs.\n"
+    "**4. Applying the counter-rule** — work it through to the DIFFERENT interpretation and outcome it "
+    "would produce on the same facts.\n"
+    "**5. Problems that reading would cause** — the concrete difficulties of the counter-interpretation "
+    "on these facts: an absurd or unjust result, inconsistency with the rest of the Act, defeating the "
+    "statute's purpose, unworkability, opening floodgates, etc.\n"
+    "**6. Why this line is preferred** — the reasons for taking the chosen rule over the counter here "
+    "(better fit with the text, the Act's scheme and purpose; avoids the problems in part 5), stated "
+    "as a reasoned, qualified preference — not as if the question were closed.")
+
+
+@app.route("/api/interpret", methods=["POST"])
+def api_interpret():
+    """Statutory interpretation, student's chosen LINE: argue the selected rule/canon to a conclusion,
+    then name the equal-and-opposite rule, apply it, show the problems it causes, and justify the
+    choice. Grounded in the retrieved course materials (the provision, cases, and canon statements)."""
+    body = request.json or {}
+    provision = (body.get("provision") or "").strip()
+    facts = (body.get("facts") or "").strip()
+    line = (body.get("line") or "").strip()
+    if not provision and not facts:
+        return jsonify({"error": "Give the provision to interpret and the facts it applies to."}), 400
+    if not line:
+        return jsonify({"error": "Choose the interpretive line to argue."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    courses = _exam_courses(body, safe_course(body.get("course", "")))
+    ctx = ""
+    try:
+        probe = (line + "\n" + provision + "\n" + facts)[:1500]
+        ctx = course_context_multi(courses, probe, 20) if courses else ""
+    except Exception:
+        ctx = ""
+    system = (CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n" + PRECISION_DISCIPLINE
+              + "\n\n" + NO_OVERSTATEMENT + "\n\n" + INTERPRETATION_ARG)
+    law_block = ("\n\nRETRIEVED MATERIALS (ground the provision text, cases and any stated canon here):\n"
+                 + ctx[:12000]) if ctx else ("\n\n(No course materials retrieved — reason on the provision "
+                 "text supplied and settled construction method; do not invent authorities.)")
+    user = ("CHOSEN INTERPRETIVE LINE (argue THIS): " + line + "\n\n"
+            "PROVISION TO INTERPRET:\n" + (provision or "(see facts)") + "\n\n"
+            "FACTS / QUESTION:\n" + (facts or "(general interpretation)") + law_block)
+    pieces, this_usd, total_usd = [], 0.0, None
+    try:
+        messages = [{"role": "user", "content": user}]
+        for _round in range(3):
+            resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
+                                    thinking={"type": "adaptive"},
+                                    system=cached_system(system), messages=messages)
+            cost = record_cost(resp, m)
+            this_usd += cost.get("this_usd", 0) or 0
+            total_usd = cost.get("total_usd", total_usd)
+            pieces.append(_text_of(resp))
+            if getattr(resp, "stop_reason", None) != "max_tokens":
+                break
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({"role": "user", "content": "Continue exactly where you stopped; no repetition."})
+        out = "".join(pieces).strip()
+    except Exception:
+        app.logger.exception("interpret failed")
+        return jsonify({"error": "The interpretation argument failed — please try again."}), 500
+    return jsonify({"argument": out, "line": line,
+                    "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
+
+
 # ---------------------------------------------------------------- Weekly Update
 WEEK_EXTRACT = (
     "Extract the TEACHING SCHEDULE from this course outline. Return ONLY a JSON "

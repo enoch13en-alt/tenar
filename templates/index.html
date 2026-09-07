@@ -294,6 +294,7 @@
   <button class="btn gold" id="openWeekly" title="Reads your course OUTLINE and breaks it down week by week — what you should know by the end of each week and which stated materials to engage. A study plan, not web news.">📅 Weekly study guide (by outline)</button>
   <button class="btn gold" id="openUpdates">🔄 Legal updates (web)</button>
   <button class="btn gold" id="openPolish">✍️ Polish / Shorten a work</button>
+  <button class="btn gold" id="openInterpret" title="Statutory interpretation, your way: give a provision + the facts and CHOOSE the interpretive line you want to argue (a canon or a school). The bot argues that line to a conclusion, then names the equal-and-opposite rule, applies it, shows the problems that reading would cause, and gives reasons you didn't go that way. Grounded in your uploaded interpretation materials.">⚖️ Interpret (pick your line)</button>
   <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
   <button class="btn gold" id="openResearch" style="display:none">🔎 Research (facts → advice)</button>
 
@@ -739,6 +740,48 @@
     <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="polishAuditNote" style="font-size:11.5px;color:#8fb4e0;margin-top:4px"></div>
     <div id="polishOut"></div>
+  </div>
+</div>
+
+<!-- statutory interpretation: pick your line -->
+<div class="modal" id="interpretModal">
+  <div class="card" style="max-width:860px">
+    <h3>⚖️ Interpret a provision — pick your line</h3>
+    <p style="font-size:12.5px;color:#aab4c6">Give the <b>provision</b> and the <b>facts</b>, then choose the
+       interpretive <b>line you want to argue</b>. The bot argues that line to a conclusion, then names the
+       <b>equal-and-opposite rule</b>, applies it, shows the <b>problems</b> that reading would cause, and gives
+       <b>reasons you didn't go that way</b> — grounded in your uploaded interpretation materials (canons, cases).
+       Every canon has a counter-canon; this builds the argument that pre-empts it.</p>
+    <label style="font-size:12px;color:#aab4c6">Provision to interpret (paste the exact words):</label>
+    <textarea id="interpProvision" style="height:90px" placeholder="e.g. s 82(1): 'a person shall not engage in a small scale mining operation … unless there is in existence … a licence …'"></textarea>
+    <label style="font-size:12px;color:#aab4c6">Facts / the question it must answer:</label>
+    <textarea id="interpFacts" style="height:70px" placeholder="e.g. A community mines on family land they own, with no licence, as their only livelihood. Are they caught by s 82(1)?"></textarea>
+    <div class="rowbtn" style="align-items:center">
+      <label style="color:#aab4c6;font-size:12px">Line to argue:
+        <select id="interpLine" style="width:auto;display:inline-block;max-width:320px">
+          <optgroup label="Schools / approaches">
+            <option value="Literal / plain-meaning rule (textualist)">Literal / plain meaning</option>
+            <option value="Golden rule (read literally unless it yields an absurdity, then modify to avoid it)">Golden rule (avoid absurdity)</option>
+            <option value="Mischief rule / purposive approach (the mischief the statute was passed to cure)">Mischief rule / purposive</option>
+            <option value="Intentionalist (faithful agent of the legislature; legislative history and intent)">Intentionalist (intent/history)</option>
+          </optgroup>
+          <optgroup label="Linguistic canons">
+            <option value="Ejusdem generis (general words following a list are limited to the same kind)">Ejusdem generis</option>
+            <option value="Expressio unius est exclusio alterius (expressing one thing excludes others)">Expressio unius</option>
+            <option value="Noscitur a sociis (a word takes meaning from those around it)">Noscitur a sociis</option>
+            <option value="In pari materia (statutes on the same subject read together as a consistent whole)">In pari materia</option>
+            <option value="Contra proferentem (ambiguity construed against the drafter)">Contra proferentem</option>
+            <option value="Rule of the last antecedent (a qualifier attaches to the nearest antecedent)">Last antecedent</option>
+          </optgroup>
+          <option value="__custom__">Other — type my own…</option>
+        </select>
+      </label>
+      <input id="interpCustom" placeholder="type the exact rule/canon/school to argue" style="display:none;flex:1;min-width:200px;font-size:12px">
+      <button class="btn gold" id="interpGo" style="width:auto">Build the argument</button>
+      <button class="btn alt" id="interpClose" style="width:auto">Close</button>
+    </div>
+    <div id="interpStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
+    <div id="interpOut"></div>
   </div>
 </div>
 
@@ -4787,6 +4830,38 @@ function mountReviewPanel(host, flags, verdict) {
 // ---- polish my draft ----
 $("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; };
 $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
+
+// ⚖️ Statutory interpretation — pick your line, argue it, pre-empt the counter-canon.
+$("#openInterpret").onclick = () => { $("#interpretModal").style.display = "flex"; };
+$("#interpClose").onclick = () => { $("#interpretModal").style.display = "none"; };
+$("#interpLine").onchange = () => {
+  const custom = $("#interpLine").value === "__custom__";
+  $("#interpCustom").style.display = custom ? "inline-block" : "none";
+  if (custom) $("#interpCustom").focus();
+};
+$("#interpGo").onclick = async () => {
+  const provision = $("#interpProvision").value.trim();
+  const facts = $("#interpFacts").value.trim();
+  let line = $("#interpLine").value;
+  if (line === "__custom__") line = $("#interpCustom").value.trim();
+  if (!provision && !facts) { $("#interpStatus").textContent = "Paste the provision and the facts first."; return; }
+  if (!line) { $("#interpStatus").textContent = "Choose or type the line to argue."; return; }
+  const btn = $("#interpGo"); btn.disabled = true; const orig = btn.textContent; btn.textContent = "Arguing…";
+  $("#interpOut").innerHTML = "";
+  $("#interpStatus").textContent = "⚖️ arguing the line, then testing it against the equal-and-opposite rule… (up to ~1 min)";
+  try {
+    const r = await (await fetch("/api/interpret", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({provision, facts, line, course: COURSE, courses: examCourses()})})).json();
+    if (r.error) { $("#interpStatus").textContent = "⚠ " + r.error; }
+    else {
+      const doc = r.argument || "";
+      $("#interpOut").innerHTML = "<div class='ans' style='white-space:normal;margin-top:8px'>" + mdToHtml(doc) + "</div>";
+      $("#interpStatus").textContent = "Done" + (r.cost ? (" · $" + (r.cost.this_usd||0)) : "") + " — argues your line, then answers the counter-canon.";
+      try { renderExportBar($("#interpOut").querySelector(".ans"), doc, "Interpretation — " + (r.line||line).slice(0,40), ""); } catch (e) {}
+    }
+  } catch (e) { $("#interpStatus").textContent = "Error — try again."; }
+  btn.disabled = false; btn.textContent = orig;
+};
 // Upload an old work → extract its text (no indexing) → drop it into the box to polish/shorten.
 $("#polishUpload").onclick = () => $("#polishFile").click();
 $("#polishFile").onchange = async (e) => {
