@@ -12422,7 +12422,7 @@ def api_exam_breakdown():
            "waste + spent fuel + decommissioning as one) rather than splitting every requirement into "
            "its own issue; give each umbrella about 3–5 sub-questions. Prefer a tight, grouped map over "
            "a long one.")
-    data, cost, last_txt, last_stop = None, 0, "", None
+    data, cost, last_txt, last_stop = None, {}, "", None
     for attempt in range(2):
         umsg = (user + CAP) if attempt == 0 else (
             user + CAP + "\n\nIMPORTANT: return ONLY the JSON object — no prose, no explanation, no code "
@@ -12435,7 +12435,9 @@ def api_exam_breakdown():
             for _leg in range(5):
                 resp, _model_used = _stream_final(c, HAIKU_MODEL, max_tokens=8000, system=system,
                                                   messages=msgs)
-                cost += record_cost(resp)
+                _cd = record_cost(resp) or {}          # record_cost returns a DICT — accumulate this_usd
+                cost = {"this_usd": round(float(cost.get("this_usd", 0) or 0) + float(_cd.get("this_usd", 0) or 0), 5),
+                        "total_usd": _cd.get("total_usd", cost.get("total_usd"))}
                 piece = _text_of(resp)
                 pieces.append(piece)
                 last_stop = getattr(resp, "stop_reason", None)
@@ -12471,11 +12473,17 @@ def api_exam_breakdown():
                         "click 'Break it down' again."})
     data["cost"] = cost
     if isinstance(data.get("issues"), list):
-        _scrub_constitution_from_water(data["issues"])   # physically drop art 257/258/268 from water issues
+        try:
+            _scrub_constitution_from_water(data["issues"])   # physically drop art 257/258/268 from water issues
+        except Exception:
+            app.logger.exception("breakdown scrub failed")
+        # For a LARGE map the single-pass Sonnet audit would truncate/time out, so skip the LLM audit
+        # above a sub threshold and rely on the (fast, guaranteed) deterministic ToC reconcile below.
+        _nsubs = sum(len(_i.get("subs") or []) for _i in data["issues"] if isinstance(_i, dict))
         # AUDIT AT SOURCE — SERVER-SIDE, DOUBLE PASS. Verify every cited authority (each SUB-ISSUE's law)
         # against the primary instruments' Tables of Contents and correct it BEFORE the map is returned,
         # so the browser can never show raw, un-audited law (a non-existent s.39, or s.35 mislabelled).
-        if data["issues"] and c:
+        if data["issues"] and c and _nsubs <= 22:
             try:
                 # Sonnet is strong enough in ONE pass (verified), and the FINAL deterministic reconcile
                 # inside _audit_breakdown_issues is the guaranteed second check — so 1 LLM pass keeps the
