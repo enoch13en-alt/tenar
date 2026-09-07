@@ -8434,6 +8434,69 @@ PURPOSIVIST_PROFILE = (
     "literal words, but must stay anchored to a purpose EVIDENCED BY THE ACT ITSELF, not one invented "
     "for the occasion.")
 
+# FIXED RULES OF CONSTRUCTION — stable interpretive METHOD (not statute/case law), so hardcoded.
+# The engine states the rule from here (always exact) + its equal-and-opposite; it cites the APPLYING
+# CASE and the course's own wording from the grounded materials (never a case/holding from memory).
+CANON_LEXICON = {
+    "ejusdem generis": ("*ejusdem generis* ('of the same kind') — where general words follow an "
+        "enumeration of specific words that form a class or genus, the general words are confined to "
+        "things of the SAME KIND as those listed", "expressio unius"),
+    "expressio unius": ("*expressio unius est exclusio alterius* ('the express mention of one thing "
+        "excludes another') — deliberately itemising some things implies the exclusion of those not "
+        "mentioned", "ejusdem generis"),
+    "noscitur a sociis": ("*noscitur a sociis* ('known by its associates') — a word takes its meaning "
+        "from the words around it; an ambiguous term is coloured by its neighbours", "literal"),
+    "in pari materia": ("*in pari materia* ('on the same matter') — statutes (and an Act with its "
+        "subsidiary legislation) dealing with the same subject are read together as one consistent "
+        "scheme", "each on its own terms"),
+    "generalia specialibus": ("*generalia specialibus non derogant* — a specific provision prevails "
+        "over a general one on the same matter; the general does not repeal the special by implication",
+        "later general expressly overriding"),
+    "reddendo singula singulis": ("*reddendo singula singulis* ('rendering each to each') — where a "
+        "sentence has several subjects and several objects, each is applied to its appropriate "
+        "counterpart", "reading the words distributively as a whole"),
+    "contra proferentem": ("*contra proferentem* — an ambiguity is construed against the party who "
+        "drafted or relies on the instrument", "in favorem / a neutral objective reading"),
+    "last antecedent": ("the rule of the LAST ANTECEDENT — a qualifying word or phrase attaches to the "
+        "nearest reasonable antecedent, not to more remote ones", "series-qualifier canon (a trailing "
+        "modifier applies to the whole series)"),
+    "casus omissus": ("*casus omissus* — a matter omitted from a statute is taken to be omitted "
+        "deliberately; the court does not supply the gap", "purposive/rectifying construction to avoid "
+        "defeating the object"),
+    "ut res magis valeat": ("*ut res magis valeat quam pereat* — construe so the provision is effective "
+        "rather than futile; prefer a reading that gives it operation", "a strict reading even if it "
+        "renders the provision inoperative"),
+    "expressum facit": ("*expressum facit cessare tacitum* — what is expressed puts an end to what is "
+        "implied; an express provision ousts an implied one on the point", "necessary-implication"),
+    "literal": ("the LITERAL / plain-meaning rule — give the words their ordinary, grammatical meaning; "
+        "if they are clear, apply them even if the result seems harsh", "the mischief / purposive rule"),
+    "golden": ("the GOLDEN rule — apply the literal meaning UNLESS it produces an absurdity or "
+        "inconsistency, in which case modify the words just enough to avoid it", "the strict literal "
+        "rule (absurdity is no ground to depart)"),
+    "mischief": ("the MISCHIEF rule (*Heydon's Case*) — ask what defect in the old law Parliament "
+        "enacted the statute to cure, and construe the words to suppress the mischief and advance the "
+        "remedy", "the literal rule"),
+    "purposive": ("the PURPOSIVE approach — construe the words to promote the purpose or object "
+        "underlying the enactment (the modern development of the mischief rule)", "the literal rule"),
+}
+
+def _canon_entry(line):
+    """Return the FIXED rule (and its equal-and-opposite) for the chosen line, from the hardcoded
+    lexicon — so the engine always states the canon exactly, regardless of what retrieval surfaces."""
+    s = (line or "").lower()
+    for key, (defn, counter) in CANON_LEXICON.items():
+        if key in s:
+            cdef = ""
+            for k2, (d2, _c2) in CANON_LEXICON.items():
+                if counter and (k2 in counter.lower() or counter.lower() in k2):
+                    cdef = " — " + d2
+                    break
+            return ("FIXED RULE OF CONSTRUCTION (state it exactly; cite the APPLYING case and the "
+                    "course's own wording from the grounded materials, never a case from memory):\n"
+                    "  • Chosen: " + defn + ".\n"
+                    "  • Equal-and-opposite: " + counter + cdef + ".")
+    return ""
+
 def _interp_profile(line):
     """Map a chosen interpretive line to its engine profile (intrinsic/extrinsic/policy). A specific
     canon (ejusdem generis, etc.) is textualist-family, so it gets the textualist engine."""
@@ -8519,6 +8582,9 @@ def api_interpret():
     _prof = _interp_profile(line)
     if _prof:
         system = system + "\n\n" + _prof
+    _canon = _canon_entry(line)
+    if _canon:
+        system = system + "\n\n" + _canon
     law_block = ("\n\nRETRIEVED MATERIALS (ground the provision text, cases and any stated canon here):\n"
                  + ctx[:12000]) if ctx else ("\n\n(No course materials retrieved — reason on the provision "
                  "text supplied and settled construction method; do not invent authorities.)")
@@ -13176,6 +13242,9 @@ def api_exam_assemble():
         _cprof = _interp_profile(interp_approach)
         if _cprof:
             system = system + "\n\n" + _cprof
+        _ccanon = _canon_entry(interp_approach)
+        if _ccanon:
+            system = system + "\n\n" + _ccanon
     views_block = ""
     if user_views:
         system = system + "\n\n" + (
