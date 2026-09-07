@@ -8448,6 +8448,13 @@ def api_interpret():
         return jsonify({"error": msg, "limit": True})
     consume("questions")
     courses = _exam_courses(body, safe_course(body.get("course", "")))
+    # Interpretation is a CROSS-CUTTING legal-application layer, not a subject: always fold in the
+    # shared "Legal Application" store (canons/rules/cases on construction) so it grounds interpretation
+    # for a case study in ANY course, not one siloed subject.
+    for _s in ("Legal Application",):
+        sc = safe_course(_s)
+        if sc and _may_read_course(sc) and sc not in courses:
+            courses.append(sc)
     ctx = ""
     try:
         probe = (line + "\n" + provision + "\n" + facts)[:1500]
@@ -13080,7 +13087,19 @@ def api_exam_assemble():
                          "or as the problem's facts; use only for a recent-events / policy / reform "
                          "point, briefly and attributed):\n" + "\n\n".join(_parts))[:6500]
             system = system + "\n\n" + CONTEXT_USAGE
+    interp_mat_block = ""
     if interp_approach:
+        try:
+            _isc = safe_course("Legal Application")
+            if _isc and _may_read_course(_isc):
+                _im = course_context_multi([_isc], interp_approach + "\n" + q, 10)
+                if _im:
+                    interp_mat_block = ("\n\nINTERPRETATION MATERIALS (cross-cutting legal-application "
+                        "store — ground the chosen canon/approach and its equal-and-opposite here; these "
+                        "are METHOD, applied to the gathered subject-law, never a substitute for it):\n"
+                        + _im[:6000])
+        except Exception:
+            interp_mat_block = ""
         system = system + "\n\n" + (
             "INTERPRETIVE APPROACH — THE USER HAS CHOSEN A LINE TO REASON THROUGH: '" + interp_approach + "'. "
             "Wherever this answer construes a provision, INTERPRET AND APPLY THE LAW using this approach — "
@@ -13128,7 +13147,7 @@ def api_exam_assemble():
         f"FACT MAP:\n{json.dumps(facts, ensure_ascii=False)}\n\n"
         f"PER-ISSUE ANALYSES:\n" + "\n\n".join(blocks) +
         f"\n\nSOURCES AVAILABLE TO CITE (cite only these):\n{src_text}"
-        + ctx_block + focus_block + views_block +
+        + ctx_block + focus_block + views_block + interp_mat_block +
         f"\n\nWrite {kind}. Put OSCOLA footnote markers inline as [n], then list "
         "the numbered footnotes under a 'Footnotes' heading, followed by "
         "'Bibliography' (and Tables of Cases/Legislation if any). In the "
