@@ -1136,7 +1136,13 @@ function mdToHtml(raw){
   // Inline fill-in gaps: the guide drops 【FILL: what — where】 exactly where a missing item is
   // needed, so it stands out and you complete it in place as you read. No-op when absent.
   html = html.replace(/【\s*FILL:\s*([\s\S]*?)】/g, function(_, inner){
-    return '<mark class="fillgap" style="background:#4a3410;color:#f4cf8a;padding:0 5px;border-radius:3px;font-size:.9em;font-weight:600">🔎 FILL: ' + inner.trim() + '</mark>';
+    var h = inner.trim();
+    var attr = h.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var disp = h.length > 70 ? h.slice(0,70) + '…' : h;
+    // clickable chip: click to fill this gap in place (wired by wireFillGaps via renderExportBar)
+    return '<span class="fillChip" data-hint="' + attr + '" title="Click to fill this gap and weave it into the text" '
+      + 'style="background:#4a3410;color:#f4cf8a;padding:1px 7px;border-radius:6px;font-size:.9em;font-weight:600;'
+      + 'cursor:pointer;border:1px dashed #8a6a2a">🔎 FILL ▸ ' + esc(disp) + ' ✎</span>';
   });
   // Source chips: a citation marker 【Title — p.N】 becomes a clickable "📄 p.N" chip that opens
   // the EXACT source page (NotebookLM-style). Runs AFTER FILL, so FILL markers are already gone.
@@ -4371,6 +4377,49 @@ function wireDocSettings(box, docEl, doc, wordName, defaultTitle) {
     }
   };
 }
+// Click-to-fill: turn each 🔎FILL chip in a rendered doc into an inline mini-editor — type what you
+// found (+ source), and it weaves THAT gap into the flow (cited in the doc's style) and re-renders.
+function wireFillGaps(anchorEl, doc, wordName, defaultTitle) {
+  if (!anchorEl) return;
+  anchorEl.querySelectorAll(".fillChip").forEach(chip => {
+    if (chip._wired) return; chip._wired = true;
+    chip.onclick = () => {
+      if (chip._open) return; chip._open = true;
+      const hint = chip.getAttribute("data-hint") || "";
+      const ed = document.createElement("div");
+      ed.className = "fillEditor";
+      ed.style.cssText = "margin:6px 0;padding:9px;border:1px solid #3a4658;border-radius:8px;background:#141b28";
+      ed.innerHTML =
+        "<div style='font-size:11px;color:#8b93a7;margin-bottom:4px'>Fill: " + esc(hint) + "</div>"
+        + "<textarea class='fillIn' rows='3' placeholder='Paste what you found — the provision wording, the case, the figure…' style='width:100%;font-size:12px;box-sizing:border-box'></textarea>"
+        + "<input class='fillSrc' placeholder='source (recommended) — e.g. Art V, Vienna Convention 1963; or reg 12, L.I. 1692' style='width:100%;margin-top:4px;font-size:11.5px;box-sizing:border-box'>"
+        + "<div style='margin-top:5px;display:flex;gap:6px;align-items:center'>"
+        + "<button class='btn mini gold fillGo'>✓ Fill &amp; weave in</button>"
+        + "<button class='btn mini alt fillX'>Cancel</button>"
+        + "<span class='fillMsg' style='font-size:11px;color:#8b93a7'></span></div>";
+      chip.insertAdjacentElement("afterend", ed);
+      const inp = ed.querySelector(".fillIn"); inp.focus();
+      ed.querySelector(".fillX").onclick = () => { ed.remove(); chip._open = false; };
+      ed.querySelector(".fillGo").onclick = async () => {
+        const material = inp.value.trim(); if (!material) { inp.focus(); return; }
+        const go = ed.querySelector(".fillGo"), msg = ed.querySelector(".fillMsg");
+        go.disabled = true; go.textContent = "Weaving…"; msg.style.color = "#8b93a7"; msg.textContent = "";
+        try {
+          const r = await (await fetch("/api/document/chat/add", {method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({document: doc, material, user_source: ed.querySelector(".fillSrc").value.trim(),
+              question: "Fill the 【FILL】 placeholder that reads: " + hint})})).json();
+          if (r.error) { msg.style.color = "#e0a06f"; msg.textContent = r.error; go.disabled = false; go.textContent = "✓ Fill & weave in"; return; }
+          const updated = r.document || doc;
+          if (typeof EXAM !== "undefined" && EXAM && EXAM.doc === doc) { EXAM.doc = updated; try { saveExam(); } catch (e) {} }
+          const bar = (anchorEl.nextElementSibling && anchorEl.nextElementSibling.classList.contains("exportBar")) ? anchorEl.nextElementSibling : null;
+          if (bar) bar.remove();
+          anchorEl.innerHTML = mdToHtml(updated);
+          renderExportBar(anchorEl, updated, wordName, defaultTitle);   // re-renders + re-wires remaining FILL chips on the fresh doc
+        } catch (e) { msg.style.color = "#e0a06f"; msg.textContent = "Error — try again."; go.disabled = false; go.textContent = "✓ Fill & weave in"; }
+      };
+    };
+  });
+}
 function renderExportBar(afterEl, doc, wordName, defaultTitle) {
   const cv = coverDefaults();
   const box = document.createElement("div");
@@ -4443,6 +4492,7 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     + "<button class='btn mini alt bWord' style='margin-left:6px'>⬇ Word</button>"
     + pdfBtn + fitBtn + casesBtn + finalBtn + reviewBtn + evidenceBtn + scholarBtn + injectBtn + "</div>";
   afterEl.insertAdjacentElement("afterend", box);
+  try { wireFillGaps(afterEl, doc, wordName, defaultTitle); } catch (e) {}   // click-to-fill 🔎FILL gaps in place
   wireDocSettings(box, afterEl, doc, wordName, defaultTitle);   // sync to globals, live typography, + ✓ Apply
   // apply the reader's saved font size, and wire the A-/A+ and full-screen controls
   const _fs0 = parseFloat(localStorage.getItem("docFontPx")); if (_fs0) afterEl.style.fontSize = _fs0 + "px";
