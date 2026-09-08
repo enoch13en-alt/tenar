@@ -5510,7 +5510,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 _rt = rule_text if "rule_text" in dir() else ""
             except Exception:
                 _rt = ""
-            _jleg, _jcases, _jused, _jcost = _gather_authority(question, _rt)
+            _jleg, _jcases, _jcomp, _jused, _jcost = _gather_authority(question, _rt)
             if _jcases:
                 _jsection = ("## Cases\n\n*Extracted live from the legal databases (judy.legal / "
                              "CourtListener / EULEX) or authoritative web sources — full name, "
@@ -5523,7 +5523,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                              "provisions.*\n\n" + _jleg.strip())
                 _final_answer = _insert_after_rule(_final_answer, _lsection)
                 annotated = _insert_after_rule(annotated, _lsection)
-            if _jcases or _jleg:
+            if _jcomp:
+                _csection = ("## Comparative\n\n*Live comparative context — similar jurisdictions, "
+                             "authoritative reports & real incidents, from authoritative web "
+                             "sources.*\n\n" + _jcomp.strip())
+                _final_answer = _splice_named_section(_final_answer, "Comparative", _csection)
+                annotated = _splice_named_section(annotated, "Comparative", _csection)
+            if _jcases or _jleg or _jcomp:
                 cost += _jcost
                 CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + _jcost, 6)
                 _spend_note(_jcost)
@@ -5653,6 +5659,20 @@ def _splice_cases_section(md, new_cases_section):
     if m:
         return (md[:m.end()].rstrip() + "\n\n" + new_cases_section + "\n\n" + md[m.end():].lstrip()).strip()
     return (md.rstrip() + "\n\n" + new_cases_section).strip()
+
+
+def _splice_named_section(md, h2_name, new_section):
+    """Replace an existing '## <h2_name>' section (heading through the next H2 or end) with
+    new_section; if the heading is absent, append new_section at the end."""
+    if not new_section:
+        return md
+    new_section = new_section.strip()
+    if not md:
+        return new_section
+    pat = re.compile(r'(?ms)^##\s*' + re.escape(h2_name) + r'\b.*?(?=^##\s|\Z)')
+    if pat.search(md):
+        return re.sub(pat, new_section + "\n\n", md, count=1).strip()
+    return (md.rstrip() + "\n\n" + new_section).strip()
 
 
 def _insert_after_rule(md, section):
@@ -6322,7 +6342,7 @@ def _authority_extract_prompt(connected_names):
         "A domestic Ghanaian issue → judy only. A US issue → CourtListener. An EU issue → EULEX. A "
         "public-international-law issue (treaty/ICJ/arbitration) → web search of the primary sources. "
         "A genuinely cross-border issue may need more than one; use judgment, stay minimal.\n\n"
-        "Output EXACTLY two sections in this order, each introduced by its marker line ON ITS OWN "
+        "Output EXACTLY three sections in this order, each introduced by its marker line ON ITS OWN "
         "LINE, and NOTHING else — no preamble, no closing, and NEVER narrate your searches ('I'll "
         "search…', 'Good, the legislation is confirmed…', 'Let me now…'):\n\n"
         "@@LEGISLATION@@\n"
@@ -6361,34 +6381,63 @@ def _authority_extract_prompt(connected_names):
         "section and treaty article MUST come from what the tools actually returned — never "
         "approximate a citation, never state a holding a report does not support, never fill a gap "
         "from memory. If there is genuinely no direct authority, give the single closest one and say "
-        "so honestly in *Relevance:* — do NOT manufacture a list to look complete. Under EITHER "
-        "marker, if nothing usable is found, put exactly this one line under that marker: '⚠ none "
-        "found'. ALWAYS emit BOTH marker lines, even when one section is empty.")
+        "so honestly in *Relevance:* — do NOT manufacture a list to look complete.\n\n"
+        "@@COMPARATIVE@@\n"
+        "Live COMPARATIVE CONTEXT for this issue — how comparable places handle it, the authoritative "
+        "reports, and the real incidents. Use WEB SEARCH of authoritative sources (official government "
+        "/ regulator sites, IGO and NGO reports — World Bank, UN, IMF, OECD, commissions of inquiry — "
+        "reputable law reviews and quality press for incidents). Pick COMPARATORS that are genuinely "
+        "similar to the issue's own jurisdiction (comparable legal tradition, economy or context — for "
+        "a Ghanaian resource issue, e.g. Nigeria, South Africa, Kenya, Botswana, Australia/Canada as "
+        "mature analogues), not random countries. Use THREE labelled sub-parts (omit a sub-part only "
+        "if truly nothing is found):\n"
+        "**Similar jurisdictions:**\n"
+        "- **<Country>** — <how it regulates / decides THIS same point, and the instrument or body> "
+        "(source: <name the report/site>)\n"
+        "**Reports & data:**\n"
+        "- **<Report or dataset title>** (<issuing body>, <year>) — <the specific finding, figure or "
+        "recommendation that bears on this issue> (source)\n"
+        "**Incidents:**\n"
+        "- **<What happened — place, year>** — <one or two lines on the incident and why it "
+        "illustrates this issue> (source)\n"
+        "Each bullet MUST rest on a real source the search returned — name it. This is CONTEXT and "
+        "secondary material, not binding law: never present a comparator's rule or a report as "
+        "Ghanaian/governing law, and never invent a country's rule, a report, a figure or an incident. "
+        "Keep it tight — 2–4 bullets per sub-part, the most on-point first.\n\n"
+        "Do NOT argue, apply the law to the facts, or reach a conclusion — this is a data sheet. 100% "
+        "ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding, section, treaty article, "
+        "comparator rule, report and incident MUST come from what the tools actually returned — never "
+        "approximate a citation, never state a holding a report does not support, never fill a gap "
+        "from memory. If there is genuinely no direct authority, give the single closest one and say "
+        "so honestly. Under ANY marker, if nothing usable is found, put exactly this one line under "
+        "that marker: '⚠ none found'. ALWAYS emit ALL THREE marker lines, even when a section is "
+        "empty.")
 
 
 def _gather_authority(issue_line, rule_context):
     """Live authority pass for the gather across every connected legal database (judy=African,
-    CourtListener=US, EULEX=EU) PLUS web search for public international law — the model routes by the
-    issue's jurisdiction. Finds BOTH the applicable statutes/treaties AND the leading cases, extracted
-    properly (full names, provisions verbatim, facts/ratio/obiter). Returns (legislation_block,
-    cases_block, used, cost_usd); each block is None if empty/absent."""
+    CourtListener=US, EULEX=EU) PLUS web search — the model routes by the issue's jurisdiction. Finds
+    (A) the applicable statutes/treaties, (B) the leading cases (locus classicus, facts/ratio/obiter),
+    and (C) live COMPARATIVE context — similar jurisdictions, authoritative reports, and real
+    incidents. Returns (legislation_block, cases_block, comparative_block, used, cost_usd); each block
+    is None if empty/absent."""
     conn = _authority_connectors()
     c = _client()
     if not c:
-        return None, None, False, 0.0
-    # tools = every connected DB's toolset + live web search (for public international law). Web
-    # search is bounded (max_uses) so the agentic loop can't sprawl into a many-minute hang.
-    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
-    user = ("LEGAL ISSUE (find the statutes/treaties/laws that apply AND the on-point cases for THIS — "
-            "route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
+        return None, None, None, False, 0.0
+    # tools = every connected DB's toolset + live web search (international law + comparative context).
+    # Bounded (max_uses) so the agentic loop can't sprawl into a many-minute hang.
+    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 7}]
+    user = ("LEGAL ISSUE (find the statutes/treaties/laws + the on-point cases + comparative context "
+            "for THIS — route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
             + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these, add "
                "any applicable statute/treaty/regulation/constitutional provision they miss, and find "
                "the cases applying them — reproduce FULL instrument names):\n"
                + rule_context.strip()[:4000] if rule_context else "")
-            + "\n\nSearch efficiently — a few targeted searches, not many — and output the two marked "
-              "sections in the required shape.")
+            + "\n\nSearch efficiently — a few targeted searches, not many — and output the three "
+              "marked sections in the required shape.")
     try:
-        kw = dict(model=AUDIT_MODEL, max_tokens=7000,
+        kw = dict(model=AUDIT_MODEL, max_tokens=8000,
                   system=_authority_extract_prompt(conn["names"]),
                   messages=[{"role": "user", "content": user}], tools=tools)
         if conn["mcp_servers"]:
@@ -6396,8 +6445,8 @@ def _gather_authority(issue_line, rule_context):
             kw["betas"] = conn["betas"]
         # HARD BOUND: no client retries (retries × slow web loop = a multi-minute hang) and a firm
         # per-request timeout, so a slow/looping authority pass fails fast and the gather still
-        # returns (the corpus '## Cases' just stays as-is). This is the fix for the wire timeouts.
-        resp = c.with_options(max_retries=0, timeout=210.0).beta.messages.create(**kw)
+        # returns (the corpus sections just stay as-is). This is the fix for the wire timeouts.
+        resp = c.with_options(max_retries=0, timeout=260.0).beta.messages.create(**kw)
         _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
                     "web_search_tool_result", "tool_use", "tool_result")
         used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
@@ -6423,16 +6472,19 @@ def _gather_authority(issue_line, rule_context):
                 seg = seg[mm.start():].strip()
             return seg or None
 
-        leg_seg = cases_seg = ""
-        if "@@CASES@@" in full:
-            head, cases_seg = full.split("@@CASES@@", 1)
-            leg_seg = head.split("@@LEGISLATION@@", 1)[-1]
-        else:
-            leg_seg = full.split("@@LEGISLATION@@", 1)[-1]
-        return _clean(leg_seg), _clean(cases_seg), used, cost
+        # split the three marked sections (tolerate a dropped marker)
+        leg_seg = cases_seg = comp_seg = ""
+        rest = full
+        comp_seg = ""
+        if "@@COMPARATIVE@@" in rest:
+            rest, comp_seg = rest.split("@@COMPARATIVE@@", 1)
+        if "@@CASES@@" in rest:
+            rest, cases_seg = rest.split("@@CASES@@", 1)
+        leg_seg = rest.split("@@LEGISLATION@@", 1)[-1]
+        return _clean(leg_seg), _clean(cases_seg), _clean(comp_seg), used, cost
     except Exception:
         app.logger.exception("gather-authority failed")
-        return None, None, False, 0.0
+        return None, None, None, False, 0.0
 
 
 @app.route("/api/mcp/<provider>/connect")
