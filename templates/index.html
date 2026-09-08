@@ -506,10 +506,8 @@
       <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
         <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
       </label>
-      <label id="examJudyWrap" style="color:#aab4c6;font-size:12px;display:none" title="When gathering the law for each issue, ALSO search judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — live, and extract the STATUTES/LAWS that decide the issue (full instrument names + the operative sections, verbatim) and the LOCUS CLASSICUS plus the few authorities that seal it (full name + citation, court & status, facts, ratio, obiter). 100% grounded in what judy returns — never invented. Adds a 'Statutes & laws that apply' section and replaces the 'Cases' section. Uses your judy.legal account; adds cost per issue (~$1); results pass through Anthropic (not ZDR).">
-        <input type="checkbox" id="examJudy"> 🔎 Find the governing statutes &amp; the locus classicus on judy.legal
-      </label>
-      <button class="btn alt" id="examJudyConnect" style="width:auto;display:none">🔗 Connect judy.legal</button>
+      <span id="examJudyWrap" style="color:#8fce8f;font-size:12px;display:none" title="judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — is searched live on EVERY gather: it pulls the governing statutes/laws (full instrument names + operative sections, verbatim) and the LOCUS CLASSICUS plus the few authorities that seal the issue (court & status, facts, ratio, obiter), 100% grounded in what judy returns. Baked in — no toggle. ~$1/issue; results pass through Anthropic (not ZDR).">✓ judy.legal live authority baked into every gather</span>
+      <button class="btn alt" id="examJudyConnect" style="width:auto;display:none" title="Connect your judy.legal account once so live African case-law & legislation is baked into every gather.">🔗 Connect judy.legal</button>
       <span id="examJudyStatus" style="font-size:11.5px;color:#8b93a7"></span>
       <label style="color:#aab4c6;font-size:12px" title="Choose the interpretive line the answer should REASON THROUGH when it construes a provision. The whole analysis then interprets and applies the law using this approach; where a provision's meaning is contested, it also names the equal-and-opposite rule, applies it, shows the problems that reading causes, and says why it preferred your line. Leave 'Balanced' for no fixed line. Grounded in your uploaded interpretation materials.">⚖️ Interpretive approach:
         <select id="examInterp" style="width:auto;display:inline-block;max-width:280px">
@@ -3301,7 +3299,6 @@ async function gatherIssue(i, force) {
         use_context: false,
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),
-        use_judy: !!($("#examJudy") && $("#examJudy").checked),
         issue_index: i,
         siblings: (EXAM.issues || []).map((x, k) => (k + 1) + ". " + ((x.issue || "").split("\n")[0].slice(0, 150)))});
     // A slow gather can time out on the wire and return a non-JSON error page (the SyntaxError you
@@ -4925,11 +4922,10 @@ async function judyRefresh() {
     const s = await (await fetch("/api/judy/status")).json();
     if (s.error) { wrap.style.display = "none"; conn.style.display = "none"; st.textContent = ""; return; }
     if (s.connected) {
-      wrap.style.display = "inline-block"; conn.style.display = "none";
-      st.textContent = "✓ judy.legal connected"; st.style.color = "#8fce8f";
+      wrap.style.display = "inline-block"; conn.style.display = "none"; st.textContent = "";
     } else {
       wrap.style.display = "none"; conn.style.display = "inline-block";
-      st.textContent = "connect to pull African case law live"; st.style.color = "#8b93a7";
+      st.textContent = "connect once — live African case law is then baked into every gather"; st.style.color = "#8b93a7";
     }
   } catch (e) { wrap.style.display = "none"; conn.style.display = "none"; }
 }

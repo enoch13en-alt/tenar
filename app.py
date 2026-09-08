@@ -7166,7 +7166,7 @@ def api_ask():
                            pinned=body.get("pinned"),
                            auto_pin_primary=body.get("auto_pin_primary", True),
                            writer_model=body.get("writer_model"),
-                           use_judy=bool(body.get("use_judy")) and mode == "gather")
+                           use_judy=(mode == "gather"))   # judy is BAKED IN for every gather (no-op if not connected)
     if isinstance(_res, dict):
         _res["build"] = BUILD_SHA          # stamp the answer with the build that produced it (freshness mark)
     return jsonify(_res)
