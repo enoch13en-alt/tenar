@@ -8815,9 +8815,10 @@ def api_interpret():
             messages.append({"role": "assistant", "content": resp.content})
             messages.append({"role": "user", "content": "Continue exactly where you stopped; no repetition."})
         out = "".join(pieces).strip()
-    except Exception:
+    except Exception as _e:
         app.logger.exception("interpret failed")
-        return jsonify({"error": "The interpretation argument failed — please try again."}), 500
+        return jsonify({"error": "The interpretation argument failed — please try again.",
+                        "detail": str(getattr(_e, "message", "") or _e)[:600]}), 500
     return jsonify({"argument": out, "line": line, "used_judy": used_judy,
                     "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
 
