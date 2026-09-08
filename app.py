@@ -6428,11 +6428,13 @@ def _gather_authority(issue_line, rule_context):
         if with_mcp and conn["mcp_servers"]:
             kw["mcp_servers"] = conn["mcp_servers"]
             kw["betas"] = conn["betas"]
-        return c.with_options(max_retries=1, timeout=timeout).beta.messages.create(**kw)
+        # max_retries=0: the SDK must NOT retry a timed-out request (that DOUBLES the wait). This pass
+        # is decoupled (a background job the frontend polls), so we can afford a long single attempt.
+        return c.with_options(max_retries=0, timeout=timeout).beta.messages.create(**kw)
 
     try:
         try:
-            resp = _run(with_mcp=True, timeout=300.0)
+            resp = _run(with_mcp=True, timeout=540.0)
         except _anthropic_timeout() as _te:
             # SLOW (not a connection error) — do NOT launch a second full attempt (that just wastes
             # another few minutes). Give up; the gather returns its corpus sections.

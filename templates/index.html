@@ -3425,7 +3425,7 @@ async function fetchAuthority(i, gq) {
     const st = await (await fetch("/api/gather/authority", {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({question: gq, prior: priorRulesLedger(i)})})).json();
     if (!st.job) { clearNote(); return; }
-    for (let n = 0; n < 60; n++) {                       // poll up to ~8 min
+    for (let n = 0; n < 85; n++) {                       // poll up to ~11 min (pass runs to ~9 min)
       await new Promise(r => setTimeout(r, 8000));
       let p;
       try { p = await (await fetch("/api/gather/authority/poll?job=" + encodeURIComponent(st.job))).json(); }
