@@ -506,6 +506,11 @@
       <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
         <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
       </label>
+      <label id="examJudyWrap" style="color:#aab4c6;font-size:12px;display:none" title="When gathering the law for each issue, ALSO search judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — live, and extract the leading on-point cases with FULL case name + citation, facts, ratio decidendi and obiter, plus full statute names. Replaces the corpus 'Cases' section with judy's cases. Uses your judy.legal account; adds cost per issue (~$0.20–0.50); results pass through Anthropic (not ZDR).">
+        <input type="checkbox" id="examJudy"> 🔎 Find cases on judy.legal (full name, facts, ratio &amp; obiter)
+      </label>
+      <button class="btn alt" id="examJudyConnect" style="width:auto;display:none">🔗 Connect judy.legal</button>
+      <span id="examJudyStatus" style="font-size:11.5px;color:#8b93a7"></span>
       <label style="color:#aab4c6;font-size:12px" title="Choose the interpretive line the answer should REASON THROUGH when it construes a provision. The whole analysis then interprets and applies the law using this approach; where a provision's meaning is contested, it also names the equal-and-opposite rule, applies it, shows the problems that reading causes, and says why it preferred your line. Leave 'Balanced' for no fixed line. Grounded in your uploaded interpretation materials.">⚖️ Interpretive approach:
         <select id="examInterp" style="width:auto;display:inline-block;max-width:280px">
           <option value="">Balanced (no fixed line)</option>
@@ -774,13 +779,6 @@
       <button class="btn alt mini" id="interpMaterials" style="width:auto" title="Add your interpretation materials — canon lists, cases on construction, Eskridge / Hart & Sacks excerpts, your own notes on the maxims. Stored ONCE in a shared 'Legal Application' library (not a course) and used to ground interpretation for case studies across ALL courses.">📎 Add interpretation materials (canons / cases)</button>
       <input type="file" id="interpMatFile" accept=".pdf,.docx,.txt,.md" multiple class="hidden">
       <span id="interpMatNote" style="font-size:11.5px;color:#8b93a7">shared across all courses · not shown as a course</span>
-    </div>
-    <div class="rowbtn" style="margin-bottom:6px;align-items:center;border-top:1px solid #2a3344;padding-top:8px">
-      <label id="interpJudyWrap" style="color:#aab4c6;font-size:12px;display:none" title="Search judy.legal — an authoritative African case-law & legislation database — live, and cite the actual applying cases/legislation. Uses your judy.legal account; adds cost per lookup; results pass through Anthropic (not ZDR).">
-        <input type="checkbox" id="interpJudy"> 🔎 Pull live authority from judy.legal (African case law &amp; legislation)
-      </label>
-      <button class="btn alt mini" id="interpJudyConnect" style="width:auto;display:none">🔗 Connect judy.legal</button>
-      <span id="interpJudyStatus" style="font-size:11.5px;color:#8b93a7"></span>
     </div>
     <label style="font-size:12px;color:#aab4c6">Provision to interpret (paste the exact words):</label>
     <textarea id="interpProvision" style="height:90px" placeholder="e.g. s 82(1): 'a person shall not engage in a small scale mining operation … unless there is in existence … a licence …'"></textarea>
@@ -3303,6 +3301,7 @@ async function gatherIssue(i, force) {
         use_context: false,
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),
+        use_judy: !!($("#examJudy") && $("#examJudy").checked),
         issue_index: i,
         siblings: (EXAM.issues || []).map((x, k) => (k + 1) + ". " + ((x.issue || "").split("\n")[0].slice(0, 150)))});
     // A slow gather can time out on the wire and return a non-JSON error page (the SyntaxError you
@@ -4915,11 +4914,12 @@ $("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; };
 $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
 
 // ⚖️ Statutory interpretation — pick your line, argue it, pre-empt the counter-canon.
-$("#openInterpret").onclick = () => { $("#interpretModal").style.display = "flex"; judyRefresh(); };
+$("#openInterpret").onclick = () => { $("#interpretModal").style.display = "flex"; };
 $("#interpClose").onclick = () => { $("#interpretModal").style.display = "none"; };
-// judy.legal connection status (owner only) — show Connect button or the "use judy" toggle.
+// judy.legal connection status (owner only) — drives the Exam Coach gather toggle:
+// show the Connect button when not connected, or the "find cases on judy.legal" toggle when it is.
 async function judyRefresh() {
-  const wrap = $("#interpJudyWrap"), conn = $("#interpJudyConnect"), st = $("#interpJudyStatus");
+  const wrap = $("#examJudyWrap"), conn = $("#examJudyConnect"), st = $("#examJudyStatus");
   if (!st) return;
   try {
     const s = await (await fetch("/api/judy/status")).json();
@@ -4929,19 +4929,20 @@ async function judyRefresh() {
       st.textContent = "✓ judy.legal connected"; st.style.color = "#8fce8f";
     } else {
       wrap.style.display = "none"; conn.style.display = "inline-block";
-      st.textContent = "connect to search African case law & legislation live"; st.style.color = "#8b93a7";
+      st.textContent = "connect to pull African case law live"; st.style.color = "#8b93a7";
     }
   } catch (e) { wrap.style.display = "none"; conn.style.display = "none"; }
 }
-$("#interpJudyConnect").onclick = () => {
-  const w = window.open("/api/judy/connect", "judy_oauth", "width=520,height=680");
-  $("#interpJudyStatus").textContent = "complete the judy.legal login in the popup…";
+if ($("#examJudyConnect")) $("#examJudyConnect").onclick = () => {
+  window.open("/api/judy/connect", "judy_oauth", "width=520,height=680");
+  $("#examJudyStatus").textContent = "complete the judy.legal login in the popup…";
   const onMsg = (e) => { if (e.data === "judy-connected") { window.removeEventListener("message", onMsg); setTimeout(judyRefresh, 500); } };
   window.addEventListener("message", onMsg);
   // fallback: poll status a few times in case the popup was blocked / postMessage missed
   let n = 0; const iv = setInterval(async () => { if (++n > 20) return clearInterval(iv); await judyRefresh();
-    if ($("#interpJudyWrap").style.display !== "none") clearInterval(iv); }, 3000);
+    if ($("#examJudyWrap").style.display !== "none") clearInterval(iv); }, 3000);
 };
+judyRefresh();   // check on load so the Exam Coach shows the right judy control
 // Add materials to the shared, hidden "Legal Application" store (used across all courses).
 $("#interpMaterials").onclick = () => $("#interpMatFile").click();
 $("#interpMatFile").onchange = async (e) => {
@@ -4976,16 +4977,14 @@ $("#interpGo").onclick = async () => {
   $("#interpOut").innerHTML = "";
   $("#interpStatus").textContent = "⚖️ arguing the line, then testing it against the equal-and-opposite rule… (up to ~1 min)";
   try {
-    const useJudy = !!($("#interpJudy") && $("#interpJudy").checked);
-    if (useJudy) $("#interpStatus").textContent = "⚖️ arguing the line + searching judy.legal for the applying African cases… (up to ~1–2 min)";
     const r = await (await fetch("/api/interpret", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({provision, facts, line, course: COURSE, courses: examCourses(), use_judy: useJudy})})).json();
+      body: JSON.stringify({provision, facts, line, course: COURSE, courses: examCourses()})})).json();
     if (r.error) { $("#interpStatus").textContent = "⚠ " + r.error; }
     else {
       const doc = r.argument || "";
       $("#interpOut").innerHTML = "<div class='ans' style='white-space:normal;margin-top:8px'>" + mdToHtml(doc) + "</div>";
       $("#interpStatus").textContent = "Done" + (r.cost ? (" · $" + (r.cost.this_usd||0)) : "")
-        + (r.used_judy ? " · 🔎 cited judy.legal authority" : "") + " — argues your line, then answers the counter-canon.";
+        + " — argues your line, then answers the counter-canon.";
       try { renderExportBar($("#interpOut").querySelector(".ans"), doc, "Interpretation — " + (r.line||line).slice(0,40), ""); } catch (e) {}
     }
   } catch (e) { $("#interpStatus").textContent = "Error — try again."; }

@@ -4848,7 +4848,7 @@ SOURCE_COVERAGE = (
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
-                    pinned=None, auto_pin_primary=False, writer_model=None):
+                    pinned=None, auto_pin_primary=False, writer_model=None, use_judy=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -5500,6 +5500,25 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # citation-annotated text — so an Application/Conclusion can never reach the page.
         _final_answer = _tidy_gather_markdown(_strip_gather_analysis(_final_answer))
         annotated = _tidy_gather_markdown(_strip_gather_analysis(annotated))
+        # LIVE judy.legal case extraction (opt-in): pull the leading on-point cases with full
+        # names + citations, facts, ratio and obiter, and REPLACE the corpus '## Cases' section
+        # with them. This is where the user wants judy — to find and extract good law properly.
+        if use_judy:
+            try:
+                _rt = rule_text if "rule_text" in dir() else ""
+            except Exception:
+                _rt = ""
+            _jblock, _jused, _jcost = _judy_gather_cases(question, _rt)
+            if _jblock:
+                _jsection = ("## Cases\n\n*Extracted live from judy.legal — full name, citation, "
+                             "facts, ratio, obiter.*\n\n" + _jblock.strip())
+                _final_answer = _splice_cases_section(_final_answer, _jsection)
+                annotated = _splice_cases_section(annotated, _jsection)
+                cost += _jcost
+                CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + _jcost, 6)
+                _spend_note(_jcost)
+                save_config(CONFIG)
+                _bill_user(_jcost, 0, 0)
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
     reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
@@ -5602,6 +5621,29 @@ def _tidy_gather_markdown(text):
     # collapse any run of 3+ blank lines the fixes may have created
     t = re.sub(r'\n{3,}', '\n\n', t)
     return t.strip()
+
+
+def _splice_cases_section(md, new_cases_section):
+    """Replace the '## Cases' section of a gather data sheet with a new one (e.g. the judy.legal
+    extraction). The replacement runs from the '## Cases' heading up to the NEXT '## ' heading (or
+    end of doc). If there is no '## Cases' heading, insert the new section after '## Rule' when
+    present, else append it."""
+    if not md:
+        return (new_cases_section or "").strip()
+    if not new_cases_section:
+        return md
+    new_cases_section = new_cases_section.strip()
+    # match '## Cases' (allowing trailing words) through to the next H2 or end
+    pat = re.compile(r'(?ms)^##\s*Cases\b.*?(?=^##\s|\Z)')
+    if pat.search(md):
+        return re.sub(pat, new_cases_section + "\n\n", md, count=1).strip()
+    # no Cases heading — insert after the Rule section if we can find its end
+    rule_pat = re.compile(r'(?ms)^(##\s*Rule\b.*?)(?=^##\s|\Z)')
+    m = rule_pat.search(md)
+    if m:
+        return (md[:m.end()].rstrip() + "\n\n" + new_cases_section + "\n\n" + md[m.end():].lstrip()).strip()
+    return (md.rstrip() + "\n\n" + new_cases_section).strip()
+
 
 # ---------------------------------------------------------------- shared helpers
 def _client():
@@ -6135,6 +6177,64 @@ def _judy_connector():
         "tools": [{"type": "mcp_toolset", "mcp_server_name": "judy"}],
         "betas": ["mcp-client-2025-11-20"],
     }
+
+JUDY_CASE_EXTRACT = (
+    "You are a case-law EXTRACTOR with live MCP tools connected to judy.legal — an authoritative "
+    "African (incl. Ghanaian) case-law and legislation database. Your ONE job is to FIND and EXTRACT "
+    "the leading, on-point DECIDED CASES for the legal issue given, and to state each one properly. "
+    "USE the judy.legal tools to search and open the actual reports; extract ONLY from what the tools "
+    "return — never invent a case, a citation, a fact or a holding, and never fill a gap from memory.\n\n"
+    "Return the leading 3–6 cases that genuinely bear on THIS issue (fewer if only a few are truly "
+    "on point — quality over quantity; the closest authority first). For EACH case output EXACTLY "
+    "this Markdown shape, with a blank line between cases:\n\n"
+    "- **<Full case name> <full citation exactly as judy.legal reports it>**\n"
+    "  - *Facts:* <the material facts, 1–3 sentences — only what the report states>\n"
+    "  - *Ratio:* <the ratio decidendi — the binding principle the court actually decided, in one or "
+    "two sentences; do not pad it with obiter>\n"
+    "  - *Obiter:* <any notable obiter dicta; if the report shows none worth noting, write 'none noted'>\n"
+    "  - *Relevance:* <one line: why it bears on this issue>\n\n"
+    "Rules: give the FULL case name (all named parties, not 'Republic v …' truncated) and the FULL "
+    "citation. Where a statute is central, name it IN FULL (short title, year and number, e.g. 'the "
+    "Minerals and Mining Act, 2006 (Act 703)'). Keep ratio and obiter DISTINCT — the ratio is what "
+    "was necessary to the decision; obiter is said in passing. Do NOT argue, apply the law to any "
+    "facts, or reach a conclusion — this is a data sheet of good law. Output ONLY the '- ' case list, "
+    "no preamble and no closing. If the tools return NOTHING on point, output exactly: '⚠ none found "
+    "on judy.legal'.")
+
+
+def _judy_gather_cases(issue_line, rule_context):
+    """Live judy.legal pass for the gather: find the leading on-point cases and extract each with
+    full name + citation, facts, ratio, obiter. Returns (markdown_block, used, cost_usd) — block is
+    None if judy is not connected or the call fails."""
+    judy = _judy_connector()
+    if not judy:
+        return None, False, 0.0
+    c = _client()
+    if not c:
+        return None, False, 0.0
+    user = ("LEGAL ISSUE (find the on-point decided cases for THIS):\n" + (issue_line or "").strip()[:1500]
+            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED (search judy.legal for cases applying these — "
+               "reproduce the FULL statute names):\n" + rule_context.strip()[:4000] if rule_context else "")
+            + "\n\nSearch judy.legal now and extract the leading cases in the required shape.")
+    try:
+        resp = c.beta.messages.create(
+            model=AUDIT_MODEL, max_tokens=6000,
+            system=JUDY_CASE_EXTRACT,
+            messages=[{"role": "user", "content": user}],
+            mcp_servers=judy["mcp_servers"], tools=judy["tools"], betas=judy["betas"])
+        used = any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content)
+        block = (_text_of(resp) or "").strip()
+        try:
+            cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
+        except Exception:
+            cost = 0.0
+        if not block or "none found on judy" in block.lower():
+            return None, used, cost
+        return block, used, cost
+    except Exception:
+        app.logger.exception("judy gather-cases failed")
+        return None, False, 0.0
+
 
 @app.route("/api/judy/connect")
 def api_judy_connect():
@@ -6980,7 +7080,8 @@ def api_ask():
                            issue_index=body.get("issue_index"),
                            pinned=body.get("pinned"),
                            auto_pin_primary=body.get("auto_pin_primary", True),
-                           writer_model=body.get("writer_model"))
+                           writer_model=body.get("writer_model"),
+                           use_judy=bool(body.get("use_judy")) and mode == "gather")
     if isinstance(_res, dict):
         _res["build"] = BUILD_SHA          # stamp the answer with the build that produced it (freshness mark)
     return jsonify(_res)
@@ -8779,16 +8880,6 @@ def api_interpret():
     law_block = ("\n\nRETRIEVED MATERIALS (ground the provision text, cases and any stated canon here):\n"
                  + ctx[:12000]) if ctx else ("\n\n(No course materials retrieved — reason on the provision "
                  "text supplied and settled construction method; do not invent authorities.)")
-    # judy.legal live authority (opt-in): if the owner connected it AND ticked the toggle, attach the MCP
-    # connector so Claude can search real African case law/legislation and cite the APPLYING cases.
-    judy = _judy_connector() if body.get("use_judy") else None
-    if judy:
-        system = system + "\n\n" + (
-            "LIVE AFRICAN-LAW LOOKUP (judy.legal): you have MCP tools connected to judy.legal — an "
-            "authoritative African case-law and legislation database. USE them to find the on-point "
-            "APPLYING cases and the exact statutory/constitutional text for this provision and canon, and "
-            "cite what they return (case name + citation, section text). Treat those results as grounded "
-            "authority; still never invent a case or a holding the tools did not return.")
     user = (
         "PROVISION TO INTERPRET:\n" + (provision or "(none supplied — the facts state it)") +
         "\n\nFACTS IT APPLIES TO:\n" + (facts or "(none supplied)") +
@@ -8797,25 +8888,16 @@ def api_interpret():
         "\n\nWrite the interpretation as a single flowing legal argument, in the formal impersonal "
         "register: construe the provision on the chosen line and reach a conclusion on these facts; "
         "then name the equal-and-opposite rule, apply it, show the problems it produces, and justify "
-        "why the chosen line prevails. Cite only authorities in the retrieved materials (or, if the "
-        "judy.legal tools are connected, what they actually return); never invent a case or holding.")
+        "why the chosen line prevails. Cite only authorities in the retrieved materials; never "
+        "invent a case or holding.")
     used_judy = False
     pieces, this_usd, total_usd = [], 0.0, None
     try:
         messages = [{"role": "user", "content": user}]
         for _round in range(3):
-            if judy:
-                resp = c.beta.messages.create(model=ANSWER_MODEL, max_tokens=8000,
-                                              thinking={"type": "adaptive"}, system=cached_system(system),
-                                              messages=messages, mcp_servers=judy["mcp_servers"],
-                                              tools=judy["tools"], betas=judy["betas"])
-                m = ANSWER_MODEL
-                if any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content):
-                    used_judy = True
-            else:
-                resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
-                                        thinking={"type": "adaptive"},
-                                        system=cached_system(system), messages=messages)
+            resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
+                                    thinking={"type": "adaptive"},
+                                    system=cached_system(system), messages=messages)
             cost = record_cost(resp, m)
             this_usd += cost.get("this_usd", 0) or 0
             total_usd = cost.get("total_usd", total_usd)
