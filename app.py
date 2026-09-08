@@ -6431,9 +6431,6 @@ def _gather_authority(issue_line, rule_context):
     c = _client()
     if not c:
         return None, None, None, False, 0.0
-    # tools = every connected DB's toolset + live web search (international law + comparative context).
-    # Bounded (max_uses) so the agentic loop can't sprawl into a many-minute hang.
-    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 7}]
     user = ("LEGAL ISSUE (find the statutes/treaties/laws + the on-point cases + comparative context "
             "for THIS — route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
             + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these, add "
@@ -6442,17 +6439,35 @@ def _gather_authority(issue_line, rule_context):
                + rule_context.strip()[:4000] if rule_context else "")
             + "\n\nSearch efficiently — a few targeted searches, not many — and output the three "
               "marked sections in the required shape.")
-    try:
+    web_tool = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 7}]
+
+    def _run(with_mcp):
+        # HARD BOUND: a firm per-request timeout so a slow/looping pass fails fast and the gather still
+        # returns. `with_mcp=False` drops the database connectors and runs WEB-ONLY — the resilient
+        # fallback when a database MCP server is unreachable, so comparative + international still work.
         kw = dict(model=AUDIT_MODEL, max_tokens=8000,
-                  system=_authority_extract_prompt(conn["names"]),
-                  messages=[{"role": "user", "content": user}], tools=tools)
-        if conn["mcp_servers"]:
+                  system=_authority_extract_prompt(conn["names"] if with_mcp else []),
+                  messages=[{"role": "user", "content": user}],
+                  tools=((list(conn["tools"]) + web_tool) if (with_mcp and conn["mcp_servers"]) else web_tool))
+        if with_mcp and conn["mcp_servers"]:
             kw["mcp_servers"] = conn["mcp_servers"]
             kw["betas"] = conn["betas"]
-        # HARD BOUND: no client retries (retries × slow web loop = a multi-minute hang) and a firm
-        # per-request timeout, so a slow/looping authority pass fails fast and the gather still
-        # returns (the corpus sections just stay as-is). This is the fix for the wire timeouts.
-        resp = c.with_options(max_retries=0, timeout=260.0).beta.messages.create(**kw)
+        return c.with_options(max_retries=1, timeout=220.0).beta.messages.create(**kw)
+
+    try:
+        try:
+            resp = _run(with_mcp=True)
+        except Exception as _e1:
+            # A flaky database MCP server ("Connection error while communicating with MCP server")
+            # must NOT sink the whole pass — retry WEB-ONLY so the comparative + web-findable law and
+            # cases still come through. Only do this when databases were actually attached.
+            msg = str(_e1)
+            if conn["mcp_servers"] and ("MCP server" in msg or "Connection error" in msg
+                                        or "mcp" in msg.lower()):
+                app.logger.warning("authority pass: MCP unreachable, falling back to web-only")
+                resp = _run(with_mcp=False)
+            else:
+                raise
         _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
                     "web_search_tool_result", "tool_use", "tool_result")
         used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
