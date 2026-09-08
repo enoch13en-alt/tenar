@@ -3395,14 +3395,27 @@ function applyAuthority(i, p) {
   let an = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
   if (p.legislation) {
     const leg = p.legislation.trim();
-    // Does the corpus Rule already carry real law (a ⟦LAW⟧ drawer, no FILL gap)? If NOT, the corpus
-    // didn't have it — so the verified-database law BECOMES the Rule. If it does, keep the corpus
-    // Rule and add the databases as a confirming supplement after it.
+    // Does the corpus Rule carry real PRIMARY law? It must have a ⟦LAW⟧ drawer, no FILL gap, AND not
+    // be a SECONDARY-SOURCE paraphrase ("as reproduced in Lamm", "as cited in…"). If it lacks primary
+    // law, the verified-database primary text ANCHORS the Rule (the secondary paraphrase, if any, is
+    // kept below as commentary). If it already has primary law, keep it and add the databases as a
+    // confirming supplement.
     const rb = _authSectionBounds(a, "Rule");
     const ruleTxt = rb ? a.slice(rb.start, rb.end) : "";
-    const corpusHasLaw = /⟦LAW⟧/.test(ruleTxt) && !/【FILL|not in the (retrieved )?materials|provision it/i.test(ruleTxt);
-    if (!corpusHasLaw) {
-      const s = "## Rule\n\n*Governing law — drawn from the verified legal databases (judy.legal / CourtListener / EULEX), as the corpus did not hold it.*\n\n" + leg;
+    const hasDrawer = /⟦LAW⟧/.test(ruleTxt);
+    const hasFill = /【FILL|not in the (retrieved )?materials|provision it/i.test(ruleTxt);
+    const secondarySourced = /⟦LAW⟧[\s\S]*?\bas (reproduced|cited|quoted|summari[sz]ed|described|paraphrased|set out|noted) in\b/i.test(ruleTxt);
+    const corpusHasPrimary = hasDrawer && !hasFill && !secondarySourced;
+    if (!corpusHasPrimary) {
+      const why = (!hasDrawer || hasFill)
+        ? "as the corpus did not hold it"
+        : "as the corpus held only secondary commentary (a paraphrase) on it";
+      // preserve the corpus's secondary paraphrase as commentary below the primary text
+      const oldBody = ruleTxt.replace(/^##\s*Rule\b[^\n]*\n+/i, "").trim();
+      const keep = secondarySourced && oldBody
+        ? "\n\n**Secondary commentary (from the corpus):**\n\n" + oldBody
+        : "";
+      const s = "## Rule\n\n*Governing law — primary instrument text from the verified legal databases (judy.legal / CourtListener / EULEX) or authoritative primary sources, " + why + ".*\n\n" + leg + keep;
       a = _authReplaceSection(a, "Rule", s); an = _authReplaceSection(an, "Rule", s);
     } else {
       const s = "## Statutes & laws that apply\n\n*Confirmed on the verified legal databases — full instrument names + applicable provisions.*\n\n" + leg;

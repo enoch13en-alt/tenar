@@ -6448,6 +6448,12 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
             + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm/extend, find "
                "the cases applying them, FULL instrument names):\n" + rule_context.strip()[:4000]
                if rule_context else "")
+            + "\n\nIMPORTANT — PRIMARY TEXT, NOT PARAPHRASE: if any governing law above is quoted from "
+              "a SECONDARY source (a textbook/commentary/article — e.g. 'as reproduced in Lamm', 'as "
+              "cited in…'), do NOT carry that paraphrase forward as the law. Find the PRIMARY "
+              "instrument itself (the treaty article, statute section, regulation) and quote ITS OWN "
+              "operative words verbatim, with the correct pinpoint — verify the exact article/section "
+              "number against the instrument, do not trust the secondary source's attribution."
             + "\n\nSearch efficiently and output the two marked sections.")
 
     def run(with_mcp, timeout):
