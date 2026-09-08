@@ -6356,15 +6356,17 @@ def _gather_authority(issue_line, rule_context):
     c = _client()
     if not c:
         return None, None, False, 0.0
-    # tools = every connected DB's toolset + live web search (for public international law).
-    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}]
+    # tools = every connected DB's toolset + live web search (for public international law). Web
+    # search is bounded (max_uses) so the agentic loop can't sprawl into a many-minute hang.
+    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
     user = ("LEGAL ISSUE (find the statutes/treaties/laws that apply AND the on-point cases for THIS — "
             "route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
             + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these, add "
                "any applicable statute/treaty/regulation/constitutional provision they miss, and find "
                "the cases applying them — reproduce FULL instrument names):\n"
                + rule_context.strip()[:4000] if rule_context else "")
-            + "\n\nSearch now and output the two marked sections in the required shape.")
+            + "\n\nSearch efficiently — a few targeted searches, not many — and output the two marked "
+              "sections in the required shape.")
     try:
         kw = dict(model=AUDIT_MODEL, max_tokens=7000,
                   system=_authority_extract_prompt(conn["names"]),
@@ -6372,7 +6374,10 @@ def _gather_authority(issue_line, rule_context):
         if conn["mcp_servers"]:
             kw["mcp_servers"] = conn["mcp_servers"]
             kw["betas"] = conn["betas"]
-        resp = c.beta.messages.create(**kw)
+        # HARD BOUND: no client retries (retries × slow web loop = a multi-minute hang) and a firm
+        # per-request timeout, so a slow/looping authority pass fails fast and the gather still
+        # returns (the corpus '## Cases' just stays as-is). This is the fix for the wire timeouts.
+        resp = c.with_options(max_retries=0, timeout=210.0).beta.messages.create(**kw)
         _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
                     "web_search_tool_result", "tool_use", "tool_result")
         used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
