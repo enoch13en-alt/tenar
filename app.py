@@ -6043,6 +6043,184 @@ def api_build():
     return resp
 
 
+# ============ judy.legal MCP connector — African case law + legislation (OAuth) ============
+# judy.legal's MCP server is OAuth-protected (authorization_code + refresh, PKCE S256, dynamic client
+# registration). The owner authorizes ONCE in the browser; we store the tokens on the /data disk and
+# refresh silently, then pass the access token to Anthropic's MCP connector (mcp_servers) so Claude can
+# search real African case law / legislation and ground answers in it — filling the "not in corpus" gaps.
+JUDY_MCP_URL = "https://mcp.judy.legal/"
+JUDY_BASE = "https://mcp.judy.legal"
+JUDY_STORE = os.path.join(DATA, ".judy_oauth.json")
+JUDY_REDIRECT = (os.environ.get("PUBLIC_BASE_URL") or "https://tenar.onrender.com").rstrip("/") + "/api/judy/callback"
+JUDY_SCOPE = "openid read write"
+_JUDY_PKCE = {}   # state -> {"verifier": str, "ts": float}  (transient, in-process; the flow completes in seconds)
+
+def _judy_load():
+    try:
+        return json.load(open(JUDY_STORE))
+    except Exception:
+        return {}
+
+def _judy_save(d):
+    try:
+        json.dump(d, open(JUDY_STORE, "w"))
+    except Exception:
+        app.logger.exception("judy token save failed")
+
+def _judy_http(url, form=None, method="POST"):
+    """Small stdlib HTTP helper for the OAuth endpoints (form-encoded POST / JSON POST)."""
+    import urllib.request, urllib.parse
+    if isinstance(form, dict) and form.get("_json"):
+        data = json.dumps(form["_json"]).encode(); ct = "application/json"
+    elif form is not None:
+        data = urllib.parse.urlencode(form).encode(); ct = "application/x-www-form-urlencoded"
+    else:
+        data = None; ct = None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Accept", "application/json")
+    if ct:
+        req.add_header("Content-Type", ct)
+    with urllib.request.urlopen(req, timeout=25) as r:
+        return json.loads(r.read().decode() or "{}")
+
+def _judy_client_id():
+    """Register TENAR as a PUBLIC OAuth client (PKCE, no secret) once via dynamic client registration."""
+    st = _judy_load()
+    if st.get("client_id"):
+        return st["client_id"]
+    reg = _judy_http(JUDY_BASE + "/register", {"_json": {
+        "client_name": "TENAR", "redirect_uris": [JUDY_REDIRECT],
+        "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
+        "token_endpoint_auth_method": "none", "scope": JUDY_SCOPE}})
+    cid = reg.get("client_id")
+    if not cid:
+        raise RuntimeError("judy.legal client registration returned no client_id")
+    st["client_id"] = cid
+    _judy_save(st)
+    return cid
+
+def _judy_token():
+    """Return a valid judy.legal access token, refreshing if it's near expiry. None if not connected
+    (or refresh failed → owner must reconnect)."""
+    import time as _t
+    st = _judy_load()
+    at = st.get("access_token")
+    if not at:
+        return None
+    if float(st.get("expires_at", 0) or 0) > _t.time() + 60:
+        return at
+    rt = st.get("refresh_token")
+    if not rt:
+        return None
+    try:
+        tok = _judy_http(JUDY_BASE + "/token", {
+            "grant_type": "refresh_token", "refresh_token": rt, "client_id": st.get("client_id", "")})
+        st["access_token"] = tok.get("access_token", at)
+        if tok.get("refresh_token"):
+            st["refresh_token"] = tok["refresh_token"]
+        st["expires_at"] = _t.time() + int(tok.get("expires_in", 3600) or 3600)
+        _judy_save(st)
+        return st["access_token"]
+    except Exception:
+        app.logger.exception("judy token refresh failed")
+        return None
+
+def _judy_connector():
+    """The (mcp_servers, tools, betas) triple for the Anthropic MCP connector — or None if not connected."""
+    tok = _judy_token()
+    if not tok:
+        return None
+    return {
+        "mcp_servers": [{"type": "url", "url": JUDY_MCP_URL, "name": "judy", "authorization_token": tok}],
+        "tools": [{"type": "mcp_toolset", "mcp_server_name": "judy"}],
+        "betas": ["mcp-client-2025-11-20"],
+    }
+
+@app.route("/api/judy/connect")
+def api_judy_connect():
+    """Owner-only: start the judy.legal OAuth login. Redirects the browser to judy.legal's consent."""
+    import time as _t, urllib.parse, base64 as _b64, hashlib as _hashlib
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Owner only."}), 403
+    try:
+        cid = _judy_client_id()
+    except Exception as e:
+        return jsonify({"error": "Couldn't register with judy.legal: " + str(e)}), 502
+    verifier = _b64.urlsafe_b64encode(secrets.token_bytes(48)).decode().rstrip("=")
+    challenge = _b64.urlsafe_b64encode(_hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    state = secrets.token_urlsafe(24)
+    _JUDY_PKCE[state] = {"verifier": verifier, "ts": _t.time()}
+    # prune old pending flows
+    for k in [k for k, v in list(_JUDY_PKCE.items()) if _t.time() - v.get("ts", 0) > 900]:
+        _JUDY_PKCE.pop(k, None)
+    q = urllib.parse.urlencode({
+        "response_type": "code", "client_id": cid, "redirect_uri": JUDY_REDIRECT,
+        "scope": JUDY_SCOPE, "state": state, "code_challenge": challenge, "code_challenge_method": "S256"})
+    return redirect(JUDY_BASE + "/authorize?" + q)
+
+@app.route("/api/judy/callback")
+def api_judy_callback():
+    """OAuth redirect target (browser carries the owner's session). Exchanges the code for tokens."""
+    import time as _t
+    if current_user() is None:
+        return "Please log in to TENAR first, then reconnect judy.legal.", 401
+    err = request.args.get("error")
+    if err:
+        return _judy_close_page("judy.legal declined: " + err)
+    code = request.args.get("code"); state = request.args.get("state")
+    pk = _JUDY_PKCE.pop(state or "", None)
+    if not code or not pk:
+        return _judy_close_page("The connection link expired — click Connect judy.legal again.")
+    st = _judy_load()
+    try:
+        tok = _judy_http(JUDY_BASE + "/token", {
+            "grant_type": "authorization_code", "code": code, "redirect_uri": JUDY_REDIRECT,
+            "client_id": st.get("client_id", ""), "code_verifier": pk["verifier"]})
+    except Exception as e:
+        app.logger.exception("judy token exchange failed")
+        return _judy_close_page("Token exchange failed: " + str(e))
+    if not tok.get("access_token"):
+        return _judy_close_page("judy.legal did not return a token — try again.")
+    st["access_token"] = tok["access_token"]
+    st["refresh_token"] = tok.get("refresh_token", st.get("refresh_token"))
+    st["expires_at"] = _t.time() + int(tok.get("expires_in", 3600) or 3600)
+    st["scope"] = tok.get("scope", JUDY_SCOPE)
+    _judy_save(st)
+    return _judy_close_page("✅ Connected to judy.legal. You can close this tab and return to TENAR.")
+
+def _judy_close_page(msg):
+    from flask import Response as _R
+    html = ("<!doctype html><meta charset=utf-8><body style='font-family:system-ui;background:#0f1420;"
+            "color:#e8ecf4;padding:40px;text-align:center'><div style='max-width:460px;margin:60px auto'>"
+            "<div style='font-size:15px;line-height:1.6'>" + _esc_html(msg) + "</div>"
+            "<p style='margin-top:20px;color:#8b93a7;font-size:12px'>This window can be closed.</p>"
+            "<script>try{window.opener&&window.opener.postMessage('judy-connected','*')}catch(e){}</script>"
+            "</div></body>")
+    return _R(html, mimetype="text/html")
+
+def _esc_html(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+@app.route("/api/judy/status")
+def api_judy_status():
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Owner only."}), 403
+    import time as _t
+    st = _judy_load()
+    connected = bool(st.get("access_token"))
+    return jsonify({"connected": connected, "registered": bool(st.get("client_id")),
+                    "expires_in": max(0, int(float(st.get("expires_at", 0) or 0) - _t.time())) if connected else 0})
+
+@app.route("/api/judy/disconnect", methods=["POST"])
+def api_judy_disconnect():
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Owner only."}), 403
+    st = _judy_load()
+    st.pop("access_token", None); st.pop("refresh_token", None); st.pop("expires_at", None)
+    _judy_save(st)
+    return jsonify({"ok": True, "connected": False})
+
+
 def _visible_courses_for(user):
     """Course packs are a SHARED library: every logged-in account sees all of
     them, so invited testers automatically get whatever the owner uploads —
@@ -8601,16 +8779,33 @@ def api_interpret():
     law_block = ("\n\nRETRIEVED MATERIALS (ground the provision text, cases and any stated canon here):\n"
                  + ctx[:12000]) if ctx else ("\n\n(No course materials retrieved — reason on the provision "
                  "text supplied and settled construction method; do not invent authorities.)")
-    user = ("CHOSEN INTERPRETIVE LINE (argue THIS): " + line + "\n\n"
-            "PROVISION TO INTERPRET:\n" + (provision or "(see facts)") + "\n\n"
-            "FACTS / QUESTION:\n" + (facts or "(general interpretation)") + law_block)
+    # judy.legal live authority (opt-in): if the owner connected it AND ticked the toggle, attach the MCP
+    # connector so Claude can search real African case law/legislation and cite the APPLYING cases.
+    judy = _judy_connector() if body.get("use_judy") else None
+    if judy:
+        system = system + "\n\n" + (
+            "LIVE AFRICAN-LAW LOOKUP (judy.legal): you have MCP tools connected to judy.legal — an "
+            "authoritative African case-law and legislation database. USE them to find the on-point "
+            "APPLYING cases and the exact statutory/constitutional text for this provision and canon, and "
+            "cite what they return (case name + citation, section text). Treat those results as grounded "
+            "authority; still never invent a case or a holding the tools did not return.")
+    used_judy = False
     pieces, this_usd, total_usd = [], 0.0, None
     try:
         messages = [{"role": "user", "content": user}]
         for _round in range(3):
-            resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
-                                    thinking={"type": "adaptive"},
-                                    system=cached_system(system), messages=messages)
+            if judy:
+                resp = c.beta.messages.create(model=ANSWER_MODEL, max_tokens=8000,
+                                              thinking={"type": "adaptive"}, system=cached_system(system),
+                                              messages=messages, mcp_servers=judy["mcp_servers"],
+                                              tools=judy["tools"], betas=judy["betas"])
+                m = ANSWER_MODEL
+                if any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content):
+                    used_judy = True
+            else:
+                resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=8000,
+                                        thinking={"type": "adaptive"},
+                                        system=cached_system(system), messages=messages)
             cost = record_cost(resp, m)
             this_usd += cost.get("this_usd", 0) or 0
             total_usd = cost.get("total_usd", total_usd)
@@ -8623,7 +8818,7 @@ def api_interpret():
     except Exception:
         app.logger.exception("interpret failed")
         return jsonify({"error": "The interpretation argument failed — please try again."}), 500
-    return jsonify({"argument": out, "line": line,
+    return jsonify({"argument": out, "line": line, "used_judy": used_judy,
                     "cost": {"this_usd": round(this_usd, 5), "total_usd": total_usd}})
 
 
