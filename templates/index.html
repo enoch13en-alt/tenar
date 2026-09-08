@@ -3394,8 +3394,20 @@ function applyAuthority(i, p) {
   let a = (it.answer || "").replace(AUTH_PENDING_RE, "").trim();
   let an = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
   if (p.legislation) {
-    const s = "## Statutes & laws that apply\n\n*Confirmed live on the legal databases or authoritative primary sources — full instrument names + applicable provisions.*\n\n" + p.legislation.trim();
-    a = _authInsertAfter(a, "Rule", s); an = _authInsertAfter(an, "Rule", s);
+    const leg = p.legislation.trim();
+    // Does the corpus Rule already carry real law (a ⟦LAW⟧ drawer, no FILL gap)? If NOT, the corpus
+    // didn't have it — so the verified-database law BECOMES the Rule. If it does, keep the corpus
+    // Rule and add the databases as a confirming supplement after it.
+    const rb = _authSectionBounds(a, "Rule");
+    const ruleTxt = rb ? a.slice(rb.start, rb.end) : "";
+    const corpusHasLaw = /⟦LAW⟧/.test(ruleTxt) && !/【FILL|not in the (retrieved )?materials|provision it/i.test(ruleTxt);
+    if (!corpusHasLaw) {
+      const s = "## Rule\n\n*Governing law — drawn from the verified legal databases (judy.legal / CourtListener / EULEX), as the corpus did not hold it.*\n\n" + leg;
+      a = _authReplaceSection(a, "Rule", s); an = _authReplaceSection(an, "Rule", s);
+    } else {
+      const s = "## Statutes & laws that apply\n\n*Confirmed on the verified legal databases — full instrument names + applicable provisions.*\n\n" + leg;
+      a = _authInsertAfter(a, "Rule", s); an = _authInsertAfter(an, "Rule", s);
+    }
   }
   if (p.cases) {
     const s = "## Cases\n\n*Extracted live from the legal databases (judy.legal / CourtListener / EULEX) or authoritative web sources — full name, citation, court & status, facts, ratio, obiter.*\n\n" + p.cases.trim();
