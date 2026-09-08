@@ -2993,7 +2993,8 @@ function renderExam() {
       + ((EXAM.issues||[]).some(x => (x.weight||'').toLowerCase()==='core' && !x.done)
           ? '<button class="btn alt" id="gatherCore" style="width:auto" title="Gather only the CORE (mark-heavy) issues — a lean, cheaper draft. Add the minor ones before you finalise.">⭐ Gather core only</button>' : '')
       + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Reconcile all issues</button>'
-      + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button></div>';
+      + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button>'
+      + '<button class="btn alt" id="examDeck" style="width:auto" title="Build a DEFENCE presentation from your answer: story-like slides that walk from the facts → the issue → the governing law, cases and scholars (with authorities on every slide) → how your answer resolves it. Each slide carries speaker notes plus the likely examiner question and a rebuttal. Present it full-screen here, or download a PowerPoint. Best after you Synthesise.">🎤 Build defence deck</button></div>';
     h += '<div id="examConsistencyOut" style="margin-top:6px"></div><div id="examDocWrap"></div>';
   }
   $("#examOut").innerHTML = h;
@@ -3047,6 +3048,7 @@ function renderExam() {
   const ga = $("#gatherAll"); if (ga) ga.onclick = gatherAll;
   const gc = $("#gatherCore"); if (gc) gc.onclick = gatherCore;
   const cp = $("#examCompile"); if (cp) cp.onclick = () => compileExam(true);
+  const dk = $("#examDeck"); if (dk) dk.onclick = buildDefenceDeck;
   const cs = $("#examConsistency"); if (cs) cs.onclick = runConsistency;
   scheduleSave();                 // persist the run after every render (debounced)
 }
@@ -6855,6 +6857,128 @@ $("#updatesSave").onclick = async (e) => {
         e.target.closest("button, select")) close();
   });
 })();
+
+// ============ DEFENCE DECK — story-arc slides to present & defend the answer ============
+let DECK = null, DECK_I = 0, DECK_NOTES = true;
+async function buildDefenceDeck() {
+  const btn = $("#examDeck");
+  const issues = (EXAM.issues || []).filter(it => it && (it.answer || "").trim())
+    .map(it => ({ n: it.n || null, issue: it.issue || "", answer: it.answer || "" }));
+  if (!(EXAM.doc || "").trim() && !issues.length) {
+    $("#examStatus").textContent = "Gather your issues (and Synthesise) first — then build the deck.";
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = "🎤 Building deck…"; }
+  $("#examStatus").textContent = "🎤 Building your defence deck — story slides with authorities, notes & likely questions… (~1 min)";
+  try {
+    const r = await (await fetch("/api/exam/defence", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ problem: EXAM.question || "", doc: EXAM.doc || "", issues }) })).json();
+    if (r.error) { $("#examStatus").textContent = "⚠ " + r.error; return; }
+    DECK = r.deck; DECK_I = 0;
+    openDeck();
+    $("#examStatus").textContent = "🎤 Defence deck ready — " + (DECK.slides || []).length + " slides. Arrow keys to navigate; N toggles notes.";
+  } catch (e) { $("#examStatus").textContent = "Error building the deck — try again."; }
+  finally { if (btn) { btn.disabled = false; btn.textContent = "🎤 Build defence deck"; } }
+}
+function openDeck() {
+  if (!DECK || !(DECK.slides || []).length) return;
+  $("#deckOverlay").style.display = "flex";
+  renderDeckSlide();
+  document.addEventListener("keydown", deckKeys);
+}
+function closeDeck() {
+  $("#deckOverlay").style.display = "none";
+  document.removeEventListener("keydown", deckKeys);
+}
+function deckKeys(e) {
+  if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); deckGo(1); }
+  else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); deckGo(-1); }
+  else if (e.key === "Escape") closeDeck();
+  else if (e.key.toLowerCase() === "n") { DECK_NOTES = !DECK_NOTES; renderDeckSlide(); }
+}
+function deckGo(d) {
+  const n = (DECK.slides || []).length;
+  DECK_I = Math.max(0, Math.min(n - 1, DECK_I + d));
+  renderDeckSlide();
+}
+function renderDeckSlide() {
+  const slides = DECK.slides || []; const s = slides[DECK_I] || {};
+  const cover = (s.kind === "title" || s.kind === "closing");
+  const chips = (s.authorities || []).filter(Boolean)
+    .map(a => '<span class="authchip">' + esc(a) + '</span>').join("");
+  const bullets = (s.bullets || []).filter(Boolean)
+    .map(b => '<li>' + esc(b) + '</li>').join("");
+  const sub = s.kind === "title" ? (DECK.subtitle || "") : "";
+  const badge = s.issue_no ? ('<div class="deckbadge">Issue ' + esc(String(s.issue_no)) + '</div>') : "";
+  $("#deckStage").className = "deckslide" + (cover ? " cover" : "");
+  $("#deckStage").innerHTML =
+    badge +
+    '<h2>' + esc(s.title || "") + '</h2>' +
+    (sub ? '<div class="decksub">' + esc(sub) + '</div>' : '') +
+    (bullets ? '<ul>' + bullets + '</ul>' : '') +
+    (chips ? '<div class="authrow">' + chips + '</div>' : '');
+  // presenter notes
+  const q = (s.examiner_q || "").trim(), reb = (s.rebuttal || "").trim(), notes = (s.notes || "").trim();
+  const notesHtml =
+    (notes ? '<p><b>🗣 Say</b><br>' + esc(notes) + '</p>' : '') +
+    (q ? '<p><b>❓ Likely question</b><br>' + esc(q) + '</p>' : '') +
+    (reb ? '<p><b>💪 Rebuttal</b><br>' + esc(reb) + '</p>' : '');
+  $("#deckNotes").innerHTML = notesHtml || '<p style="color:#8b93a7">No notes for this slide.</p>';
+  $("#deckNotes").style.display = (DECK_NOTES && notesHtml) ? "block" : "none";
+  $("#deckPos").textContent = (DECK_I + 1) + " / " + slides.length;
+}
+async function deckExportPptx() {
+  if (!DECK) return;
+  const b = $("#deckPptx"); const orig = b.textContent; b.disabled = true; b.textContent = "Building .pptx…";
+  try {
+    const resp = await fetch("/api/exam/defence/pptx", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deck: DECK }) });
+    if (!resp.ok) { b.textContent = "⚠ export failed"; setTimeout(() => { b.textContent = orig; b.disabled = false; }, 1800); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = ((DECK.title || "Defence Deck").replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 60) || "Defence Deck") + ".pptx";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { b.textContent = "⚠ export failed"; }
+  b.disabled = false; b.textContent = orig;
+}
 </script>
+<style>
+#deckOverlay{position:fixed;inset:0;z-index:9999;background:rgba(8,11,18,.97);display:none;flex-direction:column}
+#deckOverlay .deckbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #222c3d;color:#aab4c6;font-size:13px}
+#deckOverlay .deckbar .sp{flex:1}
+#deckWrap{flex:1;display:flex;gap:16px;padding:22px;overflow:auto}
+.deckslide{flex:1;background:#fbfaf6;color:#0f1420;border-radius:14px;padding:44px 52px;position:relative;box-shadow:0 10px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;min-height:0;overflow:auto;border-top:6px solid #c8a24b}
+.deckslide.cover{background:#0f1420;color:#f4f6fa;justify-content:center;text-align:center}
+.deckslide h2{font-size:34px;line-height:1.15;margin:0 0 14px;font-weight:800}
+.deckslide.cover h2{font-size:46px}
+.deckslide .decksub{font-size:20px;color:#c8a24b;margin-bottom:8px}
+.deckslide ul{font-size:21px;line-height:1.5;margin:8px 0 0;padding-left:26px}
+.deckslide li{margin:0 0 12px}
+.deckslide .deckbadge{position:absolute;top:16px;right:22px;background:#c8a24b;color:#0f1420;font-weight:700;font-size:12px;padding:3px 10px;border-radius:20px}
+.deckslide .authrow{margin-top:auto;padding-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+.authchip{background:#eee6d0;color:#5c4a1e;border:1px solid #d9c894;font-size:13px;padding:3px 10px;border-radius:16px;font-weight:600}
+.deckslide.cover .authchip{background:#1b2434;color:#c8a24b;border-color:#3a3320}
+#deckNotes{width:320px;flex-shrink:0;background:#141b28;color:#dbe2ef;border:1px solid #263148;border-radius:12px;padding:16px 18px;font-size:14px;line-height:1.5;overflow:auto}
+#deckNotes p{margin:0 0 14px}
+#deckNotes b{color:#c8a24b}
+@media (max-width:820px){#deckWrap{flex-direction:column}#deckNotes{width:auto;max-height:34vh}.deckslide h2{font-size:26px}.deckslide ul{font-size:17px}}
+</style>
+<div id="deckOverlay">
+  <div class="deckbar">
+    <b style="color:#c8a24b">🎤 Defence deck</b>
+    <span id="deckPos"></span>
+    <span class="sp"></span>
+    <button class="btn alt" style="width:auto" onclick="DECK_NOTES=!DECK_NOTES;renderDeckSlide()" title="Toggle speaker notes (N)">🗒 Notes</button>
+    <button class="btn alt" id="deckPptx" style="width:auto" onclick="deckExportPptx()">⬇ PowerPoint</button>
+    <button class="btn" style="width:auto" onclick="deckGo(-1)">← Prev</button>
+    <button class="btn gold" style="width:auto" onclick="deckGo(1)">Next →</button>
+    <button class="btn alt" style="width:auto" onclick="closeDeck()" title="Close (Esc)">✕</button>
+  </div>
+  <div id="deckWrap">
+    <div id="deckStage" class="deckslide"></div>
+    <div id="deckNotes"></div>
+  </div>
+</div>
 </body>
 </html>

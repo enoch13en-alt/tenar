@@ -12961,6 +12961,178 @@ def api_exam_interview():
     return jsonify({"items": items, "questions": [i["question"] for i in items]})
 
 
+DEFENCE_DECK = (
+    "You are a moot/viva coach building a DEFENCE PRESENTATION that a law student will stand up and "
+    "present to defend their written answer to an assessment. Turn their work into a STORY the "
+    "student can walk an examiner through slide by slide, and arm them to defend it under questioning.\n\n"
+    "You are given: (1) the PROBLEM (the facts/scenario), (2) the student's COMPILED ANSWER, and (3) "
+    "the per-ISSUE data sheets (each issue with its gathered governing law, cases and scholarly "
+    "sources). Build the deck ONLY from these materials.\n\n"
+    "GROUNDING — non-negotiable: every authority you name (a statute/treaty provision, a case + "
+    "citation, a scholar/work) MUST already appear in the answer or the issue data provided. NEVER "
+    "invent a case, a section number, a citation, a holding or an author. If a slide needs an "
+    "authority that isn't in the materials, state the point without a fabricated cite.\n\n"
+    "STORY ARC — order the deck as a narrative, not a table of contents:\n"
+    "1. A TITLE slide (the matter, the parties, what is at stake).\n"
+    "2. A ROADMAP slide (the questions the answer resolves, as a short list).\n"
+    "3. For EACH issue, a tight arc of slides (usually 4–5):\n"
+    "   - the PROBLEM from the facts (what happened, the tension that forces the question);\n"
+    "   - the GOVERNING LAW (the operative provisions — carry the authorities);\n"
+    "   - the CASES (the locus classicus and what it settled — carry the authorities);\n"
+    "   - (if the materials have them) the SCHOLARLY support;\n"
+    "   - OUR ANSWER (how the reasoning applies the law to the facts and resolves it) and the HOLDING.\n"
+    "   You may merge scholars into the answer slide to keep it tight.\n"
+    "4. A CLOSING slide (why, taken together, the answer holds up).\n\n"
+    "EACH SLIDE is an object with these fields:\n"
+    "  \"kind\": one of 'title','roadmap','facts','law','cases','scholars','answer','holding','closing';\n"
+    "  \"issue_no\": the issue number this slide belongs to (integer), or null for title/roadmap/closing;\n"
+    "  \"title\": a punchy, story-like heading (a phrase, not a sentence);\n"
+    "  \"bullets\": 2–5 SHORT presentation points (phrases, NOT paragraphs — what the audience reads);\n"
+    "  \"authorities\": a list of short citation strings shown as chips (e.g. 's.12 Act 522', 'Exton "
+    "Cubic (JELR 68903)', 'Lamm (2017)') — ONLY those relevant to this slide, [] if none;\n"
+    "  \"notes\": what the student SAYS on this slide — 2–4 conversational sentences, confident and "
+    "persuasive (this is the spoken script, not the bullet text);\n"
+    "  \"examiner_q\": the single MOST LIKELY challenge an examiner puts on this point (or '' for "
+    "title/roadmap);\n"
+    "  \"rebuttal\": how to answer that challenge in 1–2 sentences, citing an authority FROM THE "
+    "MATERIALS where possible (or '' where examiner_q is '').\n\n"
+    "Keep bullets lean and the whole deck presentable (aim ~5–8 slides per issue-set, more only if "
+    "the work genuinely has many issues). Output STRICT JSON and NOTHING else — no markdown, no "
+    "fences: {\"title\": <deck title>, \"subtitle\": <one line>, \"slides\": [ {slide}, ... ]}.")
+
+
+@app.route("/api/exam/defence", methods=["POST"])
+def api_exam_defence():
+    """Build a story-arc DEFENCE slide deck (JSON) from the compiled answer + issue data sheets, so the
+    student can present and defend the work. Grounded strictly in the supplied materials."""
+    body = request.json or {}
+    problem = (body.get("problem") or "").strip()
+    doc = (body.get("doc") or "").strip()
+    issues = body.get("issues") or []
+    if not doc and not issues:
+        return jsonify({"error": "Nothing to build a deck from — gather your issues (and compile) first."}), 400
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    parts = ["PROBLEM (the facts/scenario):\n" + (problem or "(not supplied)")[:6000]]
+    if doc:
+        parts.append("\n\nTHE STUDENT'S COMPILED ANSWER (the work being defended):\n" + doc[:14000])
+    if isinstance(issues, list) and issues:
+        blk = []
+        for it in issues[:12]:
+            if not isinstance(it, dict):
+                continue
+            n = it.get("n") or it.get("issue_no") or "?"
+            blk.append("--- ISSUE " + str(n) + ": " + str(it.get("issue", "")).strip()[:300]
+                       + "\n" + str(it.get("answer", "")).strip()[:3500])
+        if blk:
+            parts.append("\n\nPER-ISSUE DATA SHEETS (the gathered law, cases and scholarly sources — the "
+                         "authorities MUST come from here):\n" + "\n\n".join(blk))
+    user = "".join(parts) + "\n\nBuild the defence deck now as strict JSON."
+    try:
+        resp, _m = _stream_final(c.with_options(max_retries=1, timeout=300.0), ANSWER_MODEL,
+                                 system=cached_system(DEFENCE_DECK), max_tokens=14000,
+                                 messages=[{"role": "user", "content": user}])
+        record_cost(resp, _m)
+        raw = _text_of(resp)
+        deck = _parse_json(raw)
+    except Exception:
+        app.logger.exception("defence deck failed")
+        return jsonify({"error": "Couldn't build the defence deck — try again."}), 500
+    slides = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return jsonify({"error": "The deck came back empty — try again."}), 500
+    return jsonify({"deck": deck})
+
+
+@app.route("/api/exam/defence/pptx", methods=["POST"])
+def api_exam_defence_pptx():
+    """Render a defence deck (JSON from /api/exam/defence, possibly edited) into a downloadable .pptx —
+    slide text on the slide, authorities as a footer line, and the speaker notes + likely examiner
+    question + rebuttal in the slide's NOTES pane (presenter view)."""
+    body = request.json or {}
+    deck = body.get("deck") or {}
+    slides = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return jsonify({"error": "No deck to export."}), 400
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN
+    except Exception:
+        return jsonify({"error": "PowerPoint export isn't available on the server."}), 501
+
+    INK = RGBColor(0x0F, 0x14, 0x20); GOLD = RGBColor(0xC8, 0xA2, 0x4B)
+    GREY = RGBColor(0x6B, 0x72, 0x84); WHITE = RGBColor(0xF4, 0xF6, 0xFA)
+    prs = Presentation()
+    prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)   # 16:9
+    blank = prs.slide_layouts[6]
+    W = prs.slide_width; H = prs.slide_height
+
+    def _tf(shape):
+        tf = shape.text_frame; tf.word_wrap = True; return tf
+
+    for i, s in enumerate(slides):
+        if not isinstance(s, dict):
+            continue
+        kind = (s.get("kind") or "").lower()
+        title = (s.get("title") or "").strip()
+        bullets = [str(b).strip() for b in (s.get("bullets") or []) if str(b).strip()]
+        auths = [str(a).strip() for a in (s.get("authorities") or []) if str(a).strip()]
+        sl = prs.slides.add_slide(blank)
+        is_cover = kind in ("title", "closing")
+        if is_cover:
+            bg = sl.background.fill; bg.solid(); bg.fore_color.rgb = INK
+        # accent bar
+        bar = sl.shapes.add_shape(1, 0, 0, W, Inches(0.18))
+        bar.fill.solid(); bar.fill.fore_color.rgb = GOLD; bar.line.fill.background()
+        # title
+        tb = sl.shapes.add_textbox(Inches(0.7), Inches(0.55), W - Inches(1.4), Inches(1.4))
+        tf = _tf(tb); p = tf.paragraphs[0]; p.text = title or ("Slide " + str(i + 1))
+        p.font.size = Pt(40 if is_cover else 30); p.font.bold = True
+        p.font.color.rgb = WHITE if is_cover else INK
+        # subtitle (cover)
+        if is_cover and (deck.get("subtitle") or s.get("bullets")):
+            sub = deck.get("subtitle") if kind == "title" else "; ".join(bullets)
+            if sub:
+                stb = sl.shapes.add_textbox(Inches(0.7), Inches(2.1), W - Inches(1.4), Inches(1.2))
+                sp = _tf(stb).paragraphs[0]; sp.text = str(sub); sp.font.size = Pt(20); sp.font.color.rgb = GOLD
+        # bullets (content slides)
+        if bullets and not is_cover:
+            body_tb = sl.shapes.add_textbox(Inches(0.8), Inches(1.9), W - Inches(1.6), Inches(4.2))
+            btf = _tf(body_tb)
+            for j, b in enumerate(bullets):
+                bp = btf.paragraphs[0] if j == 0 else btf.add_paragraph()
+                bp.text = "•  " + b; bp.font.size = Pt(20); bp.font.color.rgb = INK
+                bp.space_after = Pt(10)
+        # authorities footer
+        if auths:
+            af = sl.shapes.add_textbox(Inches(0.8), H - Inches(1.15), W - Inches(1.6), Inches(0.8))
+            ap = _tf(af).paragraphs[0]
+            ap.text = "Authorities: " + "  ·  ".join(auths)
+            ap.font.size = Pt(13); ap.font.italic = True
+            ap.font.color.rgb = GOLD if is_cover else GREY
+        # speaker notes: script + examiner Q&A (presenter view)
+        note_bits = []
+        if s.get("notes"): note_bits.append("SAY:\n" + str(s["notes"]).strip())
+        if s.get("examiner_q"): note_bits.append("\nLIKELY QUESTION:\n" + str(s["examiner_q"]).strip())
+        if s.get("rebuttal"): note_bits.append("\nREBUTTAL:\n" + str(s["rebuttal"]).strip())
+        if note_bits:
+            sl.notes_slide.notes_text_frame.text = "\n".join(note_bits)
+
+    import io
+    buf = io.BytesIO(); prs.save(buf); buf.seek(0)
+    fname = re.sub(r"[^A-Za-z0-9 _-]", "", (deck.get("title") or "Defence Deck"))[:60].strip() or "Defence Deck"
+    from flask import send_file
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                     as_attachment=True, download_name=fname + ".pptx")
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
