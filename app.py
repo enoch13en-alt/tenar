@@ -6459,7 +6459,10 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
     c = _client()
     if not c:
         return None, None, False, 0.0
-    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
+    # max_uses kept LOW: each web search reads large primary-source pages and is slow, so a tight
+    # budget is what keeps the pass under the wall-clock cap. 3 targeted searches cover the usual
+    # 2–4 instruments/cases.
+    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
     user = ("LEGAL ISSUE (find the statutes/treaties + the on-point cases for THIS):\n"
             + (issue_line or "").strip()[:1500]
             + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm/extend, find "
@@ -6471,7 +6474,8 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
               "instrument itself (the treaty article, statute section, regulation) and quote ITS OWN "
               "operative words verbatim, with the correct pinpoint — verify the exact article/section "
               "number against the instrument, do not trust the secondary source's attribution."
-            + "\n\nSearch efficiently and output the two marked sections.")
+            + "\n\nBe FAST: run at most 3 targeted searches, go straight to the official primary-source "
+              "page, and do not over-read. Output the two marked sections.")
 
     def run(with_mcp, timeout):
         if with_mcp and servers:
@@ -6539,7 +6543,7 @@ def _gather_authority(issue_line, rule_context):
     ex = _cf.ThreadPoolExecutor(max_workers=1)
     try:
         fut = ex.submit(_authority_law, issue_line, rule_context, law_names, servers, tools)
-        leg, cases, used, cost = fut.result(timeout=560)
+        leg, cases, used, cost = fut.result(timeout=620)
     except _cf.TimeoutError:
         app.logger.warning("gather-authority hard wall-clock cap hit")
         app.config["_last_auth_err"] = "hard wall-clock cap (430s)"
