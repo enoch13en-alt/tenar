@@ -6488,9 +6488,20 @@ def _gather_authority(issue_line, rule_context):
             rest, cases_seg = rest.split("@@CASES@@", 1)
         leg_seg = rest.split("@@LEGISLATION@@", 1)[-1]
         return _clean(leg_seg), _clean(cases_seg), _clean(comp_seg), used, cost
-    except Exception:
+    except Exception as _e:
         app.logger.exception("gather-authority failed")
+        try:
+            app.config["_last_auth_err"] = repr(_e)[:800]
+        except Exception:
+            pass
         return None, None, None, False, 0.0
+
+
+@app.route("/api/mcp/_dbg")
+def api_mcp_dbg():
+    if not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Owner only."}), 403
+    return jsonify({"last_auth_err": app.config.get("_last_auth_err")})
 
 
 @app.route("/api/mcp/<provider>/connect")
