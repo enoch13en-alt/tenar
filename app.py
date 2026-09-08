@@ -13077,13 +13077,17 @@ def api_exam_defence_pptx():
     def _tf(shape):
         tf = shape.text_frame; tf.word_wrap = True; return tf
 
+    def _aslist(v):
+        return v if isinstance(v, list) else ([] if v in (None, "") else [v])
+
     for i, s in enumerate(slides):
+      try:
         if not isinstance(s, dict):
             continue
-        kind = (s.get("kind") or "").lower()
-        title = (s.get("title") or "").strip()
-        bullets = [str(b).strip() for b in (s.get("bullets") or []) if str(b).strip()]
-        auths = [str(a).strip() for a in (s.get("authorities") or []) if str(a).strip()]
+        kind = str(s.get("kind") or "").lower()
+        title = str(s.get("title") or "").strip()
+        bullets = [str(b).strip() for b in _aslist(s.get("bullets")) if str(b).strip()]
+        auths = [str(a).strip() for a in _aslist(s.get("authorities")) if str(a).strip()]
         sl = prs.slides.add_slide(blank)
         is_cover = kind in ("title", "closing")
         if is_cover:
@@ -13124,13 +13128,20 @@ def api_exam_defence_pptx():
         if s.get("rebuttal"): note_bits.append("\nREBUTTAL:\n" + str(s["rebuttal"]).strip())
         if note_bits:
             sl.notes_slide.notes_text_frame.text = "\n".join(note_bits)
+      except Exception:
+        app.logger.exception("defence pptx: skipped a bad slide")
+        continue
 
-    import io
-    buf = io.BytesIO(); prs.save(buf); buf.seek(0)
-    fname = re.sub(r"[^A-Za-z0-9 _-]", "", (deck.get("title") or "Defence Deck"))[:60].strip() or "Defence Deck"
-    from flask import send_file
-    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                     as_attachment=True, download_name=fname + ".pptx")
+    try:
+        import io
+        buf = io.BytesIO(); prs.save(buf); buf.seek(0)
+        fname = re.sub(r"[^A-Za-z0-9 _-]", "", str(deck.get("title") or "Defence Deck"))[:60].strip() or "Defence Deck"
+        from flask import send_file
+        return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                         as_attachment=True, download_name=fname + ".pptx")
+    except Exception:
+        app.logger.exception("defence pptx save failed")
+        return jsonify({"error": "Couldn't build the PowerPoint — try again."}), 500
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
