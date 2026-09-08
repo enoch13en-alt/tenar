@@ -8789,6 +8789,16 @@ def api_interpret():
             "APPLYING cases and the exact statutory/constitutional text for this provision and canon, and "
             "cite what they return (case name + citation, section text). Treat those results as grounded "
             "authority; still never invent a case or a holding the tools did not return.")
+    user = (
+        "PROVISION TO INTERPRET:\n" + (provision or "(none supplied — the facts state it)") +
+        "\n\nFACTS IT APPLIES TO:\n" + (facts or "(none supplied)") +
+        "\n\nINTERPRETIVE LINE THE AUTHOR HAS CHOSEN TO ARGUE:\n" + line +
+        law_block +
+        "\n\nWrite the interpretation as a single flowing legal argument, in the formal impersonal "
+        "register: construe the provision on the chosen line and reach a conclusion on these facts; "
+        "then name the equal-and-opposite rule, apply it, show the problems it produces, and justify "
+        "why the chosen line prevails. Cite only authorities in the retrieved materials (or, if the "
+        "judy.legal tools are connected, what they actually return); never invent a case or holding.")
     used_judy = False
     pieces, this_usd, total_usd = [], 0.0, None
     try:
