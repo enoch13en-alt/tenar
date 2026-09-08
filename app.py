@@ -6474,14 +6474,20 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
             + "\n\nSearch efficiently and output the two marked sections.")
 
     def run(with_mcp, timeout):
-        kw = dict(model=AUDIT_MODEL, max_tokens=6000,
-                  system=_authority_extract_prompt(names if with_mcp else [], "law"),
-                  messages=[{"role": "user", "content": user}],
-                  tools=((list(tools) + web) if (with_mcp and servers) else web))
+        cc = c.with_options(max_retries=0, timeout=timeout)
         if with_mcp and servers:
-            kw["mcp_servers"] = servers
-            kw["betas"] = ["mcp-client-2025-11-20"]
-        return c.with_options(max_retries=0, timeout=timeout).beta.messages.create(**kw)
+            # MCP databases attached → MUST use the beta endpoint (mcp connector lives there).
+            return cc.beta.messages.create(
+                model=AUDIT_MODEL, max_tokens=6000,
+                system=_authority_extract_prompt(names, "law"),
+                messages=[{"role": "user", "content": user}],
+                tools=list(tools) + web, mcp_servers=servers, betas=["mcp-client-2025-11-20"])
+        # WEB-ONLY → the STANDARD messages endpoint, where the web_search server tool actually
+        # runs (it is inert on the beta MCP endpoint — the cause of the empty international results).
+        return cc.messages.create(
+            model=AUDIT_MODEL, max_tokens=6000,
+            system=_authority_extract_prompt([], "law"),
+            messages=[{"role": "user", "content": user}], tools=web)
 
     try:
         try:
