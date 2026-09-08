@@ -6448,7 +6448,12 @@ def _gather_authority(issue_line, rule_context):
             msg = str(_e1)
             if conn["mcp_servers"] and ("MCP server" in msg or "Connection error" in msg):
                 app.logger.warning("authority pass: MCP unreachable, falling back to web-only")
-                resp = _run(with_mcp=False, timeout=240.0)
+                try:
+                    resp = _run(with_mcp=False, timeout=480.0)
+                except _anthropic_timeout():
+                    app.logger.warning("authority web-only fallback timed out")
+                    app.config["_last_auth_err"] = "APITimeoutError (web-only fallback)"
+                    return None, None, None, False, 0.0
             else:
                 raise
         _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
