@@ -5500,25 +5500,27 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # citation-annotated text — so an Application/Conclusion can never reach the page.
         _final_answer = _tidy_gather_markdown(_strip_gather_analysis(_final_answer))
         annotated = _tidy_gather_markdown(_strip_gather_analysis(annotated))
-        # LIVE judy.legal extraction (opt-in): pull BOTH the statutes/laws that apply AND the leading
+        # LIVE authority extraction (baked in): across every connected legal database (judy=African,
+        # CourtListener=US, EULEX=EU) plus web search for public international law, the model routes by
+        # the issue's jurisdiction and pulls BOTH the statutes/treaties that apply AND the leading
         # on-point cases (full names + citations, facts, ratio, obiter). Cases REPLACE the corpus
         # '## Cases' section; the confirmed legislation is added as its own section after '## Rule'.
-        # This is where the user wants judy — to find and extract good law (statute + cases) properly.
         if use_judy:
             try:
                 _rt = rule_text if "rule_text" in dir() else ""
             except Exception:
                 _rt = ""
-            _jleg, _jcases, _jused, _jcost = _judy_gather_authority(question, _rt)
+            _jleg, _jcases, _jused, _jcost = _gather_authority(question, _rt)
             if _jcases:
-                _jsection = ("## Cases\n\n*Extracted live from judy.legal — full name, citation, "
-                             "facts, ratio, obiter.*\n\n" + _jcases.strip())
+                _jsection = ("## Cases\n\n*Extracted live from the legal databases (judy.legal / "
+                             "CourtListener / EULEX) or authoritative web sources — full name, "
+                             "citation, court & status, facts, ratio, obiter.*\n\n" + _jcases.strip())
                 _final_answer = _splice_cases_section(_final_answer, _jsection)
                 annotated = _splice_cases_section(annotated, _jsection)
             if _jleg:
-                _lsection = ("## Statutes & laws that apply (judy.legal)\n\n*Confirmed live on "
-                             "judy.legal — full instrument names + applicable provisions.*\n\n"
-                             + _jleg.strip())
+                _lsection = ("## Statutes & laws that apply\n\n*Confirmed live on the legal databases "
+                             "or authoritative primary sources — full instrument names + applicable "
+                             "provisions.*\n\n" + _jleg.strip())
                 _final_answer = _insert_after_rule(_final_answer, _lsection)
                 annotated = _insert_after_rule(annotated, _lsection)
             if _jcases or _jleg:
@@ -6121,27 +6123,48 @@ def api_build():
 # registration). The owner authorizes ONCE in the browser; we store the tokens on the /data disk and
 # refresh silently, then pass the access token to Anthropic's MCP connector (mcp_servers) so Claude can
 # search real African case law / legislation and ground answers in it — filling the "not in corpus" gaps.
-JUDY_MCP_URL = "https://mcp.judy.legal/"
-JUDY_BASE = "https://mcp.judy.legal"
-JUDY_STORE = os.path.join(DATA, ".judy_oauth.json")
-JUDY_REDIRECT = (os.environ.get("PUBLIC_BASE_URL") or "https://tenar.onrender.com").rstrip("/") + "/api/judy/callback"
-JUDY_SCOPE = "openid read write"
-_JUDY_PKCE = {}   # state -> {"verifier": str, "ts": float}  (transient, in-process; the flow completes in seconds)
+# ------------------------------------------------------------------ MCP LEGAL DATABASES
+# TENAR connects to several hosted legal-research MCP servers over OAuth. judy.legal covers
+# African (incl. Ghanaian) law; CourtListener covers US case law; EULEX covers EU law. They
+# share ONE generalised OAuth + connector code path (below). Each issue's authority pass carries
+# whichever are connected + live web search, and the model routes by the issue's jurisdiction.
+_PUBLIC_BASE = (os.environ.get("PUBLIC_BASE_URL") or "https://tenar.onrender.com").rstrip("/")
+MCP_PROVIDERS = {
+    "judy": {"label": "judy.legal", "desc": "African (incl. Ghanaian) case law & legislation",
+             "mcp_url": "https://mcp.judy.legal/", "base": "https://mcp.judy.legal",
+             "scope": "openid read write", "store": ".judy_oauth.json"},
+    "courtlistener": {"label": "CourtListener", "desc": "US federal & state case law + citation check",
+                      "mcp_url": "https://mcp.courtlistener.com/", "base": "https://mcp.courtlistener.com",
+                      "scope": "openid read", "store": ".courtlistener_oauth.json"},
+    "eulex": {"label": "EULEX.AI", "desc": "EU law (EUR-Lex) + French/Croatian",
+              "mcp_url": "https://mcp.eulex.ai/", "base": "https://mcp.eulex.ai",
+              "scope": "openid read", "store": ".eulex_oauth.json"},
+}
+_MCP_PKCE = {}   # state -> {"provider": str, "verifier": str, "ts": float}  (transient, in-process)
 
-def _judy_load():
+def _mcp_p(provider):
+    p = MCP_PROVIDERS.get(provider)
+    if not p:
+        raise RuntimeError("unknown MCP provider: " + str(provider))
+    return p
+
+def _mcp_store_path(provider):
+    return os.path.join(DATA, _mcp_p(provider)["store"])
+
+def _mcp_load(provider):
     try:
-        return json.load(open(JUDY_STORE))
+        return json.load(open(_mcp_store_path(provider)))
     except Exception:
         return {}
 
-def _judy_save(d):
+def _mcp_save(provider, d):
     try:
-        json.dump(d, open(JUDY_STORE, "w"))
+        json.dump(d, open(_mcp_store_path(provider), "w"))
     except Exception:
-        app.logger.exception("judy token save failed")
+        app.logger.exception("%s token save failed", provider)
 
-def _judy_http(url, form=None, method="POST"):
-    """Small stdlib HTTP helper for the OAuth endpoints (form-encoded POST / JSON POST)."""
+def _mcp_http(url, form=None, method="POST"):
+    """Small stdlib HTTP helper for the OAuth endpoints (form-encoded POST / JSON POST / GET)."""
     import urllib.request, urllib.parse
     if isinstance(form, dict) and form.get("_json"):
         data = json.dumps(form["_json"]).encode(); ct = "application/json"
@@ -6156,27 +6179,60 @@ def _judy_http(url, form=None, method="POST"):
     with urllib.request.urlopen(req, timeout=25) as r:
         return json.loads(r.read().decode() or "{}")
 
-def _judy_client_id():
+def _mcp_endpoints(provider):
+    """Resolve the OAuth endpoints. Prefer RFC 8414 Authorization-Server Metadata discovery (so each
+    provider's real register/authorize/token URLs are used); fall back to base-relative paths (judy's
+    verified shape). Cached in the provider's store."""
+    p = _mcp_p(provider)
+    st = _mcp_load(provider)
+    ep = st.get("endpoints")
+    if ep and ep.get("token_endpoint"):
+        return ep
+    base = p["base"]
+    ep = {"registration_endpoint": base + "/register",
+          "authorization_endpoint": base + "/authorize",
+          "token_endpoint": base + "/token"}
+    for well_known in ("/.well-known/oauth-authorization-server",
+                       "/.well-known/openid-configuration"):
+        try:
+            meta = _mcp_http(base + well_known, method="GET")
+            if meta.get("token_endpoint") and meta.get("authorization_endpoint"):
+                ep = {"registration_endpoint": meta.get("registration_endpoint", ep["registration_endpoint"]),
+                      "authorization_endpoint": meta["authorization_endpoint"],
+                      "token_endpoint": meta["token_endpoint"]}
+                break
+        except Exception:
+            continue
+    st["endpoints"] = ep
+    _mcp_save(provider, st)
+    return ep
+
+def _mcp_redirect(provider):
+    return _PUBLIC_BASE + "/api/mcp/" + provider + "/callback"
+
+def _mcp_client_id(provider):
     """Register TENAR as a PUBLIC OAuth client (PKCE, no secret) once via dynamic client registration."""
-    st = _judy_load()
+    p = _mcp_p(provider)
+    st = _mcp_load(provider)
     if st.get("client_id"):
         return st["client_id"]
-    reg = _judy_http(JUDY_BASE + "/register", {"_json": {
-        "client_name": "TENAR", "redirect_uris": [JUDY_REDIRECT],
+    ep = _mcp_endpoints(provider)
+    reg = _mcp_http(ep["registration_endpoint"], {"_json": {
+        "client_name": "TENAR", "redirect_uris": [_mcp_redirect(provider)],
         "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
-        "token_endpoint_auth_method": "none", "scope": JUDY_SCOPE}})
+        "token_endpoint_auth_method": "none", "scope": p["scope"]}})
     cid = reg.get("client_id")
     if not cid:
-        raise RuntimeError("judy.legal client registration returned no client_id")
+        raise RuntimeError(p["label"] + " client registration returned no client_id")
     st["client_id"] = cid
-    _judy_save(st)
+    _mcp_save(provider, st)
     return cid
 
-def _judy_token():
-    """Return a valid judy.legal access token, refreshing if it's near expiry. None if not connected
+def _mcp_token(provider):
+    """Return a valid access token for the provider, refreshing if near expiry. None if not connected
     (or refresh failed → owner must reconnect)."""
     import time as _t
-    st = _judy_load()
+    st = _mcp_load(provider)
     at = st.get("access_token")
     if not at:
         return None
@@ -6186,110 +6242,145 @@ def _judy_token():
     if not rt:
         return None
     try:
-        tok = _judy_http(JUDY_BASE + "/token", {
+        ep = _mcp_endpoints(provider)
+        tok = _mcp_http(ep["token_endpoint"], {
             "grant_type": "refresh_token", "refresh_token": rt, "client_id": st.get("client_id", "")})
         st["access_token"] = tok.get("access_token", at)
         if tok.get("refresh_token"):
             st["refresh_token"] = tok["refresh_token"]
         st["expires_at"] = _t.time() + int(tok.get("expires_in", 3600) or 3600)
-        _judy_save(st)
+        _mcp_save(provider, st)
         return st["access_token"]
     except Exception:
-        app.logger.exception("judy token refresh failed")
+        app.logger.exception("%s token refresh failed", provider)
         return None
 
-def _judy_connector():
-    """The (mcp_servers, tools, betas) triple for the Anthropic MCP connector — or None if not connected."""
-    tok = _judy_token()
-    if not tok:
-        return None
-    return {
-        "mcp_servers": [{"type": "url", "url": JUDY_MCP_URL, "name": "judy", "authorization_token": tok}],
-        "tools": [{"type": "mcp_toolset", "mcp_server_name": "judy"}],
-        "betas": ["mcp-client-2025-11-20"],
-    }
+def _authority_connectors():
+    """Merge every CONNECTED legal-database MCP provider into one Anthropic MCP-connector triple:
+    {mcp_servers, tools, betas, names}. Empty names list = none connected (web-only authority)."""
+    servers, tools, names = [], [], []
+    for name in MCP_PROVIDERS:
+        tok = _mcp_token(name)
+        if tok:
+            servers.append({"type": "url", "url": MCP_PROVIDERS[name]["mcp_url"],
+                            "name": name, "authorization_token": tok})
+            tools.append({"type": "mcp_toolset", "mcp_server_name": name})
+            names.append(name)
+    return {"mcp_servers": servers, "tools": tools,
+            "betas": ["mcp-client-2025-11-20"], "names": names}
 
-JUDY_AUTHORITY_EXTRACT = (
-    "You are a legal-AUTHORITY extractor with live MCP tools connected to judy.legal — an "
-    "authoritative African (incl. Ghanaian) case-law AND legislation database. Your job is to FIND "
-    "and EXTRACT, for the legal issue given, BOTH (A) the STATUTES AND ANY OTHER LAWS that apply, "
-    "and (B) the leading on-point DECIDED CASES. USE the judy.legal tools to search and OPEN the "
-    "actual instruments and reports; extract ONLY from what the tools return — never invent an Act, a "
-    "section, a case, a citation, a fact or a holding, and never fill a gap from memory.\n\n"
-    "Output EXACTLY two sections in this order, each introduced by its marker line ON ITS OWN LINE, "
-    "and NOTHING else — no preamble, no closing, and NEVER narrate your searches ('I'll search…', "
-    "'Good, the legislation is confirmed…', 'Let me now…'):\n\n"
-    "@@LEGISLATION@@\n"
-    "ONLY the statutes, regulations (L.I.), constitutional provisions and other binding laws that "
-    "ACTUALLY DECIDE this issue — the operative provisions, not every section that mentions the "
-    "subject. ONE bullet per instrument, the governing instrument first:\n"
-    "- **<Full instrument name — short title, year and number, e.g. 'the Water Resources Commission "
-    "Act, 1996 (Act 522)'; for the Constitution, 'the 1992 Constitution'; for an L.I., its full "
-    "title and number>**\n"
-    "  - *s.<N> / reg.<N> / art.<N>:* \"<the operative words VERBATIM as judy.legal gives them, in "
-    "quotation marks>\" — <one plain line on what it requires, prohibits or empowers>\n"
-    "  - (repeat ONLY for each provision the issue genuinely turns on)\n"
-    "Give the FULL instrument name the FIRST time it appears; quote the operative words exactly (do "
-    "not paraphrase, compress or modernise); if judy returns the section number but not full text, "
-    "give the number and a one-line summary and mark it '(text not shown on judy)'.\n\n"
-    "@@CASES@@\n"
-    "Bring the LOCUS CLASSICUS and the FEW authorities that SEAL THE DEAL — not a survey. First, "
-    "identify the locus classicus: the leading, foundational decision the courts treat as SETTLING "
-    "this point (normally the highest court's most-cited authority on it). Put it FIRST and mark it. "
-    "Then add ONLY 1–3 further authorities that are genuinely DISPOSITIVE — that bind or decisively "
-    "confirm the point. Prefer the APEX court available (Supreme Court > Court of Appeal > High "
-    "Court) and the most-cited, still-good law; drop anything merely related, analogous, or "
-    "duplicative. A handful of dispositive authorities is the goal — usually 2–4 in total, never a "
-    "long list. ONE bullet per case:\n"
-    "- **<Full case name — all named parties, not truncated> <full citation exactly as judy.legal "
-    "reports it>**<add ' — **locus classicus**' on this line for the leading authority only>\n"
-    "  - *Court & status:* <the deciding court, and whether it is binding apex authority or "
-    "persuasive — so its weight is clear>\n"
-    "  - *Facts:* <material facts, 1–3 sentences — only what the report states>\n"
-    "  - *Ratio:* <the ratio decidendi — the binding principle actually decided, 1–2 sentences>\n"
-    "  - *Obiter:* <any notable obiter dicta; 'none noted' if none>\n"
-    "  - *Relevance:* <one line: why it seals THIS issue>\n\n"
-    "Keep ratio and obiter DISTINCT (ratio = necessary to the decision; obiter = said in passing). Do "
-    "NOT argue, apply the law to the facts, or reach a conclusion — this is a data sheet of good law. "
-    "100% ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding and section MUST come "
-    "from what the judy.legal tools actually returned — never approximate a citation, never state a "
-    "holding the report does not support, never fill a gap from memory. If there is genuinely no "
-    "direct authority, give the single closest one and say so honestly in *Relevance:* — do NOT "
-    "manufacture a list to look complete. Under EITHER marker, if judy.legal returns nothing usable, "
-    "put exactly this one line under that marker: '⚠ none found on judy.legal'. ALWAYS emit BOTH "
-    "marker lines, even when one section is empty.")
+def _authority_extract_prompt(connected_names):
+    """Build the authority-extractor system prompt, naming the databases actually connected and how to
+    ROUTE the issue to the right one (judy=African, CourtListener=US, EULEX=EU, web=public intl law)."""
+    src_lines = []
+    if "judy" in connected_names:
+        src_lines.append("- judy.legal — AFRICAN (incl. Ghanaian) case law & legislation. USE IT for "
+                         "Ghanaian / African domestic issues.")
+    if "courtlistener" in connected_names:
+        src_lines.append("- CourtListener — US federal & state case law. USE IT for United States "
+                         "authority (and, cautiously, US persuasive/comparative material).")
+    if "eulex" in connected_names:
+        src_lines.append("- EULEX — EU law (EUR-Lex) + French/Croatian. USE IT for European Union / EU "
+                         "member-state law.")
+    src_lines.append("- Web search — for PUBLIC INTERNATIONAL LAW the databases do not cover: treaties "
+                     "and conventions, ICJ / ITLOS / PCA / arbitral decisions, UN instruments, and "
+                     "foreign domestic law not in the databases. Search ONLY authoritative primary "
+                     "sources — the UN Treaty Collection (treaties.un.org), the ICJ (icj-cij.org), the "
+                     "PCA, official government/gazette sites, and WorldLII/BAILII — and quote the "
+                     "treaty article or judgment VERBATIM from what the page returns; never a blog, wiki "
+                     "or summariser as the authority.")
+    return (
+        "You are a legal-AUTHORITY extractor with live tools connected to authoritative legal "
+        "databases and web search. Your job is to FIND and EXTRACT, for the legal issue given, BOTH "
+        "(A) the STATUTES / treaties / any binding laws that apply, and (B) the leading on-point "
+        "DECIDED CASES. Extract ONLY from what the tools actually return — never invent an Act, a "
+        "section, a treaty article, a case, a citation, a fact or a holding, and never fill a gap "
+        "from memory.\n\n"
+        "ROUTE BY JURISDICTION — first work out which legal system(s) this issue belongs to, then "
+        "search ONLY the source(s) that fit it (do NOT waste searches on databases for the wrong "
+        "jurisdiction). Available sources:\n" + "\n".join(src_lines) + "\n"
+        "A domestic Ghanaian issue → judy only. A US issue → CourtListener. An EU issue → EULEX. A "
+        "public-international-law issue (treaty/ICJ/arbitration) → web search of the primary sources. "
+        "A genuinely cross-border issue may need more than one; use judgment, stay minimal.\n\n"
+        "Output EXACTLY two sections in this order, each introduced by its marker line ON ITS OWN "
+        "LINE, and NOTHING else — no preamble, no closing, and NEVER narrate your searches ('I'll "
+        "search…', 'Good, the legislation is confirmed…', 'Let me now…'):\n\n"
+        "@@LEGISLATION@@\n"
+        "ONLY the statutes, regulations, treaty provisions, constitutional provisions and other "
+        "binding laws that ACTUALLY DECIDE this issue — the operative provisions, not every section "
+        "that mentions the subject. ONE bullet per instrument, the governing instrument first:\n"
+        "- **<Full instrument name — e.g. 'the Water Resources Commission Act, 1996 (Act 522)'; 'the "
+        "1992 Constitution'; a treaty by its full title, place and year e.g. 'the United Nations "
+        "Convention on the Law of the Sea (Montego Bay, 1982)'>**\n"
+        "  - *s./reg./art. <N>:* \"<the operative words VERBATIM as the tool returns them>\" — <one "
+        "plain line on what it requires, prohibits or empowers>\n"
+        "  - (repeat ONLY for each provision the issue genuinely turns on)\n"
+        "Give the FULL instrument name the FIRST time it appears; quote the operative words exactly "
+        "(do not paraphrase, compress or modernise); if the tool returns the number but not the full "
+        "text, give the number and a one-line summary and mark it '(full text not shown)'.\n\n"
+        "@@CASES@@\n"
+        "Bring the LOCUS CLASSICUS and the FEW authorities that SEAL THE DEAL — not a survey. First, "
+        "identify the locus classicus: the leading, foundational decision the courts treat as "
+        "SETTLING this point (normally the highest court's most-cited authority on it — for "
+        "international law, the leading ICJ/PCIJ or arbitral decision). Put it FIRST and mark it. "
+        "Then add ONLY 1–3 further authorities that are genuinely DISPOSITIVE. Prefer the APEX court "
+        "available (for a domestic system: Supreme Court > Court of Appeal > High Court) and the "
+        "most-cited, still-good law; drop anything merely related, analogous or duplicative — usually "
+        "2–4 in total, never a long list. ONE bullet per case:\n"
+        "- **<Full case name — all named parties, not truncated> <full citation exactly as the tool "
+        "reports it>**<add ' — **locus classicus**' on this line for the leading authority only>\n"
+        "  - *Court & status:* <the deciding court/tribunal, and whether it is binding apex authority "
+        "or persuasive — so its weight is clear>\n"
+        "  - *Facts:* <material facts, 1–3 sentences — only what the report states>\n"
+        "  - *Ratio:* <the ratio decidendi — the binding principle actually decided, 1–2 sentences>\n"
+        "  - *Obiter:* <any notable obiter dicta; 'none noted' if none>\n"
+        "  - *Relevance:* <one line: why it seals THIS issue>\n\n"
+        "Keep ratio and obiter DISTINCT (ratio = necessary to the decision; obiter = said in "
+        "passing). Do NOT argue, apply the law to the facts, or reach a conclusion — this is a data "
+        "sheet of good law. 100% ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding, "
+        "section and treaty article MUST come from what the tools actually returned — never "
+        "approximate a citation, never state a holding a report does not support, never fill a gap "
+        "from memory. If there is genuinely no direct authority, give the single closest one and say "
+        "so honestly in *Relevance:* — do NOT manufacture a list to look complete. Under EITHER "
+        "marker, if nothing usable is found, put exactly this one line under that marker: '⚠ none "
+        "found'. ALWAYS emit BOTH marker lines, even when one section is empty.")
 
 
-def _judy_gather_authority(issue_line, rule_context):
-    """Live judy.legal pass for the gather: find BOTH the applicable statutes/laws AND the leading
-    on-point cases, extracted properly (full names, sections verbatim, facts/ratio/obiter). Returns
-    (legislation_block, cases_block, used, cost_usd); each block is None if empty/absent."""
-    judy = _judy_connector()
-    if not judy:
-        return None, None, False, 0.0
+def _gather_authority(issue_line, rule_context):
+    """Live authority pass for the gather across every connected legal database (judy=African,
+    CourtListener=US, EULEX=EU) PLUS web search for public international law — the model routes by the
+    issue's jurisdiction. Finds BOTH the applicable statutes/treaties AND the leading cases, extracted
+    properly (full names, provisions verbatim, facts/ratio/obiter). Returns (legislation_block,
+    cases_block, used, cost_usd); each block is None if empty/absent."""
+    conn = _authority_connectors()
     c = _client()
     if not c:
         return None, None, False, 0.0
-    user = ("LEGAL ISSUE (find the statutes/laws that apply AND the on-point cases for THIS):\n"
-            + (issue_line or "").strip()[:1500]
-            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these on "
-               "judy.legal, add any applicable statute/regulation/constitutional provision they miss, "
-               "and find the cases applying them — reproduce FULL instrument names):\n"
+    # tools = every connected DB's toolset + live web search (for public international law).
+    tools = list(conn["tools"]) + [{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}]
+    user = ("LEGAL ISSUE (find the statutes/treaties/laws that apply AND the on-point cases for THIS — "
+            "route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
+            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these, add "
+               "any applicable statute/treaty/regulation/constitutional provision they miss, and find "
+               "the cases applying them — reproduce FULL instrument names):\n"
                + rule_context.strip()[:4000] if rule_context else "")
-            + "\n\nSearch judy.legal now and output the two marked sections in the required shape.")
+            + "\n\nSearch now and output the two marked sections in the required shape.")
     try:
-        resp = c.beta.messages.create(
-            model=AUDIT_MODEL, max_tokens=7000,
-            system=JUDY_AUTHORITY_EXTRACT,
-            messages=[{"role": "user", "content": user}],
-            mcp_servers=judy["mcp_servers"], tools=judy["tools"], betas=judy["betas"])
-        used = any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content)
-        # The MCP connector interleaves the model's search NARRATION ("I'll search…", "Good, the
-        # legislation is confirmed…") as text blocks BEFORE/BETWEEN the tool calls. Keep ONLY the
-        # text AFTER the last tool block — that is the finished answer, not the running commentary.
+        kw = dict(model=AUDIT_MODEL, max_tokens=7000,
+                  system=_authority_extract_prompt(conn["names"]),
+                  messages=[{"role": "user", "content": user}], tools=tools)
+        if conn["mcp_servers"]:
+            kw["mcp_servers"] = conn["mcp_servers"]
+            kw["betas"] = conn["betas"]
+        resp = c.beta.messages.create(**kw)
+        _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
+                    "web_search_tool_result", "tool_use", "tool_result")
+        used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
+        # The connector/web loop interleaves the model's search NARRATION as text blocks BEFORE/BETWEEN
+        # the tool calls. Keep ONLY the text AFTER the last tool block — the finished answer.
         _last_tool = -1
         for _i, _b in enumerate(resp.content):
-            if getattr(_b, "type", "") in ("mcp_tool_use", "mcp_tool_result"):
+            if getattr(_b, "type", "") in _TOOLISH:
                 _last_tool = _i
         full = "".join(getattr(_b, "text", "") for _b in resp.content[_last_tool + 1:]
                        if getattr(_b, "type", "") == "text").strip()
@@ -6300,15 +6391,13 @@ def _judy_gather_authority(issue_line, rule_context):
 
         def _clean(seg):
             seg = (seg or "").strip()
-            if not seg or "none found on judy" in seg.lower():
+            if not seg or re.search(r'(?i)^\W*(⚠\s*)?none found', seg):
                 return None
-            # drop any residual lead-in narration before the first bullet
             mm = re.search(r'(?m)^[\-\*]\s', seg)
             if mm and mm.start() > 0:
                 seg = seg[mm.start():].strip()
             return seg or None
 
-        # Split on the two markers. Tolerate the model dropping the LEGISLATION marker.
         leg_seg = cases_seg = ""
         if "@@CASES@@" in full:
             head, cases_seg = full.split("@@CASES@@", 1)
@@ -6317,92 +6406,107 @@ def _judy_gather_authority(issue_line, rule_context):
             leg_seg = full.split("@@LEGISLATION@@", 1)[-1]
         return _clean(leg_seg), _clean(cases_seg), used, cost
     except Exception:
-        app.logger.exception("judy gather-authority failed")
+        app.logger.exception("gather-authority failed")
         return None, None, False, 0.0
 
 
-@app.route("/api/judy/connect")
-def api_judy_connect():
-    """Owner-only: start the judy.legal OAuth login. Redirects the browser to judy.legal's consent."""
+@app.route("/api/mcp/<provider>/connect")
+def api_mcp_connect(provider):
+    """Owner-only: start a legal-database OAuth login. Redirects the browser to the provider's consent."""
     import time as _t, urllib.parse, base64 as _b64, hashlib as _hashlib
+    if provider not in MCP_PROVIDERS:
+        return jsonify({"error": "Unknown database."}), 404
     if not (current_user() or {}).get("is_admin"):
         return jsonify({"error": "Owner only."}), 403
+    label = MCP_PROVIDERS[provider]["label"]
     try:
-        cid = _judy_client_id()
+        cid = _mcp_client_id(provider)
+        ep = _mcp_endpoints(provider)
     except Exception as e:
-        return jsonify({"error": "Couldn't register with judy.legal: " + str(e)}), 502
+        return jsonify({"error": "Couldn't register with " + label + ": " + str(e)}), 502
     verifier = _b64.urlsafe_b64encode(secrets.token_bytes(48)).decode().rstrip("=")
     challenge = _b64.urlsafe_b64encode(_hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     state = secrets.token_urlsafe(24)
-    _JUDY_PKCE[state] = {"verifier": verifier, "ts": _t.time()}
-    # prune old pending flows
-    for k in [k for k, v in list(_JUDY_PKCE.items()) if _t.time() - v.get("ts", 0) > 900]:
-        _JUDY_PKCE.pop(k, None)
+    _MCP_PKCE[state] = {"provider": provider, "verifier": verifier, "ts": _t.time()}
+    for k in [k for k, v in list(_MCP_PKCE.items()) if _t.time() - v.get("ts", 0) > 900]:
+        _MCP_PKCE.pop(k, None)
     q = urllib.parse.urlencode({
-        "response_type": "code", "client_id": cid, "redirect_uri": JUDY_REDIRECT,
-        "scope": JUDY_SCOPE, "state": state, "code_challenge": challenge, "code_challenge_method": "S256"})
-    return redirect(JUDY_BASE + "/authorize?" + q)
+        "response_type": "code", "client_id": cid, "redirect_uri": _mcp_redirect(provider),
+        "scope": MCP_PROVIDERS[provider]["scope"], "state": state,
+        "code_challenge": challenge, "code_challenge_method": "S256"})
+    return redirect(ep["authorization_endpoint"] + "?" + q)
 
-@app.route("/api/judy/callback")
-def api_judy_callback():
+@app.route("/api/mcp/<provider>/callback")
+def api_mcp_callback(provider):
     """OAuth redirect target (browser carries the owner's session). Exchanges the code for tokens."""
     import time as _t
+    if provider not in MCP_PROVIDERS:
+        return "Unknown database.", 404
+    label = MCP_PROVIDERS[provider]["label"]
     if current_user() is None:
-        return "Please log in to TENAR first, then reconnect judy.legal.", 401
+        return "Please log in to TENAR first, then reconnect " + label + ".", 401
     err = request.args.get("error")
     if err:
-        return _judy_close_page("judy.legal declined: " + err)
+        return _mcp_close_page(provider, label + " declined: " + err)
     code = request.args.get("code"); state = request.args.get("state")
-    pk = _JUDY_PKCE.pop(state or "", None)
-    if not code or not pk:
-        return _judy_close_page("The connection link expired — click Connect judy.legal again.")
-    st = _judy_load()
+    pk = _MCP_PKCE.pop(state or "", None)
+    if not code or not pk or pk.get("provider") != provider:
+        return _mcp_close_page(provider, "The connection link expired — click Connect " + label + " again.")
+    st = _mcp_load(provider)
     try:
-        tok = _judy_http(JUDY_BASE + "/token", {
-            "grant_type": "authorization_code", "code": code, "redirect_uri": JUDY_REDIRECT,
+        ep = _mcp_endpoints(provider)
+        tok = _mcp_http(ep["token_endpoint"], {
+            "grant_type": "authorization_code", "code": code, "redirect_uri": _mcp_redirect(provider),
             "client_id": st.get("client_id", ""), "code_verifier": pk["verifier"]})
     except Exception as e:
-        app.logger.exception("judy token exchange failed")
-        return _judy_close_page("Token exchange failed: " + str(e))
+        app.logger.exception("%s token exchange failed", provider)
+        return _mcp_close_page(provider, "Token exchange failed: " + str(e))
     if not tok.get("access_token"):
-        return _judy_close_page("judy.legal did not return a token — try again.")
+        return _mcp_close_page(provider, label + " did not return a token — try again.")
     st["access_token"] = tok["access_token"]
     st["refresh_token"] = tok.get("refresh_token", st.get("refresh_token"))
     st["expires_at"] = _t.time() + int(tok.get("expires_in", 3600) or 3600)
-    st["scope"] = tok.get("scope", JUDY_SCOPE)
-    _judy_save(st)
-    return _judy_close_page("✅ Connected to judy.legal. You can close this tab and return to TENAR.")
+    st["scope"] = tok.get("scope", MCP_PROVIDERS[provider]["scope"])
+    _mcp_save(provider, st)
+    return _mcp_close_page(provider, "✅ Connected to " + label + ". You can close this tab and return to TENAR.")
 
-def _judy_close_page(msg):
+def _mcp_close_page(provider, msg):
     from flask import Response as _R
     html = ("<!doctype html><meta charset=utf-8><body style='font-family:system-ui;background:#0f1420;"
             "color:#e8ecf4;padding:40px;text-align:center'><div style='max-width:460px;margin:60px auto'>"
             "<div style='font-size:15px;line-height:1.6'>" + _esc_html(msg) + "</div>"
             "<p style='margin-top:20px;color:#8b93a7;font-size:12px'>This window can be closed.</p>"
-            "<script>try{window.opener&&window.opener.postMessage('judy-connected','*')}catch(e){}</script>"
-            "</div></body>")
+            "<script>try{window.opener&&window.opener.postMessage('mcp-connected:" + provider + "','*')}"
+            "catch(e){}</script></div></body>")
     return _R(html, mimetype="text/html")
 
 def _esc_html(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
-@app.route("/api/judy/status")
-def api_judy_status():
+@app.route("/api/mcp/status")
+def api_mcp_status():
+    """Owner-only: connection state of every legal database, for the Exam Coach status row."""
     if not (current_user() or {}).get("is_admin"):
         return jsonify({"error": "Owner only."}), 403
     import time as _t
-    st = _judy_load()
-    connected = bool(st.get("access_token"))
-    return jsonify({"connected": connected, "registered": bool(st.get("client_id")),
-                    "expires_in": max(0, int(float(st.get("expires_at", 0) or 0) - _t.time())) if connected else 0})
+    out = {}
+    for name, p in MCP_PROVIDERS.items():
+        st = _mcp_load(name)
+        connected = bool(st.get("access_token"))
+        out[name] = {"label": p["label"], "desc": p["desc"], "connected": connected,
+                     "registered": bool(st.get("client_id")),
+                     "expires_in": max(0, int(float(st.get("expires_at", 0) or 0) - _t.time())) if connected else 0}
+    return jsonify({"providers": out})
 
-@app.route("/api/judy/disconnect", methods=["POST"])
-def api_judy_disconnect():
+@app.route("/api/mcp/<provider>/disconnect", methods=["POST"])
+def api_mcp_disconnect(provider):
+    if provider not in MCP_PROVIDERS:
+        return jsonify({"error": "Unknown database."}), 404
     if not (current_user() or {}).get("is_admin"):
         return jsonify({"error": "Owner only."}), 403
-    st = _judy_load()
+    st = _mcp_load(provider)
     st.pop("access_token", None); st.pop("refresh_token", None); st.pop("expires_at", None)
-    _judy_save(st)
+    _mcp_save(provider, st)
     return jsonify({"ok": True, "connected": False})
 
 

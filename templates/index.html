@@ -506,9 +506,10 @@
       <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
         <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
       </label>
-      <span id="examJudyWrap" style="color:#8fce8f;font-size:12px;display:none" title="judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — is searched live on EVERY gather: it pulls the governing statutes/laws (full instrument names + operative sections, verbatim) and the LOCUS CLASSICUS plus the few authorities that seal the issue (court & status, facts, ratio, obiter), 100% grounded in what judy returns. Baked in — no toggle. ~$1/issue; results pass through Anthropic (not ZDR).">✓ judy.legal live authority baked into every gather</span>
-      <button class="btn alt" id="examJudyConnect" style="width:auto;display:none" title="Connect your judy.legal account once so live African case-law & legislation is baked into every gather.">🔗 Connect judy.legal</button>
-      <span id="examJudyStatus" style="font-size:11.5px;color:#8b93a7"></span>
+      <div id="examDbRow" style="color:#aab4c6;font-size:12px;display:none;flex-wrap:wrap;gap:8px;align-items:center" title="Live legal databases searched on EVERY gather, routed by the issue's jurisdiction: judy.legal (African/Ghanaian), CourtListener (US), EULEX (EU) — plus authoritative web search for public international law (treaties, ICJ/arbitral decisions, UN instruments). Each pulls the governing statutes/treaties + the locus classicus & the few authorities that seal it, 100% grounded in what the source returns. Connect a source once (owner).">
+        <span style="color:#8b93a7">⚖️ Live law sources:</span>
+        <span id="examDbList" style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center"></span>
+      </div>
       <label style="color:#aab4c6;font-size:12px" title="Choose the interpretive line the answer should REASON THROUGH when it construes a provision. The whole analysis then interprets and applies the law using this approach; where a provision's meaning is contested, it also names the equal-and-opposite rule, applies it, shows the problems that reading causes, and says why it preferred your line. Leave 'Balanced' for no fixed line. Grounded in your uploaded interpretation materials.">⚖️ Interpretive approach:
         <select id="examInterp" style="width:auto;display:inline-block;max-width:280px">
           <option value="">Balanced (no fixed line)</option>
@@ -4913,32 +4914,54 @@ $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
 // ⚖️ Statutory interpretation — pick your line, argue it, pre-empt the counter-canon.
 $("#openInterpret").onclick = () => { $("#interpretModal").style.display = "flex"; };
 $("#interpClose").onclick = () => { $("#interpretModal").style.display = "none"; };
-// judy.legal connection status (owner only) — drives the Exam Coach gather toggle:
-// show the Connect button when not connected, or the "find cases on judy.legal" toggle when it is.
-async function judyRefresh() {
-  const wrap = $("#examJudyWrap"), conn = $("#examJudyConnect"), st = $("#examJudyStatus");
-  if (!st) return;
+// Live legal-database connection status (owner only) — the Exam Coach "Live law sources" row.
+// judy=African, CourtListener=US, EULEX=EU are searched live on every gather (routed by the issue's
+// jurisdiction); web search covers treaties/ICJ and is always on. Connected = green ✓, else a Connect
+// button that opens the provider's OAuth popup.
+const DB_ORDER = ["judy", "courtlistener", "eulex"];
+async function dbRefresh() {
+  const list = $("#examDbList"), row = $("#examDbRow");
+  if (!list || !row) return;
   try {
-    const s = await (await fetch("/api/judy/status")).json();
-    if (s.error) { wrap.style.display = "none"; conn.style.display = "none"; st.textContent = ""; return; }
-    if (s.connected) {
-      wrap.style.display = "inline-block"; conn.style.display = "none"; st.textContent = "";
-    } else {
-      wrap.style.display = "none"; conn.style.display = "inline-block";
-      st.textContent = "connect once — live African case law is then baked into every gather"; st.style.color = "#8b93a7";
+    const s = await (await fetch("/api/mcp/status")).json();
+    if (s.error) { row.style.display = "none"; return; }        // non-owner: hide the row
+    row.style.display = "flex";
+    const P = s.providers || {};
+    const frag = document.createDocumentFragment();
+    for (const key of DB_ORDER) {
+      const p = P[key]; if (!p) continue;
+      if (p.connected) {
+        const el = document.createElement("span");
+        el.style.color = "#8fce8f"; el.title = p.desc; el.textContent = "✓ " + p.label;
+        frag.appendChild(el);
+      } else {
+        const b = document.createElement("button");
+        b.className = "btn alt"; b.style.width = "auto"; b.dataset.p = key;
+        b.title = "Connect " + p.label + " — " + p.desc; b.textContent = "🔗 " + p.label;
+        b.onclick = () => connectDb(key);
+        frag.appendChild(b);
+      }
     }
-  } catch (e) { wrap.style.display = "none"; conn.style.display = "none"; }
+    const web = document.createElement("span");
+    web.style.color = "#8fce8f";
+    web.title = "Treaties, ICJ / arbitral decisions & UN instruments via authoritative web sources — always on";
+    web.textContent = "✓ treaties/ICJ (web)";
+    frag.appendChild(web);
+    list.replaceChildren(frag);
+  } catch (e) { row.style.display = "none"; }
 }
-if ($("#examJudyConnect")) $("#examJudyConnect").onclick = () => {
-  window.open("/api/judy/connect", "judy_oauth", "width=520,height=680");
-  $("#examJudyStatus").textContent = "complete the judy.legal login in the popup…";
-  const onMsg = (e) => { if (e.data === "judy-connected") { window.removeEventListener("message", onMsg); setTimeout(judyRefresh, 500); } };
+function connectDb(provider) {
+  window.open("/api/mcp/" + provider + "/connect", "mcp_oauth", "width=520,height=680");
+  const onMsg = (e) => {
+    if (typeof e.data === "string" && e.data === "mcp-connected:" + provider) {
+      window.removeEventListener("message", onMsg); setTimeout(dbRefresh, 500);
+    }
+  };
   window.addEventListener("message", onMsg);
   // fallback: poll status a few times in case the popup was blocked / postMessage missed
-  let n = 0; const iv = setInterval(async () => { if (++n > 20) return clearInterval(iv); await judyRefresh();
-    if ($("#examJudyWrap").style.display !== "none") clearInterval(iv); }, 3000);
-};
-judyRefresh();   // check on load so the Exam Coach shows the right judy control
+  let n = 0; const iv = setInterval(async () => { if (++n > 20) return clearInterval(iv); await dbRefresh(); }, 3000);
+}
+dbRefresh();   // populate the Live law sources row on load
 // Add materials to the shared, hidden "Legal Application" store (used across all courses).
 $("#interpMaterials").onclick = () => $("#interpMatFile").click();
 $("#interpMatFile").onchange = async (e) => {
