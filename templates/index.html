@@ -3275,7 +3275,7 @@ async function gatherIssue(i, force) {
   if (force) {                                // wipe the stale answer so it truly re-gathers fresh
     it.done = false; it.answer = ""; it.answer_annotated = "";
     it._audited = false; it._audit = []; it._autoFixed = 0; it._autoRemoved = 0; it._auditOriginal = null;
-    it._calibrated = false;
+    it._calibrated = false; it._authDone = false;   // allow the live-authority pass to run again
   }
   it.loading = true; renderExam();            // instant feedback
   $("#examStatus").textContent = "Gathering law for issue " + (it.n||i+1) + "…";
@@ -3351,6 +3351,10 @@ async function gatherIssue(i, force) {
         await verifyIssue(i);
         it._verifying = false;
         renderExam();
+        // DECOUPLED live authority: pull the governing statutes/treaties + locus-classicus cases +
+        // comparative context in the BACKGROUND (it can take a few minutes via the web comparative)
+        // and splice them in when ready — the gather is already shown, so this never blocks it.
+        fetchAuthority(i, gq);
       }
       $("#examStatus").textContent = "Exam session cost so far $" + (EXAM.cost || 0).toFixed(4);
     }
@@ -3360,6 +3364,78 @@ async function gatherIssue(i, force) {
   }
   it.loading = false; renderExam();
   try { saveExam(); } catch (e) {}              // persist so a refresh/resume keeps the done-states
+}
+
+// ---- DECOUPLED live-authority fetch (statutes/treaties + locus-classicus cases + comparative) -----
+// The live pass (judy / CourtListener / EULEX + web comparative) can take minutes, so it runs as a
+// background job the browser polls, then splices the sections into the already-shown data sheet.
+const AUTH_PENDING_NOTE = "\n\n> ⏳ *Pulling live statutes, cases & comparative from the legal databases — this fills in automatically (usually a few minutes).*";
+const AUTH_PENDING_RE = /\n*> ⏳ \*Pulling live[^\n]*\*/g;
+function _authSectionBounds(md, name) {
+  const re = new RegExp("(^|\\n)##\\s*" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+  const m = md.match(re);
+  if (!m) return null;
+  const start = m.index + (m[1] ? 1 : 0);
+  const after = md.indexOf("\n##", start + 2);
+  return { start, end: after === -1 ? md.length : after + 1 };
+}
+function _authReplaceSection(md, name, section) {
+  const b = _authSectionBounds(md, name);
+  if (!b) return (md.trim() + "\n\n" + section).trim();
+  return (md.slice(0, b.start).trim() + "\n\n" + section + "\n\n" + md.slice(b.end).trim()).replace(/\n{3,}/g, "\n\n").trim();
+}
+function _authInsertAfter(md, name, section) {
+  const b = _authSectionBounds(md, name);
+  if (!b) return (md.trim() + "\n\n" + section).trim();
+  return (md.slice(0, b.end).trim() + "\n\n" + section + "\n\n" + md.slice(b.end).trim()).replace(/\n{3,}/g, "\n\n").trim();
+}
+function applyAuthority(i, p) {
+  const it = EXAM.issues[i]; if (!it) return;
+  let a = (it.answer || "").replace(AUTH_PENDING_RE, "").trim();
+  let an = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
+  if (p.legislation) {
+    const s = "## Statutes & laws that apply\n\n*Confirmed live on the legal databases or authoritative primary sources — full instrument names + applicable provisions.*\n\n" + p.legislation.trim();
+    a = _authInsertAfter(a, "Rule", s); an = _authInsertAfter(an, "Rule", s);
+  }
+  if (p.cases) {
+    const s = "## Cases\n\n*Extracted live from the legal databases (judy.legal / CourtListener / EULEX) or authoritative web sources — full name, citation, court & status, facts, ratio, obiter.*\n\n" + p.cases.trim();
+    a = _authReplaceSection(a, "Cases", s); an = _authReplaceSection(an, "Cases", s);
+  }
+  if (p.comparative) {
+    const s = "## Comparative\n\n*Live comparative context — similar jurisdictions, authoritative reports & real incidents, from authoritative web sources.*\n\n" + p.comparative.trim();
+    a = _authReplaceSection(a, "Comparative", s); an = _authReplaceSection(an, "Comparative", s);
+  }
+  it.answer = a; it.answer_annotated = an;
+  if (p.cost) EXAM.cost = (EXAM.cost || 0) + (p.cost || 0);
+  renderExam(); try { saveExam(); } catch (e) {}
+}
+async function fetchAuthority(i, gq) {
+  const it = EXAM.issues[i];
+  if (!it || !it.done || it._authDone) return;
+  it._authDone = true;                                  // once per gather
+  it.answer = (it.answer || "") + AUTH_PENDING_NOTE;
+  it.answer_annotated = (it.answer_annotated || "") + AUTH_PENDING_NOTE;
+  renderExam();
+  const clearNote = () => {
+    it.answer = (it.answer || "").replace(AUTH_PENDING_RE, "").trim();
+    it.answer_annotated = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
+    renderExam(); try { saveExam(); } catch (e) {}
+  };
+  try {
+    const st = await (await fetch("/api/gather/authority", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: gq, prior: priorRulesLedger(i)})})).json();
+    if (!st.job) { clearNote(); return; }
+    for (let n = 0; n < 60; n++) {                       // poll up to ~8 min
+      await new Promise(r => setTimeout(r, 8000));
+      let p;
+      try { p = await (await fetch("/api/gather/authority/poll?job=" + encodeURIComponent(st.job))).json(); }
+      catch (e) { continue; }
+      if (p.pending) continue;
+      if (p.done && (p.legislation || p.cases || p.comparative)) { applyAuthority(i, p); return; }
+      break;                                             // done but empty, or error
+    }
+    clearNote();
+  } catch (e) { clearNote(); }
 }
 // An issue whose 'answer' is really a block/error message (spend cap, limit, timeout) is NOT done —
 // mark it re-gatherable so Resume + 'Gather all remaining' continue from it. Fixes runs stuck by the cap.

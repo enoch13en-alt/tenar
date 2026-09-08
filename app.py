@@ -5500,41 +5500,11 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # citation-annotated text — so an Application/Conclusion can never reach the page.
         _final_answer = _tidy_gather_markdown(_strip_gather_analysis(_final_answer))
         annotated = _tidy_gather_markdown(_strip_gather_analysis(annotated))
-        # LIVE authority extraction (baked in): across every connected legal database (judy=African,
-        # CourtListener=US, EULEX=EU) plus web search for public international law, the model routes by
-        # the issue's jurisdiction and pulls BOTH the statutes/treaties that apply AND the leading
-        # on-point cases (full names + citations, facts, ratio, obiter). Cases REPLACE the corpus
-        # '## Cases' section; the confirmed legislation is added as its own section after '## Rule'.
-        if use_judy:
-            try:
-                _rt = rule_text if "rule_text" in dir() else ""
-            except Exception:
-                _rt = ""
-            _jleg, _jcases, _jcomp, _jused, _jcost = _gather_authority(question, _rt)
-            if _jcases:
-                _jsection = ("## Cases\n\n*Extracted live from the legal databases (judy.legal / "
-                             "CourtListener / EULEX) or authoritative web sources — full name, "
-                             "citation, court & status, facts, ratio, obiter.*\n\n" + _jcases.strip())
-                _final_answer = _splice_cases_section(_final_answer, _jsection)
-                annotated = _splice_cases_section(annotated, _jsection)
-            if _jleg:
-                _lsection = ("## Statutes & laws that apply\n\n*Confirmed live on the legal databases "
-                             "or authoritative primary sources — full instrument names + applicable "
-                             "provisions.*\n\n" + _jleg.strip())
-                _final_answer = _insert_after_rule(_final_answer, _lsection)
-                annotated = _insert_after_rule(annotated, _lsection)
-            if _jcomp:
-                _csection = ("## Comparative\n\n*Live comparative context — similar jurisdictions, "
-                             "authoritative reports & real incidents, from authoritative web "
-                             "sources.*\n\n" + _jcomp.strip())
-                _final_answer = _splice_named_section(_final_answer, "Comparative", _csection)
-                annotated = _splice_named_section(annotated, "Comparative", _csection)
-            if _jcases or _jleg or _jcomp:
-                cost += _jcost
-                CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + _jcost, 6)
-                _spend_note(_jcost)
-                save_config(CONFIG)
-                _bill_user(_jcost, 0, 0)
+        # NOTE: the LIVE authority pass (judy/CourtListener/EULEX + web comparative) is NOT run here
+        # anymore — it can take minutes (the web comparative especially) and would block/timeout the
+        # gather. It now runs DECOUPLED as a background job (/api/gather/authority) that the frontend
+        # polls and splices into these sections when ready. The gather returns its corpus data sheet
+        # FAST; the live authority fills in afterward.
     grounding_audit(question, " + ".join(courses) if multi else courses[0],
                     _final_answer, retrieved, path=mode)
     reasoning_delta_log(question, " + ".join(courses) if multi else courses[0],
@@ -6528,6 +6498,80 @@ def api_mcp_dbg():
     if not (current_user() or {}).get("is_admin"):
         return jsonify({"error": "Owner only."}), 403
     return jsonify({"last_auth_err": app.config.get("_last_auth_err")})
+
+
+# ---- DECOUPLED authority job (so a multi-minute live pass never blocks the gather) ----------
+# The gather returns its corpus data sheet FAST; the frontend then starts this background job and
+# polls it, splicing the statutes/cases/comparative in when ready. Runs on gevent's REAL threadpool
+# so the blocking MCP+web SDK call can't freeze the single web worker. In-memory store is fine on the
+# one-worker deployment; jobs self-prune after 30 min.
+_AUTH_JOBS = {}
+_AUTH_JOBS_LOCK = threading.Lock()
+
+def _auth_prune(now):
+    for k in [k for k, v in list(_AUTH_JOBS.items()) if now - v.get("ts", 0) > 1800]:
+        _AUTH_JOBS.pop(k, None)
+
+@app.route("/api/gather/authority", methods=["POST"])
+def api_gather_authority_start():
+    """Start the live authority pass in the background; returns a job id to poll."""
+    if current_user() is None:
+        return jsonify({"error": "login required"}), 401
+    body = request.json or {}
+    q = (body.get("question") or "").strip()
+    prior = (body.get("prior") or "").strip()
+    if not q:
+        return jsonify({"error": "no question"}), 400
+    import time as _t
+    try:
+        import gevent
+        ar = gevent.get_hub().threadpool.spawn(_gather_authority, q, prior)
+    except Exception:
+        # dev without gevent: run on a raw daemon thread with a tiny AsyncResult shim
+        import threading as _th
+        class _AR:
+            def __init__(self): self._done = False; self._val = (None, None, None, False, 0.0)
+            def ready(self): return self._done
+            def get(self): return self._val
+        ar = _AR()
+        def _work():
+            try: ar._val = _gather_authority(q, prior)
+            except Exception: ar._val = (None, None, None, False, 0.0)
+            ar._done = True
+        _th.Thread(target=_work, daemon=True).start()
+    jid = secrets.token_urlsafe(12)
+    with _AUTH_JOBS_LOCK:
+        _auth_prune(_t.time())
+        _AUTH_JOBS[jid] = {"ar": ar, "ts": _t.time()}
+    return jsonify({"job": jid})
+
+@app.route("/api/gather/authority/poll")
+def api_gather_authority_poll():
+    """Poll a background authority job. {pending:true} until ready, then the three blocks + cost."""
+    if current_user() is None:
+        return jsonify({"error": "login required"}), 401
+    jid = request.args.get("job", "")
+    with _AUTH_JOBS_LOCK:
+        j = _AUTH_JOBS.get(jid)
+    if not j:
+        return jsonify({"error": "unknown job"}), 404
+    ar = j["ar"]
+    if not ar.ready():
+        return jsonify({"pending": True})
+    try:
+        leg, cases, comp, used, costv = ar.get()
+    except Exception:
+        leg = cases = comp = None; used = False; costv = 0.0
+    with _AUTH_JOBS_LOCK:
+        _AUTH_JOBS.pop(jid, None)
+    if costv:
+        try:
+            CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + costv, 6)
+            _spend_note(costv); save_config(CONFIG); _bill_user(costv, 0, 0)
+        except Exception:
+            pass
+    return jsonify({"done": True, "legislation": leg, "cases": cases,
+                    "comparative": comp, "used": used, "cost": round(costv or 0, 5)})
 
 
 @app.route("/api/mcp/<provider>/connect")
