@@ -506,8 +506,8 @@
       <label style="color:#aab4c6;font-size:12px" title="Plain, straightforward writing with a clear step-by-step (mathematical) flow — one idea per sentence, short paragraphs, less dense. Keeps ALL the law and analysis; it unpacks the reasoning so it's easy to follow (fills the same space or more, not shorter).">
         <input type="checkbox" id="examSimple"> 🧮 Short mode (simple, step-by-step)
       </label>
-      <label id="examJudyWrap" style="color:#aab4c6;font-size:12px;display:none" title="When gathering the law for each issue, ALSO search judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — live, and extract the leading on-point cases with FULL case name + citation, facts, ratio decidendi and obiter, plus full statute names. Replaces the corpus 'Cases' section with judy's cases. Uses your judy.legal account; adds cost per issue (~$0.20–0.50); results pass through Anthropic (not ZDR).">
-        <input type="checkbox" id="examJudy"> 🔎 Find cases on judy.legal (full name, facts, ratio &amp; obiter)
+      <label id="examJudyWrap" style="color:#aab4c6;font-size:12px;display:none" title="When gathering the law for each issue, ALSO search judy.legal — an authoritative African (incl. Ghanaian) case-law & legislation database — live, and extract BOTH the statutes/laws that apply (full instrument names + the applicable sections, verbatim) AND the leading on-point cases (full name + citation, facts, ratio decidendi, obiter). Adds a 'Statutes & laws that apply' section and replaces the 'Cases' section with judy's. Uses your judy.legal account; adds cost per issue (~$0.65–0.80); results pass through Anthropic (not ZDR).">
+        <input type="checkbox" id="examJudy"> 🔎 Find statutes &amp; cases on judy.legal (verbatim sections · facts, ratio &amp; obiter)
       </label>
       <button class="btn alt" id="examJudyConnect" style="width:auto;display:none">🔗 Connect judy.legal</button>
       <span id="examJudyStatus" style="font-size:11.5px;color:#8b93a7"></span>

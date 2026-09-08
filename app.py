@@ -5500,20 +5500,28 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         # citation-annotated text — so an Application/Conclusion can never reach the page.
         _final_answer = _tidy_gather_markdown(_strip_gather_analysis(_final_answer))
         annotated = _tidy_gather_markdown(_strip_gather_analysis(annotated))
-        # LIVE judy.legal case extraction (opt-in): pull the leading on-point cases with full
-        # names + citations, facts, ratio and obiter, and REPLACE the corpus '## Cases' section
-        # with them. This is where the user wants judy — to find and extract good law properly.
+        # LIVE judy.legal extraction (opt-in): pull BOTH the statutes/laws that apply AND the leading
+        # on-point cases (full names + citations, facts, ratio, obiter). Cases REPLACE the corpus
+        # '## Cases' section; the confirmed legislation is added as its own section after '## Rule'.
+        # This is where the user wants judy — to find and extract good law (statute + cases) properly.
         if use_judy:
             try:
                 _rt = rule_text if "rule_text" in dir() else ""
             except Exception:
                 _rt = ""
-            _jblock, _jused, _jcost = _judy_gather_cases(question, _rt)
-            if _jblock:
+            _jleg, _jcases, _jused, _jcost = _judy_gather_authority(question, _rt)
+            if _jcases:
                 _jsection = ("## Cases\n\n*Extracted live from judy.legal — full name, citation, "
-                             "facts, ratio, obiter.*\n\n" + _jblock.strip())
+                             "facts, ratio, obiter.*\n\n" + _jcases.strip())
                 _final_answer = _splice_cases_section(_final_answer, _jsection)
                 annotated = _splice_cases_section(annotated, _jsection)
+            if _jleg:
+                _lsection = ("## Statutes & laws that apply (judy.legal)\n\n*Confirmed live on "
+                             "judy.legal — full instrument names + applicable provisions.*\n\n"
+                             + _jleg.strip())
+                _final_answer = _insert_after_rule(_final_answer, _lsection)
+                annotated = _insert_after_rule(annotated, _lsection)
+            if _jcases or _jleg:
                 cost += _jcost
                 CONFIG["total_cost_usd"] = round(CONFIG["total_cost_usd"] + _jcost, 6)
                 _spend_note(_jcost)
@@ -5643,6 +5651,29 @@ def _splice_cases_section(md, new_cases_section):
     if m:
         return (md[:m.end()].rstrip() + "\n\n" + new_cases_section + "\n\n" + md[m.end():].lstrip()).strip()
     return (md.rstrip() + "\n\n" + new_cases_section).strip()
+
+
+def _insert_after_rule(md, section):
+    """Insert a new '## ' section immediately AFTER the gather's '## Rule' section (before '## Cases'
+    if present). Falls back to before '## Cases', else after '## Issue', else the top of the sheet."""
+    if not section:
+        return md
+    section = section.strip()
+    if not md:
+        return section
+    # after the Rule section (up to the next H2)
+    m = re.search(r'(?ms)^(##\s*Rule\b.*?)(?=^##\s|\Z)', md)
+    if m:
+        return (md[:m.end()].rstrip() + "\n\n" + section + "\n\n" + md[m.end():].lstrip()).strip()
+    # else immediately before Cases
+    m = re.search(r'(?m)^##\s*Cases\b', md)
+    if m:
+        return (md[:m.start()].rstrip() + "\n\n" + section + "\n\n" + md[m.start():].lstrip()).strip()
+    # else after the Issue line
+    m = re.search(r'(?ms)^(##\s*Issue\b.*?)(?=^##\s|\Z)', md)
+    if m:
+        return (md[:m.end()].rstrip() + "\n\n" + section + "\n\n" + md[m.end():].lstrip()).strip()
+    return (section + "\n\n" + md).strip()
 
 
 # ---------------------------------------------------------------- shared helpers
@@ -6178,81 +6209,104 @@ def _judy_connector():
         "betas": ["mcp-client-2025-11-20"],
     }
 
-JUDY_CASE_EXTRACT = (
-    "You are a case-law EXTRACTOR with live MCP tools connected to judy.legal — an authoritative "
-    "African (incl. Ghanaian) case-law and legislation database. Your ONE job is to FIND and EXTRACT "
-    "the leading, on-point DECIDED CASES for the legal issue given, and to state each one properly. "
-    "USE the judy.legal tools to search and open the actual reports; extract ONLY from what the tools "
-    "return — never invent a case, a citation, a fact or a holding, and never fill a gap from memory.\n\n"
-    "Return the leading 3–6 cases that genuinely bear on THIS issue (fewer if only a few are truly "
-    "on point — quality over quantity; the closest authority first). For EACH case output EXACTLY "
-    "this Markdown shape, with a blank line between cases:\n\n"
-    "- **<Full case name> <full citation exactly as judy.legal reports it>**\n"
-    "  - *Facts:* <the material facts, 1–3 sentences — only what the report states>\n"
-    "  - *Ratio:* <the ratio decidendi — the binding principle the court actually decided, in one or "
-    "two sentences; do not pad it with obiter>\n"
-    "  - *Obiter:* <any notable obiter dicta; if the report shows none worth noting, write 'none noted'>\n"
+JUDY_AUTHORITY_EXTRACT = (
+    "You are a legal-AUTHORITY extractor with live MCP tools connected to judy.legal — an "
+    "authoritative African (incl. Ghanaian) case-law AND legislation database. Your job is to FIND "
+    "and EXTRACT, for the legal issue given, BOTH (A) the STATUTES AND ANY OTHER LAWS that apply, "
+    "and (B) the leading on-point DECIDED CASES. USE the judy.legal tools to search and OPEN the "
+    "actual instruments and reports; extract ONLY from what the tools return — never invent an Act, a "
+    "section, a case, a citation, a fact or a holding, and never fill a gap from memory.\n\n"
+    "Output EXACTLY two sections in this order, each introduced by its marker line ON ITS OWN LINE, "
+    "and NOTHING else — no preamble, no closing, and NEVER narrate your searches ('I'll search…', "
+    "'Good, the legislation is confirmed…', 'Let me now…'):\n\n"
+    "@@LEGISLATION@@\n"
+    "The statutes, regulations (L.I.), constitutional provisions and any other binding laws that "
+    "apply to this issue. ONE bullet per instrument, most central first:\n"
+    "- **<Full instrument name — short title, year and number, e.g. 'the Water Resources Commission "
+    "Act, 1996 (Act 522)'; for the Constitution, 'the 1992 Constitution'; for an L.I., its full "
+    "title and number>**\n"
+    "  - *s.<N> / reg.<N> / art.<N>:* \"<the operative words VERBATIM as judy.legal gives them, in "
+    "quotation marks>\" — <one plain line on what it requires, prohibits or empowers>\n"
+    "  - (repeat the pinpoint line for each applicable provision of that instrument)\n"
+    "Give the FULL instrument name the FIRST time it appears; quote the operative words exactly (do "
+    "not paraphrase, compress or modernise); if judy returns the section number but not full text, "
+    "give the number and a one-line summary and mark it '(text not shown on judy)'.\n\n"
+    "@@CASES@@\n"
+    "The leading 3–6 decided cases that genuinely bear on this issue (fewer if only a few are truly "
+    "on point — the closest authority first). ONE bullet per case:\n"
+    "- **<Full case name — all named parties, not truncated> <full citation exactly as judy.legal "
+    "reports it>**\n"
+    "  - *Facts:* <material facts, 1–3 sentences — only what the report states>\n"
+    "  - *Ratio:* <the ratio decidendi — the binding principle actually decided, 1–2 sentences>\n"
+    "  - *Obiter:* <any notable obiter dicta; 'none noted' if none>\n"
     "  - *Relevance:* <one line: why it bears on this issue>\n\n"
-    "Rules: give the FULL case name (all named parties, not 'Republic v …' truncated) and the FULL "
-    "citation. Where a statute is central, name it IN FULL (short title, year and number, e.g. 'the "
-    "Minerals and Mining Act, 2006 (Act 703)'). Keep ratio and obiter DISTINCT — the ratio is what "
-    "was necessary to the decision; obiter is said in passing. Do NOT argue, apply the law to any "
-    "facts, or reach a conclusion — this is a data sheet of good law.\n\n"
-    "OUTPUT DISCIPLINE — this is critical:\n"
-    "- Output ONLY the '- ' case list in the shape above. NO preamble, NO closing, and DO NOT narrate "
-    "your searches ('I'll search…', 'Good, the legislation is confirmed…', 'Let me now…'). The reader "
-    "must see ONLY the finished case list.\n"
-    "- If NO case is squarely on point, still give the CLOSEST related decided cases in the SAME list "
-    "shape, and say honestly in the *Relevance:* line how close each is (e.g. 'analogous — operating "
-    "without a required statutory permit, though in the mining not water context').\n"
-    "- Only if judy.legal returns literally nothing usable, output exactly this one line and nothing "
-    "else: '⚠ none found on judy.legal'.")
+    "Keep ratio and obiter DISTINCT (ratio = necessary to the decision; obiter = said in passing). Do "
+    "NOT argue, apply the law to the facts, or reach a conclusion — this is a data sheet of good law. "
+    "If NO case is squarely on point, still give the CLOSEST related cases in the same shape and say "
+    "honestly in *Relevance:* how close each is. Under EITHER marker, if judy.legal returns nothing "
+    "usable, put exactly this one line under that marker: '⚠ none found on judy.legal'. ALWAYS emit "
+    "BOTH marker lines, even when one section is empty.")
 
 
-def _judy_gather_cases(issue_line, rule_context):
-    """Live judy.legal pass for the gather: find the leading on-point cases and extract each with
-    full name + citation, facts, ratio, obiter. Returns (markdown_block, used, cost_usd) — block is
-    None if judy is not connected or the call fails."""
+def _judy_gather_authority(issue_line, rule_context):
+    """Live judy.legal pass for the gather: find BOTH the applicable statutes/laws AND the leading
+    on-point cases, extracted properly (full names, sections verbatim, facts/ratio/obiter). Returns
+    (legislation_block, cases_block, used, cost_usd); each block is None if empty/absent."""
     judy = _judy_connector()
     if not judy:
-        return None, False, 0.0
+        return None, None, False, 0.0
     c = _client()
     if not c:
-        return None, False, 0.0
-    user = ("LEGAL ISSUE (find the on-point decided cases for THIS):\n" + (issue_line or "").strip()[:1500]
-            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED (search judy.legal for cases applying these — "
-               "reproduce the FULL statute names):\n" + rule_context.strip()[:4000] if rule_context else "")
-            + "\n\nSearch judy.legal now and extract the leading cases in the required shape.")
+        return None, None, False, 0.0
+    user = ("LEGAL ISSUE (find the statutes/laws that apply AND the on-point cases for THIS):\n"
+            + (issue_line or "").strip()[:1500]
+            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these on "
+               "judy.legal, add any applicable statute/regulation/constitutional provision they miss, "
+               "and find the cases applying them — reproduce FULL instrument names):\n"
+               + rule_context.strip()[:4000] if rule_context else "")
+            + "\n\nSearch judy.legal now and output the two marked sections in the required shape.")
     try:
         resp = c.beta.messages.create(
-            model=AUDIT_MODEL, max_tokens=6000,
-            system=JUDY_CASE_EXTRACT,
+            model=AUDIT_MODEL, max_tokens=7000,
+            system=JUDY_AUTHORITY_EXTRACT,
             messages=[{"role": "user", "content": user}],
             mcp_servers=judy["mcp_servers"], tools=judy["tools"], betas=judy["betas"])
         used = any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content)
         # The MCP connector interleaves the model's search NARRATION ("I'll search…", "Good, the
         # legislation is confirmed…") as text blocks BEFORE/BETWEEN the tool calls. Keep ONLY the
-        # text AFTER the last tool block — that is the finished case list, not the running commentary.
+        # text AFTER the last tool block — that is the finished answer, not the running commentary.
         _last_tool = -1
         for _i, _b in enumerate(resp.content):
             if getattr(_b, "type", "") in ("mcp_tool_use", "mcp_tool_result"):
                 _last_tool = _i
-        block = "".join(getattr(_b, "text", "") for _b in resp.content[_last_tool + 1:]
-                        if getattr(_b, "type", "") == "text").strip()
-        # Drop any residual lead-in narration before the first case bullet.
-        _mm = re.search(r'(?m)^[\-\*]\s', block)
-        if _mm and _mm.start() > 0 and "none found on judy" not in block.lower():
-            block = block[_mm.start():].strip()
+        full = "".join(getattr(_b, "text", "") for _b in resp.content[_last_tool + 1:]
+                       if getattr(_b, "type", "") == "text").strip()
         try:
             cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
         except Exception:
             cost = 0.0
-        if not block or "none found on judy" in block.lower():
-            return None, used, cost
-        return block, used, cost
+
+        def _clean(seg):
+            seg = (seg or "").strip()
+            if not seg or "none found on judy" in seg.lower():
+                return None
+            # drop any residual lead-in narration before the first bullet
+            mm = re.search(r'(?m)^[\-\*]\s', seg)
+            if mm and mm.start() > 0:
+                seg = seg[mm.start():].strip()
+            return seg or None
+
+        # Split on the two markers. Tolerate the model dropping the LEGISLATION marker.
+        leg_seg = cases_seg = ""
+        if "@@CASES@@" in full:
+            head, cases_seg = full.split("@@CASES@@", 1)
+            leg_seg = head.split("@@LEGISLATION@@", 1)[-1]
+        else:
+            leg_seg = full.split("@@LEGISLATION@@", 1)[-1]
+        return _clean(leg_seg), _clean(cases_seg), used, cost
     except Exception:
-        app.logger.exception("judy gather-cases failed")
-        return None, False, 0.0
+        app.logger.exception("judy gather-authority failed")
+        return None, None, False, 0.0
 
 
 @app.route("/api/judy/connect")
