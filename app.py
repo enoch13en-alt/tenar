@@ -6197,9 +6197,16 @@ JUDY_CASE_EXTRACT = (
     "citation. Where a statute is central, name it IN FULL (short title, year and number, e.g. 'the "
     "Minerals and Mining Act, 2006 (Act 703)'). Keep ratio and obiter DISTINCT — the ratio is what "
     "was necessary to the decision; obiter is said in passing. Do NOT argue, apply the law to any "
-    "facts, or reach a conclusion — this is a data sheet of good law. Output ONLY the '- ' case list, "
-    "no preamble and no closing. If the tools return NOTHING on point, output exactly: '⚠ none found "
-    "on judy.legal'.")
+    "facts, or reach a conclusion — this is a data sheet of good law.\n\n"
+    "OUTPUT DISCIPLINE — this is critical:\n"
+    "- Output ONLY the '- ' case list in the shape above. NO preamble, NO closing, and DO NOT narrate "
+    "your searches ('I'll search…', 'Good, the legislation is confirmed…', 'Let me now…'). The reader "
+    "must see ONLY the finished case list.\n"
+    "- If NO case is squarely on point, still give the CLOSEST related decided cases in the SAME list "
+    "shape, and say honestly in the *Relevance:* line how close each is (e.g. 'analogous — operating "
+    "without a required statutory permit, though in the mining not water context').\n"
+    "- Only if judy.legal returns literally nothing usable, output exactly this one line and nothing "
+    "else: '⚠ none found on judy.legal'.")
 
 
 def _judy_gather_cases(issue_line, rule_context):
@@ -6223,7 +6230,19 @@ def _judy_gather_cases(issue_line, rule_context):
             messages=[{"role": "user", "content": user}],
             mcp_servers=judy["mcp_servers"], tools=judy["tools"], betas=judy["betas"])
         used = any(getattr(b, "type", "") in ("mcp_tool_use", "mcp_tool_result") for b in resp.content)
-        block = (_text_of(resp) or "").strip()
+        # The MCP connector interleaves the model's search NARRATION ("I'll search…", "Good, the
+        # legislation is confirmed…") as text blocks BEFORE/BETWEEN the tool calls. Keep ONLY the
+        # text AFTER the last tool block — that is the finished case list, not the running commentary.
+        _last_tool = -1
+        for _i, _b in enumerate(resp.content):
+            if getattr(_b, "type", "") in ("mcp_tool_use", "mcp_tool_result"):
+                _last_tool = _i
+        block = "".join(getattr(_b, "text", "") for _b in resp.content[_last_tool + 1:]
+                        if getattr(_b, "type", "") == "text").strip()
+        # Drop any residual lead-in narration before the first case bullet.
+        _mm = re.search(r'(?m)^[\-\*]\s', block)
+        if _mm and _mm.start() > 0 and "none found on judy" not in block.lower():
+            block = block[_mm.start():].strip()
         try:
             cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
         except Exception:
