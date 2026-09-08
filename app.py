@@ -6474,20 +6474,22 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
             + "\n\nSearch efficiently and output the two marked sections.")
 
     def run(with_mcp, timeout):
-        cc = c.with_options(max_retries=0, timeout=timeout)
         if with_mcp and servers:
             # MCP databases attached → MUST use the beta endpoint (mcp connector lives there).
-            return cc.beta.messages.create(
+            return c.with_options(max_retries=0, timeout=timeout).beta.messages.create(
                 model=AUDIT_MODEL, max_tokens=6000,
                 system=_authority_extract_prompt(names, "law"),
                 messages=[{"role": "user", "content": user}],
                 tools=list(tools) + web, mcp_servers=servers, betas=["mcp-client-2025-11-20"])
-        # WEB-ONLY → the STANDARD messages endpoint, where the web_search server tool actually
-        # runs (it is inert on the beta MCP endpoint — the cause of the empty international results).
-        return cc.messages.create(
-            model=AUDIT_MODEL, max_tokens=6000,
+        # WEB-ONLY → STREAM it. A web_search request runs a slow server-side search loop; a
+        # NON-streaming create just waits with no bytes flowing and hits the read-timeout (the cause
+        # of every empty international result). Streaming keeps the connection alive through the
+        # search loop; the hard wall-clock cap in _gather_authority still bounds the total.
+        resp, _m = _stream_final(
+            c.with_options(max_retries=0), AUDIT_MODEL,
             system=_authority_extract_prompt([], "law"),
-            messages=[{"role": "user", "content": user}], tools=web)
+            messages=[{"role": "user", "content": user}], tools=web, max_tokens=6000)
+        return resp
 
     try:
         try:
