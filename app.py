@@ -6416,8 +6416,11 @@ def _authority_run_extract(resp):
             last = i
     full = "".join(getattr(b, "text", "") for b in resp.content[last + 1:]
                    if getattr(b, "type", "") == "text").strip()
+    # PURE cost calc only — this runs in a BACKGROUND THREAD (no Flask request context), so we must
+    # NOT call record_cost (it bills via current_user(), which raises outside a request and would
+    # swallow the cost to $0). The billing side-effects happen once in the poll handler instead.
     try:
-        cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
+        cost, _itok, _otok = _usage_cost(getattr(resp, "usage", None), AUDIT_MODEL)
     except Exception:
         cost = 0.0
     return full, used, cost
