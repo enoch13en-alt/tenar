@@ -6420,6 +6420,12 @@ def _authority_extract_prompt(connected_names):
         "empty.")
 
 
+def _anthropic_timeout():
+    """The SDK's timeout exception class (for catching a slow/interrupted request)."""
+    import anthropic
+    return anthropic.APITimeoutError
+
+
 def _gather_authority(issue_line, rule_context):
     """Live authority pass for the gather across every connected legal database (judy=African,
     CourtListener=US, EULEX=EU) PLUS web search — the model routes by the issue's jurisdiction. Finds
@@ -6439,12 +6445,12 @@ def _gather_authority(issue_line, rule_context):
                + rule_context.strip()[:4000] if rule_context else "")
             + "\n\nSearch efficiently — a few targeted searches, not many — and output the three "
               "marked sections in the required shape.")
-    web_tool = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 7}]
+    web_tool = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
 
-    def _run(with_mcp):
-        # HARD BOUND: a firm per-request timeout so a slow/looping pass fails fast and the gather still
-        # returns. `with_mcp=False` drops the database connectors and runs WEB-ONLY — the resilient
-        # fallback when a database MCP server is unreachable, so comparative + international still work.
+    def _run(with_mcp, timeout):
+        # HARD BOUND: a firm per-request timeout so a slow/looping pass fails fast. `with_mcp=False`
+        # drops the database connectors and runs WEB-ONLY — the resilient fallback when a database
+        # MCP server is UNREACHABLE (a fast connection error), so comparative + international still work.
         kw = dict(model=AUDIT_MODEL, max_tokens=8000,
                   system=_authority_extract_prompt(conn["names"] if with_mcp else []),
                   messages=[{"role": "user", "content": user}],
@@ -6452,20 +6458,25 @@ def _gather_authority(issue_line, rule_context):
         if with_mcp and conn["mcp_servers"]:
             kw["mcp_servers"] = conn["mcp_servers"]
             kw["betas"] = conn["betas"]
-        return c.with_options(max_retries=1, timeout=220.0).beta.messages.create(**kw)
+        return c.with_options(max_retries=1, timeout=timeout).beta.messages.create(**kw)
 
     try:
         try:
-            resp = _run(with_mcp=True)
+            resp = _run(with_mcp=True, timeout=300.0)
+        except _anthropic_timeout() as _te:
+            # SLOW (not a connection error) — do NOT launch a second full attempt (that just wastes
+            # another few minutes). Give up; the gather returns its corpus sections.
+            app.logger.warning("authority pass timed out")
+            app.config["_last_auth_err"] = "APITimeoutError (slow web/MCP pass)"
+            return None, None, None, False, 0.0
         except Exception as _e1:
             # A flaky database MCP server ("Connection error while communicating with MCP server")
-            # must NOT sink the whole pass — retry WEB-ONLY so the comparative + web-findable law and
-            # cases still come through. Only do this when databases were actually attached.
+            # fails FAST — retry WEB-ONLY so the comparative + web-findable law/cases still come
+            # through. Only when databases were actually attached.
             msg = str(_e1)
-            if conn["mcp_servers"] and ("MCP server" in msg or "Connection error" in msg
-                                        or "mcp" in msg.lower()):
+            if conn["mcp_servers"] and ("MCP server" in msg or "Connection error" in msg):
                 app.logger.warning("authority pass: MCP unreachable, falling back to web-only")
-                resp = _run(with_mcp=False)
+                resp = _run(with_mcp=False, timeout=240.0)
             else:
                 raise
         _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
