@@ -6375,13 +6375,22 @@ def _authority_extract_prompt(connected_names, want):
                "cover: treaties/conventions, ICJ/ITLOS/PCA/arbitral decisions, UN instruments, foreign "
                "domestic law. Search ONLY authoritative primary sources (UN Treaty Collection, ICJ, "
                "PCA, official gazettes, WorldLII/BAILII) and quote the article/judgment VERBATIM.")
+    no_db = not connected_names
+    route = ("You have WEB SEARCH only. This is a public-international-law / foreign issue: you MUST "
+             "run web searches of authoritative PRIMARY sources (UN Treaty Collection treaties.un.org, "
+             "IAEA iaea.org, the ICJ, official government/gazette sites, WorldLII/BAILII) and quote the "
+             "treaty article / statute section VERBATIM from what they return. NEVER output '⚠ none "
+             "found' for a well-known instrument (e.g. the IAEA Statute, the NPT, the NSG Guidelines, "
+             "UNCLOS) without searching first — these texts are public and findable."
+             if no_db else
+             "Use the source that fits the issue's jurisdiction (a Ghanaian issue → judy; US → "
+             "CourtListener; EU → EULEX; public international law → web primaries). Don't waste "
+             "searches on the wrong jurisdiction, but you MUST search SOMETHING — never output '⚠ none "
+             "found' for a well-known instrument without searching the fitting source first.")
     return ("You are a legal-AUTHORITY extractor with live tools. For the legal issue given, find and "
             "extract (A) the STATUTES/treaties/binding laws that apply and (B) the leading on-point "
             "DECIDED CASES. Extract ONLY from what the tools actually return. Sources available:\n"
-            + "\n".join(src) + "\n"
-            "Use the source that fits the issue's jurisdiction (a Ghanaian issue → judy; US → "
-            "CourtListener; EU → EULEX; public international law → web primaries). Don't waste searches "
-            "on the wrong jurisdiction.\n\n" + _LAW_SECTIONS + _AUTH_ACCURACY)
+            + "\n".join(src) + "\n" + route + "\n\n" + _LAW_SECTIONS + _AUTH_ACCURACY)
 
 
 def _route_db_names(issue_line, connected):
@@ -6396,13 +6405,21 @@ def _route_db_names(issue_line, connected):
     if "eulex" in connected and re.search(
             r'\b(european union|\beu\b|eur-lex|cjeu|european court of justice|member state)\b', t):
         picks.append("eulex")
-    # purely public-international-law issue with no domestic anchor → no DB (web handles it)
-    intl_only = re.search(r'\b(treaty|convention|icj|international court of justice|itlos|unclos|'
-                          r'customary international law|arbitral tribunal)\b', t) and not re.search(
-                          r'\b(ghana|ghanaian|nigeria|kenya|south africa)\b', t)
-    if not picks and not intl_only and "judy" in connected:
-        picks.append("judy")          # default: African/Ghanaian → judy
-    return picks
+    if picks:
+        return picks
+    # PUBLIC-INTERNATIONAL / foreign issue with no African anchor → NO database, web handles it
+    # (attaching judy to an international nuclear-treaty issue made the model decline judy as the
+    # wrong jurisdiction and then fire nothing at all). Broad signal set incl. named instruments.
+    intl = re.search(r'\b(treaty|treaties|convention|protocol|iaea|npt|non-?proliferation|nuclear '
+                     r'suppliers|united nations|\bu\.?n\.?\b|icj|international court|itlos|pca|unclos|'
+                     r'euratom|customary international law|international instrument|vienna convention|'
+                     r'geneva convention|arbitral tribunal)\b', t)
+    african = re.search(r'\b(ghana|ghanaian|nigeria|kenya|south africa|tanzania|african)\b', t)
+    if intl and not african:
+        return []                     # web-only
+    if "judy" in connected:
+        return ["judy"]               # African/Ghanaian domestic default
+    return []
 
 
 def _authority_run_extract(resp):
