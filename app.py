@@ -6279,225 +6279,263 @@ def _authority_connectors():
     return {"mcp_servers": servers, "tools": tools,
             "betas": ["mcp-client-2025-11-20"], "names": names}
 
-def _authority_extract_prompt(connected_names):
-    """Build the authority-extractor system prompt, naming the databases actually connected and how to
-    ROUTE the issue to the right one (judy=African, CourtListener=US, EULEX=EU, web=public intl law)."""
-    src_lines = []
-    if "judy" in connected_names:
-        src_lines.append("- judy.legal — AFRICAN (incl. Ghanaian) case law & legislation. USE IT for "
-                         "Ghanaian / African domestic issues.")
-    if "courtlistener" in connected_names:
-        src_lines.append("- CourtListener — US federal & state case law. USE IT for United States "
-                         "authority (and, cautiously, US persuasive/comparative material).")
-    if "eulex" in connected_names:
-        src_lines.append("- EULEX — EU law (EUR-Lex) + French/Croatian. USE IT for European Union / EU "
-                         "member-state law.")
-    src_lines.append("- Web search — for PUBLIC INTERNATIONAL LAW the databases do not cover: treaties "
-                     "and conventions, ICJ / ITLOS / PCA / arbitral decisions, UN instruments, and "
-                     "foreign domestic law not in the databases. Search ONLY authoritative primary "
-                     "sources — the UN Treaty Collection (treaties.un.org), the ICJ (icj-cij.org), the "
-                     "PCA, official government/gazette sites, and WorldLII/BAILII — and quote the "
-                     "treaty article or judgment VERBATIM from what the page returns; never a blog, wiki "
-                     "or summariser as the authority.")
-    return (
-        "You are a legal-AUTHORITY extractor with live tools connected to authoritative legal "
-        "databases and web search. Your job is to FIND and EXTRACT, for the legal issue given, BOTH "
-        "(A) the STATUTES / treaties / any binding laws that apply, and (B) the leading on-point "
-        "DECIDED CASES. Extract ONLY from what the tools actually return — never invent an Act, a "
-        "section, a treaty article, a case, a citation, a fact or a holding, and never fill a gap "
-        "from memory.\n\n"
-        "ROUTE BY JURISDICTION — for the GOVERNING LAW (the LEGISLATION and CASES sections) first work "
-        "out which legal system this issue belongs to, then search the source(s) that fit it (don't "
-        "waste searches on databases for the wrong jurisdiction). Available sources:\n"
-        + "\n".join(src_lines) + "\n"
-        "For the governing law: a domestic Ghanaian issue → judy. A US issue → CourtListener. An EU "
-        "issue → EULEX. A public-international-law issue (treaty/ICJ/arbitration) → web search of the "
-        "primary sources. A genuinely cross-border issue may need more than one; use judgment.\n"
-        "BUT THE COMPARATIVE SECTION IS DIFFERENT — it is ALWAYS built with WEB SEARCH, whatever the "
-        "issue's home jurisdiction, because it is precisely about OTHER countries, reports and "
-        "incidents that no single national database holds. Even for a purely Ghanaian issue you MUST "
-        "run web searches to fill the Comparative section; never answer it 'none found' just because "
-        "the issue is domestic.\n\n"
-        "Output EXACTLY three sections in this order, each introduced by its marker line ON ITS OWN "
-        "LINE, and NOTHING else — no preamble, no closing, and NEVER narrate your searches ('I'll "
-        "search…', 'Good, the legislation is confirmed…', 'Let me now…'):\n\n"
-        "@@LEGISLATION@@\n"
-        "ONLY the statutes, regulations, treaty provisions, constitutional provisions and other "
-        "binding laws that ACTUALLY DECIDE this issue — the operative provisions, not every section "
-        "that mentions the subject. ONE bullet per instrument, the governing instrument first:\n"
-        "- **<Full instrument name — e.g. 'the Water Resources Commission Act, 1996 (Act 522)'; 'the "
-        "1992 Constitution'; a treaty by its full title, place and year e.g. 'the United Nations "
-        "Convention on the Law of the Sea (Montego Bay, 1982)'>**\n"
-        "  - *s./reg./art. <N>:* \"<the operative words VERBATIM as the tool returns them>\" — <one "
-        "plain line on what it requires, prohibits or empowers>\n"
-        "  - (repeat ONLY for each provision the issue genuinely turns on)\n"
-        "Give the FULL instrument name the FIRST time it appears; quote the operative words exactly "
-        "(do not paraphrase, compress or modernise); if the tool returns the number but not the full "
-        "text, give the number and a one-line summary and mark it '(full text not shown)'.\n\n"
-        "@@CASES@@\n"
-        "Bring the LOCUS CLASSICUS and the FEW authorities that SEAL THE DEAL — not a survey. First, "
-        "identify the locus classicus: the leading, foundational decision the courts treat as "
-        "SETTLING this point (normally the highest court's most-cited authority on it — for "
-        "international law, the leading ICJ/PCIJ or arbitral decision). Put it FIRST and mark it. "
-        "Then add ONLY 1–3 further authorities that are genuinely DISPOSITIVE. Prefer the APEX court "
-        "available (for a domestic system: Supreme Court > Court of Appeal > High Court) and the "
-        "most-cited, still-good law; drop anything merely related, analogous or duplicative — usually "
-        "2–4 in total, never a long list. ONE bullet per case:\n"
-        "- **<Full case name — all named parties, not truncated> <full citation exactly as the tool "
-        "reports it>**<add ' — **locus classicus**' on this line for the leading authority only>\n"
-        "  - *Court & status:* <the deciding court/tribunal, and whether it is binding apex authority "
-        "or persuasive — so its weight is clear>\n"
-        "  - *Facts:* <material facts, 1–3 sentences — only what the report states>\n"
-        "  - *Ratio:* <the ratio decidendi — the binding principle actually decided, 1–2 sentences>\n"
-        "  - *Obiter:* <any notable obiter dicta; 'none noted' if none>\n"
-        "  - *Relevance:* <one line: why it seals THIS issue>\n\n"
-        "Keep ratio and obiter DISTINCT (ratio = necessary to the decision; obiter = said in "
-        "passing). Do NOT argue, apply the law to the facts, or reach a conclusion — this is a data "
-        "sheet of good law. 100% ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding, "
-        "section and treaty article MUST come from what the tools actually returned — never "
-        "approximate a citation, never state a holding a report does not support, never fill a gap "
-        "from memory. If there is genuinely no direct authority, give the single closest one and say "
-        "so honestly in *Relevance:* — do NOT manufacture a list to look complete.\n\n"
-        "@@COMPARATIVE@@\n"
-        "Live COMPARATIVE CONTEXT for this issue — how comparable places handle it, the authoritative "
-        "reports, and the real incidents. Use WEB SEARCH of authoritative sources (official government "
-        "/ regulator sites, IGO and NGO reports — World Bank, UN, IMF, OECD, commissions of inquiry — "
-        "reputable law reviews and quality press for incidents). Pick COMPARATORS that are genuinely "
-        "similar to the issue's own jurisdiction (comparable legal tradition, economy or context — for "
-        "a Ghanaian resource issue, e.g. Nigeria, South Africa, Kenya, Botswana, Australia/Canada as "
-        "mature analogues), not random countries. Use THREE labelled sub-parts (omit a sub-part only "
-        "if truly nothing is found):\n"
-        "**Similar jurisdictions:**\n"
-        "- **<Country>** — <how it regulates / decides THIS same point, and the instrument or body> "
-        "(source: <name the report/site>)\n"
-        "**Reports & data:**\n"
-        "- **<Report or dataset title>** (<issuing body>, <year>) — <the specific finding, figure or "
-        "recommendation that bears on this issue> (source)\n"
-        "**Incidents:**\n"
-        "- **<What happened — place, year>** — <one or two lines on the incident and why it "
-        "illustrates this issue> (source)\n"
-        "Each bullet MUST rest on a real source the search returned — name it. This is CONTEXT and "
-        "secondary material, not binding law: never present a comparator's rule or a report as "
-        "Ghanaian/governing law, and never invent a country's rule, a report, a figure or an incident. "
-        "Keep it tight — 2–4 bullets per sub-part, the most on-point first.\n\n"
-        "Do NOT argue, apply the law to the facts, or reach a conclusion — this is a data sheet. 100% "
-        "ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding, section, treaty article, "
-        "comparator rule, report and incident MUST come from what the tools actually returned — never "
-        "approximate a citation, never state a holding a report does not support, never fill a gap "
-        "from memory. If there is genuinely no direct authority, give the single closest one and say "
-        "so honestly. Under ANY marker, if nothing usable is found, put exactly this one line under "
-        "that marker: '⚠ none found'. ALWAYS emit ALL THREE marker lines, even when a section is "
-        "empty.")
-
-
 def _anthropic_timeout():
     """The SDK's timeout exception class (for catching a slow/interrupted request)."""
     import anthropic
     return anthropic.APITimeoutError
 
 
-def _gather_authority(issue_line, rule_context):
-    """Live authority pass for the gather across every connected legal database (judy=African,
-    CourtListener=US, EULEX=EU) PLUS web search — the model routes by the issue's jurisdiction. Finds
-    (A) the applicable statutes/treaties, (B) the leading cases (locus classicus, facts/ratio/obiter),
-    and (C) live COMPARATIVE context — similar jurisdictions, authoritative reports, and real
-    incidents. Returns (legislation_block, cases_block, comparative_block, used, cost_usd); each block
-    is None if empty/absent."""
-    conn = _authority_connectors()
+# The authority pass is split into two INDEPENDENT, PARALLEL sub-passes so (a) a flaky legal-database
+# MCP server can never sink the (web-only) comparative the student asked for, and (b) each call does
+# LESS and finishes within budget. LAW → the one routed database (+ web fallback); COMPARATIVE → web.
+_LAW_SECTIONS = (
+    "@@LEGISLATION@@\n"
+    "ONLY the statutes, regulations, treaty provisions, constitutional provisions and other binding "
+    "laws that ACTUALLY DECIDE this issue — the operative provisions, not every section that mentions "
+    "the subject. ONE bullet per instrument, the governing instrument first:\n"
+    "- **<Full instrument name — e.g. 'the Water Resources Commission Act, 1996 (Act 522)'; 'the 1992 "
+    "Constitution'; a treaty by its full title, place and year e.g. 'the United Nations Convention on "
+    "the Law of the Sea (Montego Bay, 1982)'>**\n"
+    "  - *s./reg./art. <N>:* \"<the operative words VERBATIM as the tool returns them>\" — <one plain "
+    "line on what it requires, prohibits or empowers>\n"
+    "  - (repeat ONLY for each provision the issue genuinely turns on)\n"
+    "Give the FULL instrument name the FIRST time it appears; quote operative words exactly (no "
+    "paraphrase/compression); if the tool returns the number but not the full text, give the number "
+    "and a one-line summary and mark it '(full text not shown)'.\n\n"
+    "@@CASES@@\n"
+    "Bring the LOCUS CLASSICUS and the FEW authorities that SEAL THE DEAL — not a survey. First, "
+    "identify the locus classicus: the leading, foundational decision the courts treat as SETTLING "
+    "this point (normally the highest court's most-cited authority on it — for international law, the "
+    "leading ICJ/PCIJ or arbitral decision). Put it FIRST and mark it. Then add ONLY 1–3 further "
+    "authorities that are genuinely DISPOSITIVE. Prefer the APEX court available (Supreme Court > "
+    "Court of Appeal > High Court) and the most-cited, still-good law; drop anything merely related "
+    "or duplicative — usually 2–4 in total. ONE bullet per case:\n"
+    "- **<Full case name — all named parties> <full citation exactly as the tool reports it>**<add "
+    "' — **locus classicus**' on this line for the leading authority only>\n"
+    "  - *Court & status:* <the deciding court/tribunal, and whether binding apex authority or "
+    "persuasive>\n"
+    "  - *Facts:* <material facts, 1–3 sentences — only what the report states>\n"
+    "  - *Ratio:* <the ratio decidendi — the binding principle actually decided, 1–2 sentences>\n"
+    "  - *Obiter:* <any notable obiter dicta; 'none noted' if none>\n"
+    "  - *Relevance:* <one line: why it seals THIS issue>\n\n"
+    "Keep ratio and obiter DISTINCT. If there is genuinely no direct authority, give the single "
+    "closest one and say so honestly in *Relevance:*.")
+
+_COMPARATIVE_SECTION = (
+    "@@COMPARATIVE@@\n"
+    "Live COMPARATIVE CONTEXT for this issue — how comparable places handle it, the authoritative "
+    "reports, and the real incidents. Use WEB SEARCH of authoritative sources (official government / "
+    "regulator sites; IGO/NGO reports — World Bank, UN, IMF, OECD, commissions of inquiry; reputable "
+    "law reviews and quality press for incidents). Pick COMPARATORS genuinely similar to the issue's "
+    "own jurisdiction (comparable legal tradition, economy or context — for a Ghanaian resource "
+    "issue, e.g. Nigeria, South Africa, Kenya, Botswana, Australia/Canada), not random countries. "
+    "THREE labelled sub-parts (omit one only if truly nothing is found):\n"
+    "**Similar jurisdictions:**\n"
+    "- **<Country>** — <how it regulates / decides THIS same point, and the instrument or body> "
+    "(source: <name the report/site>)\n"
+    "**Reports & data:**\n"
+    "- **<Report or dataset title>** (<issuing body>, <year>) — <the finding/figure/recommendation "
+    "that bears on this issue> (source)\n"
+    "**Incidents:**\n"
+    "- **<What happened — place, year>** — <one or two lines on the incident and why it illustrates "
+    "this issue> (source)\n"
+    "Each bullet MUST rest on a real source the search returned — name it. This is CONTEXT/secondary "
+    "material, not binding law: never present a comparator's rule or a report as Ghanaian/governing "
+    "law, and never invent a country's rule, a report, a figure or an incident. Keep it tight — 2–4 "
+    "bullets per sub-part, most on-point first.")
+
+_AUTH_ACCURACY = (
+    "\n\n100% ACCURATE OR NOT AT ALL: every case, citation, court, fact, holding, section, treaty "
+    "article, comparator rule, report and incident MUST come from what the tools ACTUALLY returned — "
+    "never approximate a citation, state a holding a report does not support, or fill a gap from "
+    "memory. NEVER narrate your searches ('I'll search…', 'Let me now…'); output ONLY the marked "
+    "section(s) below, nothing else. Under ANY marker, if nothing usable is found, put exactly this "
+    "one line under it: '⚠ none found'. ALWAYS emit every marker line, even when a section is empty.")
+
+
+def _authority_extract_prompt(connected_names, want):
+    """System prompt for one sub-pass. want='law' → LEGISLATION+CASES (routed to the connected DB(s)
+    + web for international); want='comparative' → COMPARATIVE (web only)."""
+    if want == "comparative":
+        return ("You are a comparative-law researcher with live WEB SEARCH. For the legal issue given, "
+                "find the COMPARATIVE CONTEXT — comparable jurisdictions, authoritative reports, and "
+                "real incidents — from authoritative web sources only. Extract ONLY from what the "
+                "search returns.\n\n" + _COMPARATIVE_SECTION + _AUTH_ACCURACY)
+    src = []
+    if "judy" in connected_names:
+        src.append("- judy.legal — AFRICAN (incl. Ghanaian) case law & legislation.")
+    if "courtlistener" in connected_names:
+        src.append("- CourtListener — US federal & state case law.")
+    if "eulex" in connected_names:
+        src.append("- EULEX — EU law (EUR-Lex) + French/Croatian.")
+    src.append("- Web search — for PUBLIC INTERNATIONAL LAW and any jurisdiction the databases do not "
+               "cover: treaties/conventions, ICJ/ITLOS/PCA/arbitral decisions, UN instruments, foreign "
+               "domestic law. Search ONLY authoritative primary sources (UN Treaty Collection, ICJ, "
+               "PCA, official gazettes, WorldLII/BAILII) and quote the article/judgment VERBATIM.")
+    return ("You are a legal-AUTHORITY extractor with live tools. For the legal issue given, find and "
+            "extract (A) the STATUTES/treaties/binding laws that apply and (B) the leading on-point "
+            "DECIDED CASES. Extract ONLY from what the tools actually return. Sources available:\n"
+            + "\n".join(src) + "\n"
+            "Use the source that fits the issue's jurisdiction (a Ghanaian issue → judy; US → "
+            "CourtListener; EU → EULEX; public international law → web primaries). Don't waste searches "
+            "on the wrong jurisdiction.\n\n" + _LAW_SECTIONS + _AUTH_ACCURACY)
+
+
+def _route_db_names(issue_line, connected):
+    """Heuristic: which connected database(s) fit this issue, so we attach ONLY those (avoids a flaky
+    irrelevant MCP server sinking the call, and is faster). Defaults to judy for African/other."""
+    t = (issue_line or "").lower()
+    picks = []
+    if "courtlistener" in connected and re.search(
+            r'\b(united states|u\.s\.|u\.s\.a|american law|federal court|circuit court|scotus|'
+            r'supreme court of the united states)\b', t):
+        picks.append("courtlistener")
+    if "eulex" in connected and re.search(
+            r'\b(european union|\beu\b|eur-lex|cjeu|european court of justice|member state)\b', t):
+        picks.append("eulex")
+    # purely public-international-law issue with no domestic anchor → no DB (web handles it)
+    intl_only = re.search(r'\b(treaty|convention|icj|international court of justice|itlos|unclos|'
+                          r'customary international law|arbitral tribunal)\b', t) and not re.search(
+                          r'\b(ghana|ghanaian|nigeria|kenya|south africa)\b', t)
+    if not picks and not intl_only and "judy" in connected:
+        picks.append("judy")          # default: African/Ghanaian → judy
+    return picks
+
+
+def _authority_run_extract(resp):
+    """From a beta.messages response, return (final_text_after_last_tool, used, cost_usd)."""
+    _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
+                "web_search_tool_result", "tool_use", "tool_result")
+    used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
+    last = -1
+    for i, b in enumerate(resp.content):
+        if getattr(b, "type", "") in _TOOLISH:
+            last = i
+    full = "".join(getattr(b, "text", "") for b in resp.content[last + 1:]
+                   if getattr(b, "type", "") == "text").strip()
+    try:
+        cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
+    except Exception:
+        cost = 0.0
+    return full, used, cost
+
+
+def _authority_clean(seg):
+    seg = (seg or "").strip()
+    if not seg or re.search(r'(?i)^\W*(⚠\s*)?none found', seg):
+        return None
+    mm = re.search(r'(?m)^[\-\*]\s', seg)
+    if mm and mm.start() > 0:
+        seg = seg[mm.start():].strip()
+    return seg or None
+
+
+def _authority_law(issue_line, rule_context, names, servers, tools):
+    """LAW sub-pass: legislation + cases from the routed database(s) (+ web for international); web-only
+    fallback if the MCP server is unreachable. Returns (legislation, cases, used, cost)."""
     c = _client()
     if not c:
-        return None, None, None, False, 0.0
-    user = ("LEGAL ISSUE (find the statutes/treaties/laws + the on-point cases + comparative context "
-            "for THIS — route to the right source by jurisdiction):\n" + (issue_line or "").strip()[:1500]
-            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm these, add "
-               "any applicable statute/treaty/regulation/constitutional provision they miss, and find "
-               "the cases applying them — reproduce FULL instrument names):\n"
-               + rule_context.strip()[:4000] if rule_context else "")
-            + "\n\nSearch efficiently — a few targeted searches, not many — and output the three "
-              "marked sections in the required shape.")
-    web_tool = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
+        return None, None, False, 0.0
+    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
+    user = ("LEGAL ISSUE (find the statutes/treaties + the on-point cases for THIS):\n"
+            + (issue_line or "").strip()[:1500]
+            + ("\n\nGOVERNING LAW ALREADY IDENTIFIED FROM THE STUDENT'S MATERIALS (confirm/extend, find "
+               "the cases applying them, FULL instrument names):\n" + rule_context.strip()[:4000]
+               if rule_context else "")
+            + "\n\nSearch efficiently and output the two marked sections.")
 
-    def _run(with_mcp, timeout):
-        # HARD BOUND: a firm per-request timeout so a slow/looping pass fails fast. `with_mcp=False`
-        # drops the database connectors and runs WEB-ONLY — the resilient fallback when a database
-        # MCP server is UNREACHABLE (a fast connection error), so comparative + international still work.
-        kw = dict(model=AUDIT_MODEL, max_tokens=8000,
-                  system=_authority_extract_prompt(conn["names"] if with_mcp else []),
+    def run(with_mcp, timeout):
+        kw = dict(model=AUDIT_MODEL, max_tokens=6000,
+                  system=_authority_extract_prompt(names if with_mcp else [], "law"),
                   messages=[{"role": "user", "content": user}],
-                  tools=((list(conn["tools"]) + web_tool) if (with_mcp and conn["mcp_servers"]) else web_tool))
-        if with_mcp and conn["mcp_servers"]:
-            kw["mcp_servers"] = conn["mcp_servers"]
-            kw["betas"] = conn["betas"]
-        # max_retries=0: the SDK must NOT retry a timed-out request (that DOUBLES the wait). This pass
-        # is decoupled (a background job the frontend polls), so we can afford a long single attempt.
+                  tools=((list(tools) + web) if (with_mcp and servers) else web))
+        if with_mcp and servers:
+            kw["mcp_servers"] = servers
+            kw["betas"] = ["mcp-client-2025-11-20"]
         return c.with_options(max_retries=0, timeout=timeout).beta.messages.create(**kw)
 
     try:
         try:
-            resp = _run(with_mcp=True, timeout=540.0)
-        except _anthropic_timeout() as _te:
-            # SLOW (not a connection error) — do NOT launch a second full attempt (that just wastes
-            # another few minutes). Give up; the gather returns its corpus sections.
-            app.logger.warning("authority pass timed out")
-            app.config["_last_auth_err"] = "APITimeoutError (slow web/MCP pass)"
-            return None, None, None, False, 0.0
-        except Exception as _e1:
-            # A flaky database MCP server ("Connection error while communicating with MCP server")
-            # fails FAST — retry WEB-ONLY so the comparative + web-findable law/cases still come
-            # through. Only when databases were actually attached.
-            msg = str(_e1)
-            if conn["mcp_servers"] and ("MCP server" in msg or "Connection error" in msg):
-                app.logger.warning("authority pass: MCP unreachable, falling back to web-only")
+            resp = run(bool(servers), 360.0)
+        except _anthropic_timeout():
+            return None, None, False, 0.0
+        except Exception as e:
+            msg = str(e)
+            if servers and ("MCP server" in msg or "Connection error" in msg):
+                app.logger.warning("law pass: MCP unreachable → web-only")
                 try:
-                    resp = _run(with_mcp=False, timeout=480.0)
-                except _anthropic_timeout():
-                    app.logger.warning("authority web-only fallback timed out")
-                    app.config["_last_auth_err"] = "APITimeoutError (web-only fallback)"
-                    return None, None, None, False, 0.0
+                    resp = run(False, 360.0)
+                except Exception:
+                    return None, None, False, 0.0
             else:
                 raise
-        _TOOLISH = ("mcp_tool_use", "mcp_tool_result", "server_tool_use",
-                    "web_search_tool_result", "tool_use", "tool_result")
-        used = any(getattr(b, "type", "") in _TOOLISH for b in resp.content)
-        # The connector/web loop interleaves the model's search NARRATION as text blocks BEFORE/BETWEEN
-        # the tool calls. Keep ONLY the text AFTER the last tool block — the finished answer.
-        _last_tool = -1
-        for _i, _b in enumerate(resp.content):
-            if getattr(_b, "type", "") in _TOOLISH:
-                _last_tool = _i
-        full = "".join(getattr(_b, "text", "") for _b in resp.content[_last_tool + 1:]
-                       if getattr(_b, "type", "") == "text").strip()
-        try:
-            cost = record_cost(resp, AUDIT_MODEL).get("this_usd", 0.0) or 0.0
-        except Exception:
-            cost = 0.0
-
-        def _clean(seg):
-            seg = (seg or "").strip()
-            if not seg or re.search(r'(?i)^\W*(⚠\s*)?none found', seg):
-                return None
-            mm = re.search(r'(?m)^[\-\*]\s', seg)
-            if mm and mm.start() > 0:
-                seg = seg[mm.start():].strip()
-            return seg or None
-
-        # split the three marked sections (tolerate a dropped marker)
-        leg_seg = cases_seg = comp_seg = ""
+        full, used, cost = _authority_run_extract(resp)
         rest = full
-        comp_seg = ""
-        if "@@COMPARATIVE@@" in rest:
-            rest, comp_seg = rest.split("@@COMPARATIVE@@", 1)
+        cases = ""
         if "@@CASES@@" in rest:
-            rest, cases_seg = rest.split("@@CASES@@", 1)
-        leg_seg = rest.split("@@LEGISLATION@@", 1)[-1]
-        return _clean(leg_seg), _clean(cases_seg), _clean(comp_seg), used, cost
-    except Exception as _e:
-        app.logger.exception("gather-authority failed")
-        try:
-            app.config["_last_auth_err"] = repr(_e)[:800]
-        except Exception:
-            pass
+            rest, cases = rest.split("@@CASES@@", 1)
+        leg = rest.split("@@LEGISLATION@@", 1)[-1]
+        return _authority_clean(leg), _authority_clean(cases), used, cost
+    except Exception as e:
+        app.logger.exception("authority law failed")
+        app.config["_last_auth_err"] = "law: " + repr(e)[:300]
+        return None, None, False, 0.0
+
+
+def _authority_comparative(issue_line, rule_context):
+    """COMPARATIVE sub-pass: similar jurisdictions + reports + incidents, WEB ONLY (never depends on a
+    database MCP server). Returns (comparative, used, cost)."""
+    c = _client()
+    if not c:
+        return None, False, 0.0
+    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
+    user = ("LEGAL ISSUE (find comparative context — similar jurisdictions, reports, incidents — for "
+            "THIS):\n" + (issue_line or "").strip()[:1500]
+            + "\n\nSearch authoritative web sources and output the @@COMPARATIVE@@ section.")
+    try:
+        resp = c.with_options(max_retries=0, timeout=360.0).beta.messages.create(
+            model=AUDIT_MODEL, max_tokens=5000,
+            system=_authority_extract_prompt([], "comparative"),
+            messages=[{"role": "user", "content": user}], tools=web)
+        full, used, cost = _authority_run_extract(resp)
+        comp = full.split("@@COMPARATIVE@@", 1)[-1]
+        return _authority_clean(comp), used, cost
+    except _anthropic_timeout():
+        app.config["_last_auth_err"] = "comparative: timeout"
+        return None, False, 0.0
+    except Exception as e:
+        app.logger.exception("authority comparative failed")
+        app.config["_last_auth_err"] = "comparative: " + repr(e)[:300]
+        return None, False, 0.0
+
+
+def _gather_authority(issue_line, rule_context):
+    """Live authority for the gather. Runs the LAW sub-pass (routed database + web) and the COMPARATIVE
+    sub-pass (web) IN PARALLEL, so a flaky database never blocks the comparative and each call stays
+    light. Returns (legislation, cases, comparative, used, cost_usd)."""
+    conn = _authority_connectors()
+    c = _client()
+    if not c:
         return None, None, None, False, 0.0
+    law_names = _route_db_names(issue_line, conn["names"])
+    servers = [s for s in conn["mcp_servers"] if s["name"] in law_names]
+    tools = [t for t in conn["tools"] if t.get("mcp_server_name") in law_names]
+    leg = cases = comp = None
+    used = False
+    cost = 0.0
+    import concurrent.futures as _cf
+    try:
+        with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+            fL = ex.submit(_authority_law, issue_line, rule_context, law_names, servers, tools)
+            fC = ex.submit(_authority_comparative, issue_line, rule_context)
+            leg, cases, uL, cL = fL.result()
+            comp, uC, cC = fC.result()
+            used = bool(uL or uC)
+            cost = (cL or 0.0) + (cC or 0.0)
+    except Exception as e:
+        app.logger.exception("gather-authority parallel failed")
+        app.config["_last_auth_err"] = "parallel: " + repr(e)[:300]
+    return leg, cases, comp, used, cost
 
 
 @app.route("/api/mcp/_dbg")
