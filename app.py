@@ -6482,37 +6482,11 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
         return None, None, False, 0.0
 
 
-def _authority_comparative(issue_line, rule_context):
-    """COMPARATIVE sub-pass: similar jurisdictions + reports + incidents, WEB ONLY (never depends on a
-    database MCP server). Returns (comparative, used, cost)."""
-    c = _client()
-    if not c:
-        return None, False, 0.0
-    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
-    user = ("LEGAL ISSUE (find comparative context — similar jurisdictions, reports, incidents — for "
-            "THIS):\n" + (issue_line or "").strip()[:1500]
-            + "\n\nSearch authoritative web sources and output the @@COMPARATIVE@@ section.")
-    try:
-        resp = c.with_options(max_retries=0, timeout=360.0).beta.messages.create(
-            model=AUDIT_MODEL, max_tokens=5000,
-            system=_authority_extract_prompt([], "comparative"),
-            messages=[{"role": "user", "content": user}], tools=web)
-        full, used, cost = _authority_run_extract(resp)
-        comp = full.split("@@COMPARATIVE@@", 1)[-1]
-        return _authority_clean(comp), used, cost
-    except _anthropic_timeout():
-        app.config["_last_auth_err"] = "comparative: timeout"
-        return None, False, 0.0
-    except Exception as e:
-        app.logger.exception("authority comparative failed")
-        app.config["_last_auth_err"] = "comparative: " + repr(e)[:300]
-        return None, False, 0.0
-
-
 def _gather_authority(issue_line, rule_context):
-    """Live authority for the gather. Runs the LAW sub-pass (routed database + web) and the COMPARATIVE
-    sub-pass (web) IN PARALLEL, so a flaky database never blocks the comparative and each call stays
-    light. Returns (legislation, cases, comparative, used, cost_usd)."""
+    """Live authority for the gather: the LAW pass only (legislation + cases) from the routed legal
+    database (judy=African, CourtListener=US, EULEX=EU) with a web fallback for public international
+    law. COMPARATIVE is NOT fetched live — it comes from the student's own corpus in the base gather.
+    Returns (legislation, cases, comparative=None, used, cost_usd)."""
     conn = _authority_connectors()
     c = _client()
     if not c:
@@ -6520,22 +6494,13 @@ def _gather_authority(issue_line, rule_context):
     law_names = _route_db_names(issue_line, conn["names"])
     servers = [s for s in conn["mcp_servers"] if s["name"] in law_names]
     tools = [t for t in conn["tools"] if t.get("mcp_server_name") in law_names]
-    leg = cases = comp = None
-    used = False
-    cost = 0.0
-    import concurrent.futures as _cf
     try:
-        with _cf.ThreadPoolExecutor(max_workers=2) as ex:
-            fL = ex.submit(_authority_law, issue_line, rule_context, law_names, servers, tools)
-            fC = ex.submit(_authority_comparative, issue_line, rule_context)
-            leg, cases, uL, cL = fL.result()
-            comp, uC, cC = fC.result()
-            used = bool(uL or uC)
-            cost = (cL or 0.0) + (cC or 0.0)
+        leg, cases, used, cost = _authority_law(issue_line, rule_context, law_names, servers, tools)
     except Exception as e:
-        app.logger.exception("gather-authority parallel failed")
-        app.config["_last_auth_err"] = "parallel: " + repr(e)[:300]
-    return leg, cases, comp, used, cost
+        app.logger.exception("gather-authority failed")
+        app.config["_last_auth_err"] = repr(e)[:300]
+        return None, None, None, False, 0.0
+    return leg, cases, None, bool(used), (cost or 0.0)
 
 
 @app.route("/api/mcp/_dbg")

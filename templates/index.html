@@ -3369,7 +3369,7 @@ async function gatherIssue(i, force) {
 // ---- DECOUPLED live-authority fetch (statutes/treaties + locus-classicus cases + comparative) -----
 // The live pass (judy / CourtListener / EULEX + web comparative) can take minutes, so it runs as a
 // background job the browser polls, then splices the sections into the already-shown data sheet.
-const AUTH_PENDING_NOTE = "\n\n> ⏳ *Pulling live statutes, cases & comparative from the legal databases — this fills in automatically (usually a few minutes).*";
+const AUTH_PENDING_NOTE = "\n\n> ⏳ *Pulling the governing statutes & the locus-classicus cases from the legal databases — this fills in automatically (usually 1–3 minutes). Comparative data comes from your corpus.*";
 const AUTH_PENDING_RE = /\n*> ⏳ \*Pulling live[^\n]*\*/g;
 function _authSectionBounds(md, name) {
   const re = new RegExp("(^|\\n)##\\s*" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
