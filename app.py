@@ -6135,10 +6135,10 @@ MCP_PROVIDERS = {
              "scope": "openid read write", "store": ".judy_oauth.json"},
     "courtlistener": {"label": "CourtListener", "desc": "US federal & state case law + citation check",
                       "mcp_url": "https://mcp.courtlistener.com/", "base": "https://mcp.courtlistener.com",
-                      "scope": "openid read", "store": ".courtlistener_oauth.json"},
+                      "scope": "openid api", "store": ".courtlistener_oauth.json"},
     "eulex": {"label": "EULEX.AI", "desc": "EU law (EUR-Lex) + French/Croatian",
               "mcp_url": "https://mcp.eulex.ai/", "base": "https://mcp.eulex.ai",
-              "scope": "openid read", "store": ".eulex_oauth.json"},
+              "scope": "mcp:search mcp:documents mcp:graph", "store": ".eulex_oauth.json"},
 }
 _MCP_PKCE = {}   # state -> {"provider": str, "verifier": str, "ts": float}  (transient, in-process)
 
@@ -6180,30 +6180,50 @@ def _mcp_http(url, form=None, method="POST"):
         return json.loads(r.read().decode() or "{}")
 
 def _mcp_endpoints(provider):
-    """Resolve the OAuth endpoints. Prefer RFC 8414 Authorization-Server Metadata discovery (so each
-    provider's real register/authorize/token URLs are used); fall back to base-relative paths (judy's
-    verified shape). Cached in the provider's store."""
+    """Resolve the OAuth endpoints via the MCP/OAuth discovery chain: the MCP server's
+    Protected-Resource Metadata (RFC 9728) names its Authorization Server(s) — which may be a
+    DIFFERENT host (e.g. CourtListener's AS is www.courtlistener.com) — and the AS's Authorization-
+    Server Metadata (RFC 8414) gives the real register/authorize/token URLs. Falls back to
+    base-relative paths (judy's verified shape) only if discovery fails. Cached under 'endpoints2'
+    (the old 'endpoints' cache from a failed attempt is deliberately ignored)."""
     p = _mcp_p(provider)
     st = _mcp_load(provider)
-    ep = st.get("endpoints")
-    if ep and ep.get("token_endpoint"):
+    ep = st.get("endpoints2")
+    if ep and ep.get("token_endpoint") and ep.get("registration_endpoint"):
         return ep
     base = p["base"]
-    ep = {"registration_endpoint": base + "/register",
-          "authorization_endpoint": base + "/authorize",
-          "token_endpoint": base + "/token"}
-    for well_known in ("/.well-known/oauth-authorization-server",
-                       "/.well-known/openid-configuration"):
-        try:
-            meta = _mcp_http(base + well_known, method="GET")
-            if meta.get("token_endpoint") and meta.get("authorization_endpoint"):
-                ep = {"registration_endpoint": meta.get("registration_endpoint", ep["registration_endpoint"]),
-                      "authorization_endpoint": meta["authorization_endpoint"],
-                      "token_endpoint": meta["token_endpoint"]}
-                break
-        except Exception:
-            continue
-    st["endpoints"] = ep
+    # 1) protected-resource metadata → the authorization server(s) (possibly a different host)
+    as_urls = []
+    try:
+        pr = _mcp_http(base + "/.well-known/oauth-protected-resource", method="GET")
+        for s in (pr.get("authorization_servers") or []):
+            as_urls.append(s.rstrip("/"))
+    except Exception:
+        pass
+    if base not in as_urls:
+        as_urls.append(base)          # always try the MCP host itself too (judy's AS is itself)
+    # 2) authorization-server metadata from each candidate AS
+    ep = None
+    for as_url in as_urls:
+        for wk in ("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"):
+            try:
+                meta = _mcp_http(as_url + wk, method="GET")
+                if meta.get("token_endpoint") and meta.get("authorization_endpoint"):
+                    ep = {"registration_endpoint": meta.get("registration_endpoint")
+                          or (as_url + "/register"),
+                          "authorization_endpoint": meta["authorization_endpoint"],
+                          "token_endpoint": meta["token_endpoint"]}
+                    break
+            except Exception:
+                continue
+        if ep:
+            break
+    # 3) fallback: base-relative paths (judy works this way even without discovery)
+    if not ep:
+        ep = {"registration_endpoint": base + "/register",
+              "authorization_endpoint": base + "/authorize",
+              "token_endpoint": base + "/token"}
+    st["endpoints2"] = ep
     _mcp_save(provider, st)
     return ep
 
