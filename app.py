@@ -6491,16 +6491,18 @@ def _authority_law(issue_line, rule_context, names, servers, tools):
 
     try:
         try:
-            resp = run(bool(servers), 360.0)
+            resp = run(bool(servers), 520.0)
         except _anthropic_timeout():
+            app.config["_last_auth_err"] = "law: timeout (>520s)"
             return None, None, False, 0.0
         except Exception as e:
             msg = str(e)
             if servers and ("MCP server" in msg or "Connection error" in msg):
                 app.logger.warning("law pass: MCP unreachable → web-only")
                 try:
-                    resp = run(False, 360.0)
+                    resp = run(False, 520.0)
                 except Exception:
+                    app.config["_last_auth_err"] = "law: web-only fallback failed"
                     return None, None, False, 0.0
             else:
                 raise
@@ -6529,13 +6531,13 @@ def _gather_authority(issue_line, rule_context):
     law_names = _route_db_names(issue_line, conn["names"])
     servers = [s for s in conn["mcp_servers"] if s["name"] in law_names]
     tools = [t for t in conn["tools"] if t.get("mcp_server_name") in law_names]
-    # HARD WALL-CLOCK CAP: bound the whole pass to ~430s regardless of how the SDK/httpx timeout
-    # behaves, so the background job always returns inside the frontend's polling window.
+    # HARD WALL-CLOCK CAP: bound the whole pass to ~560s regardless of how the SDK/httpx timeout
+    # behaves, so the background job always returns inside the frontend's polling window (~11 min).
     import concurrent.futures as _cf
     ex = _cf.ThreadPoolExecutor(max_workers=1)
     try:
         fut = ex.submit(_authority_law, issue_line, rule_context, law_names, servers, tools)
-        leg, cases, used, cost = fut.result(timeout=430)
+        leg, cases, used, cost = fut.result(timeout=560)
     except _cf.TimeoutError:
         app.logger.warning("gather-authority hard wall-clock cap hit")
         app.config["_last_auth_err"] = "hard wall-clock cap (430s)"
