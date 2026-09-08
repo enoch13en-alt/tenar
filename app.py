@@ -6494,12 +6494,23 @@ def _gather_authority(issue_line, rule_context):
     law_names = _route_db_names(issue_line, conn["names"])
     servers = [s for s in conn["mcp_servers"] if s["name"] in law_names]
     tools = [t for t in conn["tools"] if t.get("mcp_server_name") in law_names]
+    # HARD WALL-CLOCK CAP: bound the whole pass to ~430s regardless of how the SDK/httpx timeout
+    # behaves, so the background job always returns inside the frontend's polling window.
+    import concurrent.futures as _cf
+    ex = _cf.ThreadPoolExecutor(max_workers=1)
     try:
-        leg, cases, used, cost = _authority_law(issue_line, rule_context, law_names, servers, tools)
+        fut = ex.submit(_authority_law, issue_line, rule_context, law_names, servers, tools)
+        leg, cases, used, cost = fut.result(timeout=430)
+    except _cf.TimeoutError:
+        app.logger.warning("gather-authority hard wall-clock cap hit")
+        app.config["_last_auth_err"] = "hard wall-clock cap (430s)"
+        return None, None, None, False, 0.0
     except Exception as e:
         app.logger.exception("gather-authority failed")
         app.config["_last_auth_err"] = repr(e)[:300]
         return None, None, None, False, 0.0
+    finally:
+        ex.shutdown(wait=False)
     return leg, cases, None, bool(used), (cost or 0.0)
 
 
