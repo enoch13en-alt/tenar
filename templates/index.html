@@ -3343,20 +3343,17 @@ async function gatherIssue(i, force) {
         it.loading = false;
         it._verifying = true;
         renderExam();
-        // VERIFY-AT-GATHER (×2): two independent Haiku audit passes check this issue's authorities
-        // against the corpus and fix at source, so the compile gets doubly-verified law. Best-effort.
+        // VERIFY-AT-GATHER (×1): one Haiku audit pass checks this issue's authorities against the
+        // corpus and fixes at source. (Was ×2; the live-authority pass at Compile now returns verified
+        // database law, so a second corpus pass here was redundant spend — cut to save credit.)
         it._autoFixed = 0; it._autoRemoved = 0; it._removed = []; it._audit = []; it._auditOriginal = null;
-        $("#examStatus").textContent = "🔍 Verifying issue " + (it.n||i+1) + " — pass 1 of 2 (answer already shown)…";
-        await verifyIssue(i);
-        renderExam();
-        $("#examStatus").textContent = "🔍 Re-verifying issue " + (it.n||i+1) + " — pass 2 of 2…";
+        $("#examStatus").textContent = "🔍 Verifying issue " + (it.n||i+1) + " (answer already shown)…";
         await verifyIssue(i);
         it._verifying = false;
         renderExam();
-        // DECOUPLED live authority: pull the governing statutes/treaties + locus-classicus cases +
-        // comparative context in the BACKGROUND (it can take a few minutes via the web comparative)
-        // and splice them in when ready — the gather is already shown, so this never blocks it.
-        fetchAuthority(i, gq);
+        // NOTE: the live-authority pass (judy/DB statutes + cases) is NOT run per-gather anymore —
+        // it is pulled ONCE at Compile for the final issue set (pullAuthorityForAll), so iterating and
+        // re-gathering stays cheap and you only pay for authority on the work you actually submit.
       }
       $("#examStatus").textContent = "Exam session cost so far $" + (EXAM.cost || 0).toFixed(4);
     }
@@ -3435,6 +3432,28 @@ function applyAuthority(i, p) {
   it.answer = a; it.answer_annotated = an;
   if (p.cost) EXAM.cost = (EXAM.cost || 0) + (p.cost || 0);
   renderExam(); try { saveExam(); } catch (e) {}
+}
+// A concise per-issue query for the live-authority pass (used at Compile, in parallel).
+function authorityQueryFor(it) {
+  const exq = (EXAM.question || "").trim();
+  return (exq ? ('In the context of this problem — "' + exq.slice(0, 700) + '" — ') : '')
+    + 'find the governing statutes/treaties and the leading cases for this issue: "' + (it.issue || '') + '".'
+    + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
+}
+// Pull live authority ONCE, at Compile, for every done issue that doesn't have it yet — in PARALLEL
+// (the jobs run server-side concurrently), splicing each into its issue answer before the document
+// is synthesised. This is where the authority credit is spent now (not on every gather).
+async function pullAuthorityForAll() {
+  const jobs = [];
+  (EXAM.issues || []).forEach((it, i) => {
+    if (it && it.done && (it.answer || "").trim() && !it._authDone) {
+      jobs.push(fetchAuthority(i, authorityQueryFor(it)));
+    }
+  });
+  if (!jobs.length) return;
+  $("#examStatus").textContent = "🔎 Pulling live statutes & cases for " + jobs.length
+    + " issue(s) before compiling — this is the one authority charge (a few minutes)…";
+  try { await Promise.all(jobs); } catch (e) {}
 }
 async function fetchAuthority(i, gq) {
   const it = EXAM.issues[i];
@@ -4152,7 +4171,12 @@ async function compileExam(finalize) {
   const done = EXAM.issues.filter(it => it.done && it.answer);
   if (!done.length) { $("#examStatus").textContent = "Gather at least one issue first."; return; }
   const btn = $("#examCompile");
-  if (btn) { btn.disabled = true; btn.textContent = "Compiling… (up to a minute)"; }
+  if (btn) { btn.disabled = true; btn.textContent = "Compiling…"; }
+  // AUTHORITY AT COMPILE (once): pull the live database/web statutes + cases for the final issue set
+  // now, so the compiled document is built on the verified primary law — this is the single point
+  // where authority credit is spent (gathers stay cheap/corpus-only).
+  try { await pullAuthorityForAll(); } catch (e) {}
+  if (btn) { btn.textContent = "Compiling… (up to a minute)"; }
   $("#examStatus").textContent = "Synthesising the final OSCOLA-referenced document…";
   const usingWeb = $("#examWeb") && $("#examWeb").checked;
   // live document area — text streams in here as it's written
