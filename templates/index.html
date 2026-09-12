@@ -1550,9 +1550,97 @@ file.onchange = () => upload(file.files);
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
   e.preventDefault(); drop.classList.remove("over"); }));
 drop.addEventListener("drop", e => upload(e.dataTransfer.files));
+
+// ============ FREE in-browser OCR (Tesseract.js + pdf.js) — no API credit ============
+// Scanned PDFs used to be transcribed server-side by Claude vision (billed per page). Instead we
+// rasterise + OCR them in the BROWSER and upload the resulting text, which indexes for free.
+function _loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector('script[src="' + src + '"]')) return res();
+    const s = document.createElement("script");
+    s.src = src; s.onload = () => res(); s.onerror = () => rej(new Error("failed to load " + src));
+    document.head.appendChild(s);
+  });
+}
+let _ocrLibsReady = null;
+async function ensureOcrLibs() {
+  if (_ocrLibsReady) return _ocrLibsReady;
+  _ocrLibsReady = (async () => {
+    await _loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    await _loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js");
+  })();
+  return _ocrLibsReady;
+}
+// How much real text a PDF already has in its first pages (0 → it's a scan needing OCR).
+async function pdfTextInfo(arrayBuf) {
+  await ensureOcrLibs();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuf.slice(0) }).promise;
+  let txt = "";
+  const N = Math.min(6, pdf.numPages);
+  for (let i = 1; i <= N; i++) {
+    const pg = await pdf.getPage(i);
+    const c = await pg.getTextContent();
+    txt += c.items.map(it => it.str).join(" ");
+  }
+  return { len: txt.trim().length, pages: pdf.numPages };
+}
+// OCR a scanned PDF entirely in the browser. Returns transcribed text with '--- page N ---' markers.
+async function browserOcrPdf(arrayBuf, onProg) {
+  await ensureOcrLibs();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuf.slice(0) }).promise;
+  const worker = await Tesseract.createWorker("eng");
+  let out = "";
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      if (onProg) onProg(i, pdf.numPages);
+      const pg = await pdf.getPage(i);
+      const vp = pg.getViewport({ scale: 2.0 });          // ~150 DPI — crisp enough for OCR
+      const cv = document.createElement("canvas");
+      cv.width = vp.width; cv.height = vp.height;
+      await pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      const { data: { text } } = await worker.recognize(cv);
+      out += "\n--- page " + i + " ---\n" + ((text || "").trim()) + "\n";
+      cv.width = cv.height = 0;                            // free the canvas
+    }
+  } finally { try { await worker.terminate(); } catch (e) {} }
+  return out.trim();
+}
+function _ocrTextIsUsable(t) {
+  return t && t.replace(/---\s*page\s*\d+\s*---/gi, "").trim().length > 50;
+}
+
 async function upload(files) {
   files = Array.from(files || []);
   if (!files.length) return;
+  // FREE OCR PASS: any scanned PDF (no text layer) is OCR'd in the browser and swapped for a text
+  // (.md) file BEFORE upload, so the server never pays Claude vision to read it.
+  try {
+    const processed = [];
+    for (const f of files) {
+      const isPdf = /\.pdf$/i.test(f.name || "") || f.type === "application/pdf";
+      if (isPdf) {
+        try {
+          const buf = await f.arrayBuffer();
+          const info = await pdfTextInfo(buf);
+          if (info.pages > 0 && info.len < 100) {          // it's a scan
+            busyStart("📖 OCR (free, in your browser): " + f.name + " — 0/" + info.pages);
+            const text = await browserOcrPdf(buf, (i, n) =>
+              busySet("📖 OCR " + f.name + ": page " + i + "/" + n + " (free, in your browser — no credit)"));
+            if (_ocrTextIsUsable(text)) {
+              const md = "# " + (f.name || "document").replace(/\.pdf$/i, "") + "\n\n" + text;
+              processed.push(new File([md], (f.name || "document").replace(/\.pdf$/i, "") + " (OCR).md",
+                { type: "text/markdown" }));
+              continue;
+            }
+          }
+        } catch (e) { /* OCR failed — fall through and upload the PDF as-is */ }
+      }
+      processed.push(f);
+    }
+    files = processed;
+  } catch (e) { /* never block a normal upload on the OCR pre-pass */ }
   _statusHold = true;              // keep the 2.5s poller from wiping our messages
   // Upload in SMALL batches. One giant multipart POST of many/large PDFs blocks the single
   // worker while it saves and risks the proxy cutting the request ('loading then idle').
@@ -2106,25 +2194,24 @@ function watchIndexThen(done) {
   }, 3000);
 }
 
-// OCR a scanned / part-scanned doc, showing live progress, then refresh the report
+// OCR an already-uploaded scanned doc — FREE, in the browser (fetch its bytes, Tesseract locally,
+// then paste the text into the corpus). No Claude-vision credit.
 async function fixScan(b) {
   const fn = decodeURIComponent(b.dataset.f);
-  b.disabled = true; b.textContent = "starting OCR…";
+  b.disabled = true; b.textContent = "fetching…";
   try {
-    const rr = await (await fetch("/api/ocr", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, file: fn})})).json();
-    if (rr.error) { b.textContent = "⚠️ " + rr.error; b.disabled = false; return; }
+    const resp = await fetch("/api/rawfile?course=" + encodeURIComponent(COURSE) + "&doc=" + encodeURIComponent(fn));
+    if (!resp.ok) { b.textContent = "⚠️ couldn't fetch file"; b.disabled = false; return; }
+    const buf = await resp.arrayBuffer();
+    b.textContent = "OCR (free)…";
+    const text = await browserOcrPdf(buf, (i, n) => { b.textContent = "OCR " + i + "/" + n + " (free)"; });
+    if (!_ocrTextIsUsable(text)) { b.textContent = "⚠️ scan unreadable"; b.disabled = false; return; }
+    b.textContent = "indexing…";
+    const title = fn.replace(/\.(pdf|md)$/i, "") + " (OCR)";
+    const r = await (await fetch("/api/paste", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE, title, text})})).json();
+    if (r.error) { b.textContent = "⚠️ " + r.error; b.disabled = false; return; }
   } catch (e) { b.textContent = "error — try again"; b.disabled = false; return; }
-  // poll OCR status until done, then re-run the health report
-  for (let i = 0; i < 120; i++) {
-    await new Promise(r => setTimeout(r, 4000));
-    let s = "";
-    try {
-      s = (await (await fetch("/api/ocr/status?course=" + encodeURIComponent(COURSE))).json()).status || "";
-    } catch (e) {}
-    if (s) b.textContent = s.replace(/^OCR:\s*/, "");
-    if (/✅|fully readable|searchable|failed|unreadable/i.test(s)) break;
-  }
   runDocHealth();
 }
 

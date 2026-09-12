@@ -12140,12 +12140,34 @@ def api_doc_delete():
     return jsonify({"ok": True, "deleted": fn, "dropped": True})
 
 
+@app.route("/api/rawfile")
+def api_rawfile():
+    """Stream a stored course file's raw bytes to the browser — used by the FREE in-browser OCR
+    (the browser fetches the scanned PDF, runs Tesseract locally, and uploads the text). Logged-in +
+    course-access gated."""
+    course = safe_course(request.args.get("course", ""))
+    fn = (request.args.get("doc") or "").strip()
+    if current_user() is None:
+        return jsonify({"error": "login required"}), 401
+    if not _may_read_course(course):
+        return jsonify({"error": "no access to that course"}), 403
+    if fn not in course_pdfs(course):
+        return jsonify({"error": "not found"}), 404
+    pdf_dir, _ = course_paths(course)
+    path = os.path.join(pdf_dir, fn)
+    if not os.path.exists(path):
+        return jsonify({"error": "not found"}), 404
+    from flask import send_file
+    return send_file(path, as_attachment=False, download_name=fn)
+
+
 @app.route("/api/ocr", methods=["POST"])
 def api_ocr():
     """Force OCR on an existing scanned PDF that indexed to no searchable text (a FAOLEX/
     ICJ scan whose text cover-page slipped past the auto-scan detector). Transcribes it
     via Claude vision in the background, replaces the image PDF with a searchable .md, and
-    reindexes. Poll /api/ocr/status."""
+    reindexes. Poll /api/ocr/status. NOTE: this is the PAID (Claude-vision) fallback; the default
+    OCR path is now FREE in-browser Tesseract at upload time."""
     try:
         body = request.json or {}
         course = safe_course(body.get("course", ""))
