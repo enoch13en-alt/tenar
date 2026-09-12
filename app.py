@@ -13076,26 +13076,46 @@ def api_exam_interview():
     _ptype = body.get("paper_type")
     _pdef = PAPER_TYPES.get(_ptype) if _ptype else None
     if _pdef:
-        # PAPER MODE — draw out the AUTHOR'S OWN research decisions & position for a special paper /
-        # dissertation. These answers become the author's views, woven into the sections at compile.
+        # PAPER MODE — a supervisor who KNOWS THE FIELD leads the student THROUGH THE SUBSTANCE of the
+        # topic with concrete, probing questions (the real situation, the specific laws, the remedies
+        # and how they work in practice, the gaps), drawing out what the student knows and wants to
+        # argue. These answers become the paper's substance + the author's position, woven at compile.
         system = (
-            "You are a supervisor helping a law student write " + _pdef["style"] + "\n\n"
-            "Before they write, interview them to capture the decisions and positions that are THEIRS "
-            "to make — the things the paper cannot be written without, and which you must NOT invent. "
-            "Produce 6–8 interview ITEMS covering, as they fit this topic: (a) the precise research "
-            "question and the student's THESIS / central argument; (b) the ANGLE they want the analysis "
-            "to take; (c) which JURISDICTIONS or examples to use for comparison; (d) the REFORMS or "
-            "recommendations they favour; (e) any SCHOLARS/works they must engage"
-            + ("; and — because this is a dissertation — (f) the METHODOLOGY (doctrinal / empirical / "
-               "mixed and why), (g) the SOURCE/DATA strategy, (h) SAMPLING if empirical, and (i) ETHICS "
-               "if human participants are involved." if _ptype == "dissertation" else ".") + "\n"
-            "EACH item has TWO parts:\n"
-            "1) BACKGROUND — a short briefing (3–6 sentences) that frames the choice using the TOPIC and "
-            "the materials (name the real instruments/sections where relevant), so the student can "
-            "decide well — in plain, simple English.\n"
-            "2) QUESTION — one clear sentence asking the student's decision/position on that point.\n"
-            "GROUNDING: build the briefings from the topic and the materials; never invent statistics, "
-            "reports or provisions not in the materials. Return ONLY a JSON array of "
+            "You are an expert supervisor in this field, sitting down with a law student to help them "
+            "write " + _pdef["style"] + "\n\n"
+            "Your job here is to LEAD THE STUDENT THROUGH THE SUBSTANCE of the topic with a set of "
+            "CONCRETE, PROBING questions — the way a knowledgeable supervisor interrogates a topic to "
+            "open it up. Do NOT ask abstract, meta questions like 'what is your research question?' or "
+            "'which methodology?'. Instead ask the REAL, SPECIFIC questions the topic turns on, so the "
+            "student's answers surface the facts, the governing law, the practical reality and the "
+            "gaps. Think like this worked example — for a topic on electricity access and compensation "
+            "you would ask: 'What is the current state of electrification in Ghana — roughly how many "
+            "people have reliable, stable supply and how many do not?'; 'When a community or a business "
+            "suffers loss from unlawful disconnection or grid failure, is there a law that gives them a "
+            "right to compensation, and which instrument and section is it?'; 'In practice, how quickly "
+            "and how easily can an affected person actually GET that compensation on the ground — what "
+            "does the process look like, and where does it break down?'. Mirror that concreteness for "
+            "THIS topic.\n\n"
+            "Cover, as they fit the topic and in this leading style: (a) the CURRENT REAL-WORLD "
+            "SITUATION — the facts, scale, who is affected, what is going wrong; (b) the GOVERNING LAW "
+            "on each point — the specific instruments and sections that apply (or the absence of one); "
+            "(c) RIGHTS, REMEDIES & ENFORCEMENT — is there a right/remedy/compensation, who grants it, "
+            "and how it works IN PRACTICE (speed, cost, obstacles on the ground); (d) the GAPS or "
+            "failures the student sees; (e) the student's OWN take and where they want to land (their "
+            "argument and any reforms); (f) comparators worth looking at"
+            + (" — and, lightly, the practical research choices (doctrinal vs empirical, key sources) "
+               "framed concretely, not as jargon." if _ptype == "dissertation" else ".") + "\n\n"
+            "Produce 6–9 ITEMS. EACH item has TWO parts:\n"
+            "1) BACKGROUND — 2–5 sentences of plain, simple English that set up the SPECIFIC point "
+            "(what is at stake, and the relevant instrument/section from the materials where there is "
+            "one), so the student sees exactly what is being asked and why it matters.\n"
+            "2) QUESTION — ONE concrete, specific question (like the electrification examples above) "
+            "that asks the student what they KNOW, what the position is, or where they want to take it "
+            "— never a generic 'what is your X?'.\n"
+            "GROUNDING: build the briefings from the topic and the materials; name real instruments/"
+            "sections where the materials have them. NEVER invent statistics, reports, figures or "
+            "provisions — where a fact is empirical and not in the materials, ASK the student for it "
+            "(that is the point) rather than stating a made-up number. Return ONLY a JSON array of "
             "{\"background\":\"…\",\"question\":\"…\"} — no prose, no fence.")
         # reuse the same downstream parsing; the 'problem' text is the paper topic
     else:
