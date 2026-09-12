@@ -7917,6 +7917,31 @@ def _audit_norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
+_AUTH_STOP = {"act", "section", "sections", "s", "ss", "article", "articles", "art", "arts",
+              "subsection", "sub", "the", "of", "and", "or", "in", "regulation", "regulations",
+              "reg", "regs", "li", "l", "i", "no", "clause", "part", "schedule", "paragraph", "para",
+              "constitution", "case", "republic", "v", "vs", "ltd", "limited", "attorney", "general"}
+
+def _authority_vouched(authority, vnorm):
+    """True if a connected legal database's returned text (vnorm = normalised verified_text) vouches
+    for this authority. Token-based so it's robust to 'section 18' vs 's 18', ordering and
+    punctuation: the authority's DISTINCTIVE tokens (Act/section numbers + content words, minus
+    generic law words) must mostly appear in the database text."""
+    an = _audit_norm(authority)
+    if not vnorm or len(an) < 5:
+        return False
+    if an in vnorm:
+        return True
+    toks = [t for t in re.findall(r"[a-z0-9]+", an)
+            if t not in _AUTH_STOP and (t.isdigit() or len(t) >= 4)]
+    toks = list(dict.fromkeys(toks))
+    if len(toks) < 2:
+        return False
+    hits = sum(1 for t in toks
+               if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", vnorm))
+    return hits >= 2 and hits >= 0.6 * len(toks)
+
+
 @app.route("/api/audit", methods=["POST"])
 def api_audit():
     """Independent citation auditor. Extracts the answer's checkable authorities, RE-
@@ -8027,8 +8052,7 @@ def api_audit():
             is_case = bool(re.search(r"\b[vV]\.?\s", a)) or bool(re.search(r"\bRepublic\b|\bv\b", a))
             is_treaty = bool(re.search(r"(?i)\b(convention|treaty|protocol|statute of the|charter|"
                                        r"covenant|agreement on|nuclear suppliers)\b", a))
-            an = _audit_norm(a)
-            if (is_case or is_treaty) and len(an) >= 6 and an in _vtext:
+            if (is_case or is_treaty) and _authority_vouched(a, _vtext):
                 it["verdict"] = "external"
                 it["note"] = "verified via a connected legal database (judy.legal / CourtListener / EULEX)"
                 db_items.append(it)
@@ -8272,8 +8296,7 @@ def api_audit():
             for i in range(len(items)):
                 if out[i]["verdict"] != "unverified":
                     continue
-                an = _audit_norm(items[i].get("authority", ""))
-                if _vtext and len(an) >= 5 and an in _vtext:
+                if _authority_vouched(items[i].get("authority", ""), _vtext):
                     out[i]["verdict"] = "supported"
                     out[i]["note"] = ("Not in the uploaded corpus, but verified via a connected legal "
                                       "database (judy.legal — authoritative for Ghanaian law). Relied "
