@@ -13054,7 +13054,33 @@ def api_exam_interview():
             "- " + (str(x.get("issue")) if isinstance(x, dict) else str(x)) for x in issues[:12])
     law_block = ("\n\nRELEVANT LAW / MATERIALS (ground the briefings in THESE — use their real "
                  "instrument names, sections and content; do not go beyond them):\n" + ctx[:12000]) if ctx else ""
-    system = (
+    _ptype = body.get("paper_type")
+    _pdef = PAPER_TYPES.get(_ptype) if _ptype else None
+    if _pdef:
+        # PAPER MODE — draw out the AUTHOR'S OWN research decisions & position for a special paper /
+        # dissertation. These answers become the author's views, woven into the sections at compile.
+        system = (
+            "You are a supervisor helping a law student write " + _pdef["style"] + "\n\n"
+            "Before they write, interview them to capture the decisions and positions that are THEIRS "
+            "to make — the things the paper cannot be written without, and which you must NOT invent. "
+            "Produce 6–8 interview ITEMS covering, as they fit this topic: (a) the precise research "
+            "question and the student's THESIS / central argument; (b) the ANGLE they want the analysis "
+            "to take; (c) which JURISDICTIONS or examples to use for comparison; (d) the REFORMS or "
+            "recommendations they favour; (e) any SCHOLARS/works they must engage"
+            + ("; and — because this is a dissertation — (f) the METHODOLOGY (doctrinal / empirical / "
+               "mixed and why), (g) the SOURCE/DATA strategy, (h) SAMPLING if empirical, and (i) ETHICS "
+               "if human participants are involved." if _ptype == "dissertation" else ".") + "\n"
+            "EACH item has TWO parts:\n"
+            "1) BACKGROUND — a short briefing (3–6 sentences) that frames the choice using the TOPIC and "
+            "the materials (name the real instruments/sections where relevant), so the student can "
+            "decide well — in plain, simple English.\n"
+            "2) QUESTION — one clear sentence asking the student's decision/position on that point.\n"
+            "GROUNDING: build the briefings from the topic and the materials; never invent statistics, "
+            "reports or provisions not in the materials. Return ONLY a JSON array of "
+            "{\"background\":\"…\",\"question\":\"…\"} — no prose, no fence.")
+        # reuse the same downstream parsing; the 'problem' text is the paper topic
+    else:
+        system = (
         "You are an examiner-coach preparing a law student to write an ORIGINAL, argued answer. Before "
         "they write, you interview them to draw out THEIR OWN position. Produce 5–7 interview ITEMS on the "
         "real tensions in THIS problem. EACH item has TWO parts:\n"
@@ -13324,13 +13350,13 @@ PAPER_TYPES = {
                   "enough — it does NOT need its own methodology chapter, fieldwork or data."),
         "stages": [
             {"k": "problem", "t": "The problem", "g": "State the precise legal/policy problem and why it matters — the specific difficulty, who it affects, and the stakes. No literature yet; frame the problem crisply."},
-            {"k": "question", "t": "Research question & thesis", "g": "Frame ONE narrow research question, then state the paper's thesis (central argument) in a sentence or two — the position you will defend."},
+            {"k": "question", "t": "Research question & thesis", "input": True, "g": "Frame ONE narrow research question, then state the paper's thesis (central argument) in a sentence or two — the position you will defend."},
             {"k": "framework", "t": "Governing legal & policy framework", "g": "Set out the governing framework: the controlling instruments and provisions (quoted where they matter, with pinpoints) and any key policy. This is the law the analysis will apply."},
             {"k": "literature", "t": "Focused literature", "g": "Position the paper in the debate using ONLY the literature directly tied to the question — the main scholars/works and what each argues, attributed by name. Selective, not a survey; show the gap the paper fills."},
             {"k": "analysis", "t": "Analysis", "g": "The heart of the paper: apply the framework to the problem, argue the thesis, raise the strongest counter-argument and answer it, reach reasoned mini-conclusions."},
-            {"k": "comparative", "t": "Comparative / empirical", "g": "Bring in comparable jurisdictions or data ONLY where it genuinely strengthens the argument — how a similar country handles the same point, or a report/figure that bears on it. If it adds nothing, say the section is not needed."},
+            {"k": "comparative", "t": "Comparative / empirical", "input": True, "g": "Bring in comparable jurisdictions or data ONLY where it genuinely strengthens the argument — how a similar country handles the same point, or a report/figure that bears on it. If it adds nothing, say the section is not needed."},
             {"k": "gaps", "t": "Gaps", "g": "Identify the specific gaps or weaknesses in the current law/framework that the analysis has exposed."},
-            {"k": "reforms", "t": "Reform proposals", "g": "Propose concrete, workable reforms that close the gaps — each tied to a gap you identified."},
+            {"k": "reforms", "t": "Reform proposals", "input": True, "g": "Propose concrete, workable reforms that close the gaps — each tied to a gap you identified."},
             {"k": "conclusion", "t": "Conclusion", "g": "Answer the research question directly and restate the thesis as now proven. No new material."},
         ],
     },
@@ -13343,7 +13369,7 @@ PAPER_TYPES = {
                   "adequate, the analysis rigorous, and what is the contribution?'"),
         "stages": [
             {"k": "problem", "t": "Research problem (Ch.1)", "g": "Introduce the research problem, its context and significance, and the scope of the study."},
-            {"k": "question", "t": "Research question, objectives & sub-questions", "g": "State ONE main research question, then the objectives and the sub-questions that break it down."},
+            {"k": "question", "t": "Research question, objectives & sub-questions", "input": True, "g": "State ONE main research question, then the objectives and the sub-questions that break it down."},
             {"k": "literature", "t": "Literature review (Ch.2)", "g": "A systematic, comprehensive review of the relevant literature — themes, what is settled, what is contested, and the gap this study fills. Attribute every position by author."},
             {"k": "framework", "t": "Conceptual / theoretical framework", "g": "Set out the conceptual or theoretical framework the study uses to analyse the problem, and why it fits."},
             {"k": "methodology", "t": "Methodology (Ch.3)", "kind": "decide",
@@ -13364,7 +13390,7 @@ PAPER_TYPES = {
              "g": "Write the ethics section FROM THE AUTHOR'S ANSWERS. If there are no human participants, state that ethics approval is not required and why."},
             {"k": "analysis", "t": "Analysis & findings", "g": "Present and analyse the material/data against the framework, and set out the findings that answer the sub-questions. Ground every point."},
             {"k": "discussion", "t": "Discussion", "g": "Interpret the findings: what they mean for the research question, how they sit against the literature, and what the original contribution is."},
-            {"k": "conclusion", "t": "Conclusions & recommendations", "g": "State the conclusions that follow from the evidence, answer the main research question, and give concrete recommendations."},
+            {"k": "conclusion", "t": "Conclusions & recommendations", "input": True, "g": "State the conclusions that follow from the evidence, answer the main research question, and give concrete recommendations."},
             {"k": "limitations", "t": "Limitations & further research", "g": "State honestly the limitations of the study (scope, method, data) and directions for further research."},
         ],
     },
@@ -13381,6 +13407,7 @@ def api_paper_types():
     for key, p in PAPER_TYPES.items():
         out[key] = {"label": p["label"], "style": p["style"],
                     "stages": [{"k": s["k"], "t": s["t"], "kind": s.get("kind", "draft"),
+                                "input": bool(s.get("input") or s.get("kind") == "decide"),
                                 "q": s.get("q", [])} for s in p["stages"]]}
     return jsonify({"types": out})
 
@@ -14461,6 +14488,22 @@ def api_exam_assemble():
         system = system + "\n\n" + FORMATS[length]
     system = system + "\n\n" + VERBATIM_PRIORITY   # quoted law stays word-for-word in the final document
     system = system + "\n\n" + SOURCE_COVERAGE     # keep primary+secondary law, books, cases, comparative per issue
+    # RESEARCH-WRITING mode: the same gather/authority/audit pipeline, but the final document is a
+    # special paper / dissertation (its sections are the 'issues'), not an exam answer.
+    _asm_pdef = PAPER_TYPES.get(body.get("paper_type")) if body.get("paper_type") else None
+    if _asm_pdef:
+        system = system + "\n\n" + (
+            "RESEARCH-WRITING OVERRIDE — this deliverable is NOT an exam answer. Write " + _asm_pdef["style"]
+            + "\nEach 'issue' in the per-part material below is a SECTION of the paper: use its title as "
+            "the heading and its gathered law/authorities as the substance. Keep the sections IN ORDER "
+            "and make the whole read as ONE continuous " + _asm_pdef["label"] + " — open with the title "
+            "and a short introduction, flow section to section, and close with the concluding section. "
+            "NO 'Issue 1 / Issue 2' labels and NO IRAC scaffolding. The AUTHOR'S OWN DECISIONS AND "
+            "POSITION (captured in the interview and shown as the student's views) are the SPINE: build "
+            "the thesis, the analysis, the methodology/data/sampling/ethics (for a dissertation), the "
+            "comparators and the reforms around THOSE choices, and state and defend them as the "
+            "author's own — do not substitute your own. Keep every grounding rule above: cite ONLY the "
+            "gathered, verified authorities, and write in plain, simple English.")
     system = system + "\n\n" + (
         "ENGAGE EVERY CASE AND SCHOLAR — do NOT name-drop. For EACH case the gathered data provides, do "
         "BOTH, explicitly: (1) state its RATIO — the principle it decided — in a line; (2) APPLY it to "

@@ -2518,8 +2518,10 @@ function saveExam() {
       question: EXAM.question || ($("#examQ") ? $("#examQ").value : ""),
       facts: EXAM.facts || [], assumptions: EXAM.assumptions || [], focus: EXAM.focus || [],
       cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
+      paperType: EXAM.paperType || "", paperLabel: EXAM.paperLabel || "",
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link, weight: it.weight,
+        _paperK: it._paperK, _paperInput: it._paperInput,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
         _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
@@ -2559,6 +2561,8 @@ function resumeExam(snap) {
   EXAM = {facts: snap.facts || [], assumptions: snap.assumptions || [], issues: snap.issues || []};
   EXAM.question = snap.question || ""; EXAM.focus = snap.focus || []; EXAM.cost = snap.cost || 0;
   EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
+  EXAM.paperType = snap.paperType || ""; EXAM.paperLabel = snap.paperLabel || "";
+  if ($("#coachType") && EXAM.paperType) { $("#coachType").value = EXAM.paperType; try { coachSetType(); } catch (e) {} }
   if ($("#examQ")) $("#examQ").value = snap.question || "";
   const _unstuck = unstickBlockedIssues();     // any issue stuck on a cap/error message → re-gatherable
   renderExam();
@@ -2697,7 +2701,9 @@ $("#examClearSaved").onclick = () => {
 
 async function runBreakdown() {
   const q = $("#examQ").value.trim();
-  if (!q) { $("#examStatus").textContent = "Paste the exam question first."; return false; }
+  if (!q) { $("#examStatus").textContent = "Paste the exam question / paper topic first."; return false; }
+  const ctype = (($("#coachType") || {}).value) || "exam";
+  if (ctype === "special" || ctype === "dissertation") return setupPaperSections(ctype, q);
   const focus = collectFocus();
   $("#examStatus").textContent = "Mapping facts and breaking down the question…";
   $("#examOut").innerHTML = "";
@@ -2724,6 +2730,30 @@ async function runBreakdown() {
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
 }
 $("#examBreak").onclick = runBreakdown;
+
+// Paper types run through the exam engine: "Break it down" loads the paper's SECTIONS as the issues.
+async function setupPaperSections(ctype, topic) {
+  $("#examStatus").textContent = "Setting up the " + (ctype === "dissertation" ? "dissertation" : "special paper") + " sections…";
+  $("#examOut").innerHTML = "";
+  try {
+    if (!PAPER_TYPES_CACHE) PAPER_TYPES_CACHE = (await (await fetch("/api/paper/types")).json()).types || {};
+    const def = PAPER_TYPES_CACHE[ctype];
+    if (!def) { $("#examStatus").textContent = "Couldn't load the workflow — try again."; return false; }
+    EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
+      paperType: ctype, paperLabel: def.label,
+      issues: def.stages.map((s, i) => ({
+        n: i + 1, issue: s.t, why: s.g || "", weight: "core",
+        _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false })) };
+    renderExam();
+    const inputN = EXAM.issues.filter(x => x._paperInput).length;
+    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up. Click "
+      + "🎤 Interview me to give your input (" + inputN + " decisions are yours: thesis, "
+      + (ctype === "dissertation" ? "methodology, data, sampling, ethics, " : "") + "comparators, reforms), "
+      + "then Gather all → Synthesise.";
+    try { saveExam(); } catch (e) {}
+    return true;
+  } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
+}
 
 // ORIGINALITY — interview the student, capture their view, feed it to the compile.
 function renderInterviewPanel() {
@@ -2768,7 +2798,7 @@ async function interviewMe() {
   p.innerHTML = "<div style='font-size:12px;color:#8b93a7'>🎤 reading the problem and the law, and preparing detailed briefings + questions… (up to ~1 min)</div>";
   try {
     const r = await (await fetch("/api/exam/interview", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question: q, issues: EXAM.issues || [], course: COURSE, courses: examCourses()})})).json();
+      body: JSON.stringify({question: q, issues: EXAM.issues || [], course: COURSE, courses: examCourses(), paper_type: EXAM.paperType || ""})})).json();
     if (r.error) { p.innerHTML = "<div style='color:#e0a05a;font-size:12px'>⚠ " + esc(r.error) + "</div>"; }
     else {
       EXAM._interviewItems = r.items || (r.questions || []).map(q2 => ({background: "", question: q2}));
@@ -4425,6 +4455,7 @@ async function compileExam(finalize) {
     const resp = await fetch("/api/exam/assemble", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
+        paper_type: EXAM.paperType || "",
         word_limit: parseInt(($("#wordLimit")||{}).value) || 0,
         page_limit: parseInt(($("#pageLimit")||{}).value) || 0,
         line_spacing: parseFloat(($("#docSpacing")||{}).value) || 0,
@@ -5273,12 +5304,15 @@ let PAPER_TYPES_CACHE = null;
 function coachSetType() {
   const t = (($("#coachType") || {}).value) || "exam";
   const paper = (t === "special" || t === "dissertation");
-  if ($("#coachExam")) $("#coachExam").style.display = paper ? "none" : "block";
-  if ($("#coachPaper")) $("#coachPaper").style.display = paper ? "block" : "none";
-  if (paper && (!PAPER || PAPER.type !== t)) {            // switched to a fresh paper type → setup
-    if ($("#paperWork")) $("#paperWork").style.display = "none";
-    if ($("#paperSetup")) $("#paperSetup").style.display = "block";
-  }
+  // Papers run through the SAME exam-coach UI + engine — only the wording changes and the breakdown
+  // produces the paper's sections. So always show the exam panel; the old stage-stepper is retired.
+  if ($("#coachExam")) $("#coachExam").style.display = "block";
+  if ($("#coachPaper")) $("#coachPaper").style.display = "none";
+  const qbox = $("#examQ");
+  if (qbox) qbox.placeholder = paper
+    ? "Your paper's topic / working title — e.g. Parliamentary approval of concessionary-loan procurement in Ghana (s.96, Act 663)…"
+    : "Paste the exam question / case study here — or upload it below…";
+  const bd = $("#examBreak"); if (bd) bd.textContent = paper ? "Set up the sections" : "Break it down";
 }
 if ($("#coachType")) $("#coachType").onchange = coachSetType;
 if ($("#coachClose")) $("#coachClose").onclick = () => { $("#examModal").style.display = "none"; };
