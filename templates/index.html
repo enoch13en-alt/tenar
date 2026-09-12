@@ -1611,7 +1611,31 @@ function arrangeBlocks(blocks, pageWidth) {
   }
   return ordered.map(b => b.text).join("\n\n");
 }
-// OCR a scanned PDF entirely in the browser, in correct reading order, with clear page markers.
+// Detect the page number PRINTED ON THE PAGE ITSELF (header/footer) — the number you'd cite —
+// rather than the scan's sequential index. Looks at the top-most and bottom-most blocks for a line
+// that is essentially just a number (arabic or roman), optionally 'Page', dashes or brackets.
+function detectPrintedPageNo(blocks, pageHeight) {
+  const bs = (blocks || []).filter(b => b && b.bbox && (b.text || "").trim());
+  if (!bs.length) return null;
+  const byY = bs.slice().sort((a, b) => a.bbox.y0 - b.bbox.y0);
+  const pull = (line) => {
+    const s = (line || "").trim();
+    if (!s || s.length > 60) return null;
+    // whole line is a page number: "47", "- 47 -", "[47]", "Page 47", "Page 47 of 210", "xiv"
+    let m = s.match(/^(?:page\s*)?[\-–—\[\(]?\s*(\d{1,4}|[ivxlcdm]{1,7})\s*(?:of\s+\d{1,4})?\s*[\-–—\]\)\.]?$/i);
+    if (m) return m[1];
+    // a lone number pinned to the very start or end of a short header/footer line
+    m = s.match(/(?:^|\s)(\d{1,4})$/) || s.match(/^(\d{1,4})(?:\s|$)/);
+    if (m) return m[1];
+    return null;
+  };
+  const topLine = (byY[0].text || "").trim().split("\n")[0];
+  const botBlk = (byY[byY.length - 1].text || "").trim().split("\n");
+  const botLine = botBlk[botBlk.length - 1];
+  return pull(botLine) || pull(topLine);   // footers carry the number more often than headers
+}
+// OCR a scanned PDF entirely in the browser, in correct reading order, tagging each page with the
+// DOCUMENT'S OWN printed page number (falling back to the scan sheet index when none is printed).
 async function browserOcrPdf(arrayBuf, onProg) {
   await ensureOcrLibs();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuf.slice(0) }).promise;
@@ -1630,7 +1654,11 @@ async function browserOcrPdf(arrayBuf, onProg) {
       let pageText = "";
       if (data && data.blocks && data.blocks.length) pageText = arrangeBlocks(data.blocks, cv.width);
       if (!pageText.trim()) pageText = (data && data.text ? data.text : "").trim();  // fallback
-      out += "\n\n--- Page " + i + " of " + pdf.numPages + " ---\n\n" + pageText.trim() + "\n";
+      const printed = detectPrintedPageNo(data && data.blocks, cv.height);
+      const marker = printed
+        ? ("--- Page " + printed + " (document page; scan sheet " + i + " of " + pdf.numPages + ") ---")
+        : ("--- Scan sheet " + i + " of " + pdf.numPages + " (no printed page number found) ---");
+      out += "\n\n" + marker + "\n\n" + pageText.trim() + "\n";
       cv.width = cv.height = 0;                            // free the canvas
     }
   } finally { try { await worker.terminate(); } catch (e) {} }
