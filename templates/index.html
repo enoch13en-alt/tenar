@@ -3512,8 +3512,8 @@ async function gatherIssue(i, force) {
 // ---- DECOUPLED live-authority fetch (statutes/treaties + locus-classicus cases + comparative) -----
 // The live pass (judy / CourtListener / EULEX + web comparative) can take minutes, so it runs as a
 // background job the browser polls, then splices the sections into the already-shown data sheet.
-const AUTH_PENDING_NOTE = "\n\n> ⏳ *Pulling the governing statutes & the locus-classicus cases from the legal databases — this fills in automatically (usually 1–3 minutes). Comparative data comes from your corpus.*";
-const AUTH_PENDING_RE = /\n*> ⏳ \*Pulling live[^\n]*\*/g;
+const AUTH_PENDING_NOTE = "\n\n> ⏳ *Pulling the governing statutes & the locus-classicus cases from the legal databases…*";
+const AUTH_PENDING_RE = /\n*>\s*⏳\s*\*Pulling[^\n]*\*/g;   // matches the note above so it's always stripped
 function _authSectionBounds(md, name) {
   const re = new RegExp("(^|\\n)##\\s*" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
   const m = md.match(re);
@@ -3584,20 +3584,59 @@ function authorityQueryFor(it) {
     + 'find the governing statutes/treaties and the leading cases for this issue: "' + (it.issue || '') + '".'
     + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
 }
-// Pull live authority ONCE, at Compile, for every done issue that doesn't have it yet — in PARALLEL
-// (the jobs run server-side concurrently), splicing each into its issue answer before the document
-// is synthesised. This is where the authority credit is spent now (not on every gather).
+function clearAuthPending(i) {
+  const it = EXAM.issues[i]; if (!it) return;
+  it.answer = (it.answer || "").replace(AUTH_PENDING_RE, "").trim();
+  it.answer_annotated = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
+}
+// Pull live authority ONCE, at Compile, for every done issue that doesn't have it yet — all jobs
+// started in PARALLEL, then polled together with LIVE PROGRESS and a WAIT CAP so the compile never
+// blocks indefinitely on one slow issue. Whatever hasn't arrived by the cap keeps its corpus law.
 async function pullAuthorityForAll() {
-  const jobs = [];
+  const targets = [];
   (EXAM.issues || []).forEach((it, i) => {
-    if (it && it.done && (it.answer || "").trim() && !it._authDone) {
-      jobs.push(fetchAuthority(i, authorityQueryFor(it)));
-    }
+    if (it && it.done && (it.answer || "").trim() && !it._authDone) targets.push(i);
   });
-  if (!jobs.length) return;
-  $("#examStatus").textContent = "🔎 Pulling live statutes & cases for " + jobs.length
-    + " issue(s) before compiling — this is the one authority charge (a few minutes)…";
-  try { await Promise.all(jobs); } catch (e) {}
+  if (!targets.length) return;
+  const N = targets.length;
+  $("#examStatus").textContent = "🔎 Live authority: starting " + N + " issue(s)…";
+  // start every job in parallel
+  const jobOf = {};
+  await Promise.all(targets.map(async i => {
+    const it = EXAM.issues[i];
+    it._authDone = true;
+    it.answer = (it.answer || "") + AUTH_PENDING_NOTE;
+    it.answer_annotated = (it.answer_annotated || "") + AUTH_PENDING_NOTE;
+    try {
+      const st = await (await fetch("/api/gather/authority", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: authorityQueryFor(it), prior: priorRulesLedger(i) }) })).json();
+      jobOf[i] = st && st.job ? st.job : null;
+    } catch (e) { jobOf[i] = null; }
+  }));
+  renderExam();
+  const pending = new Set(targets.filter(i => jobOf[i]));
+  targets.filter(i => !jobOf[i]).forEach(clearAuthPending);          // failed to start → corpus
+  let ready = N - pending.size;
+  const started = Date.now(), CAP_MS = 4 * 60 * 1000;               // wait at most ~4 min, then compile
+  while (pending.size && (Date.now() - started) < CAP_MS) {
+    await new Promise(r => setTimeout(r, 8000));
+    for (const i of Array.from(pending)) {
+      let p; try { p = await (await fetch("/api/gather/authority/poll?job=" + encodeURIComponent(jobOf[i]))).json(); }
+      catch (e) { continue; }
+      if (p.pending) continue;
+      pending.delete(i); ready++;
+      if (p.done && (p.legislation || p.cases)) applyAuthority(i, p); else clearAuthPending(i);
+    }
+    const secs = Math.round((Date.now() - started) / 1000);
+    $("#examStatus").textContent = "🔎 Live authority: " + ready + "/" + N + " issue(s) ready… (" + secs + "s)";
+  }
+  // cap reached with some still running: proceed with corpus for those (their spend still completes
+  // server-side, but we won't block the document on it)
+  if (pending.size) {
+    pending.forEach(clearAuthPending);
+    $("#examStatus").textContent = "Compiling now — " + pending.size + " issue(s) using corpus law (their live authority is still finishing)…";
+  }
+  renderExam(); try { saveExam(); } catch (e) {}
 }
 async function fetchAuthority(i, gq) {
   const it = EXAM.issues[i];
