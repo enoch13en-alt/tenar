@@ -13112,11 +13112,25 @@ def api_exam_interview():
             "2) QUESTION — ONE concrete, specific question (like the electrification examples above) "
             "that asks the student what they KNOW, what the position is, or where they want to take it "
             "— never a generic 'what is your X?'.\n"
+            "WRITE FROM TODAY — CHECK CURRENCY AGAINST THE CORPUS. The paper is being written NOW, as "
+            "of today's date (given below). The materials in the corpus each carry their OWN date and "
+            "MAY HAVE BEEN OVERTAKEN by developments since. So your questions must be anchored in the "
+            "PRESENT and test the corpus against it. In particular: (a) include at least TWO questions "
+            "that CHECK whether a dated law, regulation, policy or figure in the materials is STILL "
+            "CURRENT today — e.g. whether a draft/Bill recorded as not-yet-in-force has since been "
+            "passed or promulgated, whether a statute has since been amended or repealed and replaced, "
+            "whether a target date has now passed, or whether a reported figure (an access rate, a "
+            "count, a budget) has a more recent update the student may know; (b) where the materials "
+            "give a fact or number with an older date, ask the student for the position AS OF TODAY "
+            "and what has changed since. Frame each briefing so it names the corpus's dated position "
+            "('as at [date/source] the materials record X…') and then asks what the CURRENT position "
+            "is. Never assume the corpus is up to date, and never state a newer fact yourself — ASK.\n"
             "GROUNDING: build the briefings from the topic and the materials; name real instruments/"
             "sections where the materials have them. NEVER invent statistics, reports, figures or "
             "provisions — where a fact is empirical and not in the materials, ASK the student for it "
             "(that is the point) rather than stating a made-up number. Return ONLY a JSON array of "
             "{\"background\":\"…\",\"question\":\"…\"} — no prose, no fence.")
+        system = system + "\n\n" + _today_note()   # the interview must know TODAY'S date to probe currency
         # reuse the same downstream parsing; the 'problem' text is the paper topic
     else:
         system = (
@@ -14541,8 +14555,15 @@ def api_exam_assemble():
             "POSITION (captured in the interview and shown as the student's views) are the SPINE: build "
             "the thesis, the analysis, the methodology/data/sampling/ethics (for a dissertation), the "
             "comparators and the reforms around THOSE choices, and state and defend them as the "
-            "author's own — do not substitute your own. Keep every grounding rule above: cite ONLY the "
-            "gathered, verified authorities, and write in plain, simple English.")
+            "author's own — do not substitute your own. WRITE FROM TODAY: this paper is written as of "
+            "today's date. Treat each corpus source as at ITS OWN date; where the author's answers give "
+            "a MORE CURRENT position (a Bill since passed, a regulation since promulgated, a newer "
+            "figure, a target date now passed), use the author's current position and note what has "
+            "changed since the corpus source. Where a dated position in the corpus has NOT been updated "
+            "by the author, state it as at its date and flag that it should be reconfirmed as current. "
+            "Keep every grounding rule above: cite ONLY the gathered, verified authorities (plus the "
+            "author's supplied updates, attributed to the author's source), and write in plain, simple "
+            "English.")
     system = system + "\n\n" + (
         "ENGAGE EVERY CASE AND SCHOLAR — do NOT name-drop. For EACH case the gathered data provides, do "
         "BOTH, explicitly: (1) state its RATIO — the principle it decided — in a line; (2) APPLY it to "
