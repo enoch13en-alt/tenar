@@ -13100,12 +13100,19 @@ def api_exam_interview():
             "SITUATION — the facts, scale, who is affected, what is going wrong; (b) the GOVERNING LAW "
             "on each point — the specific instruments and sections that apply (or the absence of one); "
             "(c) RIGHTS, REMEDIES & ENFORCEMENT — is there a right/remedy/compensation, who grants it, "
-            "and how it works IN PRACTICE (speed, cost, obstacles on the ground); (d) the GAPS or "
-            "failures the student sees; (e) the student's OWN take and where they want to land (their "
-            "argument and any reforms); (f) comparators worth looking at"
+            "how it works IN PRACTICE (speed, cost, obstacles on the ground), AND what an affected "
+            "person or community can actually do if the service fails, is withdrawn, or is neglected; "
+            "(d) FINANCING & RESOURCES — who pays for it, and whether the law sets up a fund, subsidy "
+            "or financing mechanism (name the instrument/section) and whether that mechanism is "
+            "actually capitalised and working or exists only on paper; (e) INSTITUTIONAL "
+            "RESPONSIBILITY — which body is legally in charge (regulator, ministry, utility), what each "
+            "one's mandate is, and whether overlapping, unclear or unassigned responsibility is ITSELF "
+            "part of the problem; (f) the GAPS or failures the student sees; (g) the student's OWN take "
+            "and where they want to land (their argument and any reforms); (h) comparators worth looking at"
             + (" — and, lightly, the practical research choices (doctrinal vs empirical, key sources) "
                "framed concretely, not as jargon." if _ptype == "dissertation" else ".") + "\n\n"
-            "Produce 6–9 ITEMS. EACH item has TWO parts:\n"
+            "Produce 10–12 ITEMS so the coverage above is complete and the student is not left to "
+        "regenerate for more. EACH item has TWO parts:\n"
             "1) BACKGROUND — 2–5 sentences of plain, simple English that set up the SPECIFIC point "
             "(what is at stake, and the relevant instrument/section from the materials where there is "
             "one), so the student sees exactly what is being asked and why it matters.\n"
@@ -13156,7 +13163,7 @@ def api_exam_interview():
         "no numbering, no markdown fence.")
     items = []
     try:
-        r, m = _create_final(c, model=AUDIT_MODEL, max_tokens=4000, fallbacks=[],
+        r, m = _create_final(c, model=AUDIT_MODEL, max_tokens=7000, fallbacks=[],
                              system=system,
                              messages=[{"role": "user", "content": "PROBLEM:\n" + q[:6000] + issue_lines + law_block}])
         record_cost(r, m)
@@ -13171,7 +13178,7 @@ def api_exam_interview():
                     items.append({"background": bg, "question": qq})
             elif str(it).strip():
                 items.append({"background": "", "question": str(it).strip()})
-        items = items[:8]
+        items = items[:12]
     except Exception:
         app.logger.exception("interview question generation failed")
         items = []
