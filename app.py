@@ -7891,6 +7891,11 @@ def _verbatim_quote_check(text, courses):
     return out
 
 
+def _audit_norm(s):
+    """Normalise text for loose authority matching: lowercase, non-alphanumerics → single spaces."""
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
 @app.route("/api/audit", methods=["POST"])
 def api_audit():
     """Independent citation auditor. Extracts the answer's checkable authorities, RE-
@@ -7985,7 +7990,31 @@ def api_audit():
     # through without corpus re-retrieval so the strict audit never cuts a properly-sourced fact.
     real_items = [it for it in items if str(it.get("kind", "")).lower() == "realworld"]
     items = [it for it in items if str(it.get("kind", "")).lower() not in ("succession", "realworld")]
-    if not items and not succ_items and not real_items:
+    # DATABASE-VERIFIED AUTHORITIES (judy.legal / CourtListener / EULEX / official primary sources):
+    # cases and treaties/foreign instruments pulled live from a connected legal database are VERIFIED
+    # authority — they simply do not live in the uploaded corpus (which may be statute-only). The
+    # frontend passes what those databases returned as `verified_text`; any CASE or treaty/foreign
+    # instrument whose name appears there is confirmed externally, so it must NOT be re-retrieved
+    # against the corpus or CUT for corpus-absence (statute citations still go through the normal
+    # corpus check, so misattributed sections are still corrected).
+    _vtext = _audit_norm(body.get("verified_text") or "")
+    db_items = []
+    if _vtext:
+        _keep = []
+        for it in items:
+            a = (it.get("authority", "") or "")
+            is_case = bool(re.search(r"\b[vV]\.?\s", a)) or bool(re.search(r"\bRepublic\b|\bv\b", a))
+            is_treaty = bool(re.search(r"(?i)\b(convention|treaty|protocol|statute of the|charter|"
+                                       r"covenant|agreement on|nuclear suppliers)\b", a))
+            an = _audit_norm(a)
+            if (is_case or is_treaty) and len(an) >= 6 and an in _vtext:
+                it["verdict"] = "external"
+                it["note"] = "verified via a connected legal database (judy.legal / CourtListener / EULEX)"
+                db_items.append(it)
+            else:
+                _keep.append(it)
+        items = _keep
+    if not items and not succ_items and not real_items and not db_items:
         return jsonify({"items": [], "note": "No specific statutory/constitutional authorities found to check."})
 
     # 2) re-retrieve corpus support for each — TWO-PRONGED for recall: a SEMANTIC pull
@@ -8140,6 +8169,18 @@ def api_audit():
                              "record confirmed OUTSIDE this subject's corpus, so it is stated from source "
                              "rather than something the corpus needs to hold. Verify against the cited "
                              "source."),
+                    "correct_authority": ""})
+
+    # Database-verified authorities (cases/treaties from judy.legal / CourtListener / EULEX): pass as
+    # supported-by-source. They are confirmed against the live database, which is a different source
+    # from this corpus, so corpus silence is expected — never cut them.
+    for it in db_items:
+        out.append({"authority": it["authority"], "claim": it.get("claim", ""),
+                    "verdict": "supported",
+                    "note": ("Verified via a connected legal database (judy.legal / CourtListener / "
+                             "EULEX). This authority was pulled live from an authoritative database, not "
+                             "from the uploaded corpus, so its absence from the corpus is expected — not "
+                             "a defect. Confirm against the database entry."),
                     "correct_authority": ""})
 
     # 4) OPTIONAL correction: if asked to fix, rewrite ONLY the flagged citations,

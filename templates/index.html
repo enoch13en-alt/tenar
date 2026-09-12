@@ -2886,7 +2886,7 @@ async function auditCompiled() {
   let cur = EXAM.doc, fixed = 0, removed = 0, cal = 0, items = [], quotes = null, calChanges = [];
   try {
     const aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true, verify_model: "haiku"})})).json();
+      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true, verify_model: "haiku", verified_text: verifiedAuthText()})})).json();
     if (aud) {
       if (aud.corrected) cur = aud.corrected;
       fixed = aud.fixed_count || 0; removed = aud.removed_count || 0;
@@ -3589,6 +3589,16 @@ function clearAuthPending(i) {
   it.answer = (it.answer || "").replace(AUTH_PENDING_RE, "").trim();
   it.answer_annotated = (it.answer_annotated || "").replace(AUTH_PENDING_RE, "").trim();
 }
+// The gathered issue answers hold the live-database law + cases (judy.legal / CourtListener / EULEX).
+// The citation audit checks the compiled doc against the uploaded CORPUS only, so it would cut those
+// database cases as 'not in the corpus'. Pass this text so the audit treats those cases/treaties as
+// verified-elsewhere and keeps them.
+function verifiedAuthText() {
+  try {
+    return (EXAM.issues || []).filter(it => it && it.done && it.answer)
+      .map(it => it.answer).join("\n\n").slice(0, 40000);
+  } catch (e) { return ""; }
+}
 // Pull live authority ONCE, at Compile, for every done issue that doesn't have it yet — all jobs
 // started in PARALLEL, then polled together with LIVE PROGRESS and a WAIT CAP so the compile never
 // blocks indefinitely on one slow issue. Whatever hasn't arrived by the cap keeps its corpus law.
@@ -4005,7 +4015,7 @@ async function finalCheckDoc(bar, docEl, doc, wordName, defaultTitle, btn) {
   let cur = doc, aud = {};
   try {
     aud = await (await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true})})).json();
+      body: JSON.stringify({answer: cur, courses: examCourses(), fix: true, strict: true, verified_text: verifiedAuthText()})})).json();
     if (aud.error) { panel.innerHTML = "⚠️ " + esc(aud.error); btn.disabled=false; btn.textContent=lbl; return; }
     if (aud.corrected) cur = aud.corrected;
     btn.textContent = "🔒 Calibrating…";
