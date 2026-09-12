@@ -5284,7 +5284,7 @@ if ($("#paperStart")) $("#paperStart").onclick = async () => {
     if (!PAPER_TYPES_CACHE) PAPER_TYPES_CACHE = (await (await fetch("/api/paper/types")).json()).types || {};
     const def = PAPER_TYPES_CACHE[type];
     if (!def) { $("#paperStatus").textContent = "Couldn't load the workflow — try again."; return; }
-    PAPER = { type, topic, label: def.label, stages: def.stages, sections: {}, decisions: {} };
+    PAPER = { type, topic, label: def.label, stages: def.stages, sections: {}, decisions: {}, qs: {} };
     $("#paperSetup").style.display = "none"; $("#paperWork").style.display = "block";
     $("#paperStatus").textContent = def.label + " — " + def.stages.length + " stages. Draft them in order; edit any output; then Assemble.";
     renderPaperStages();
@@ -5296,9 +5296,11 @@ function renderPaperStages() {
   const wrap = $("#paperStages");
   wrap.innerHTML = PAPER.stages.map((s, i) => {
     const done = !!(PAPER.sections[s.k] || "").trim();
-    const qs = (s.kind === "decide" && s.q && s.q.length)
-      ? '<div class="paperQ" style="margin:6px 0">'
-        + s.q.map((q, qi) => '<label style="font-size:11.5px;color:#aab4c6;display:block;margin-top:4px">'
+    const gen = PAPER.qs[s.k];                              // generated questions (array) once fetched
+    const qBlock = (gen && gen.length)
+      ? '<div class="paperQ" style="margin:6px 0;border-left:2px solid #c8a24b;padding-left:8px">'
+        + '<div style="font-size:11px;color:#8b93a7;margin-bottom:2px">Answer these so the section argues YOUR position:</div>'
+        + gen.map((q, qi) => '<label style="font-size:11.5px;color:#aab4c6;display:block;margin-top:4px">'
             + esc(q) + '</label><textarea class="paperAns" data-k="' + s.k + '" data-qi="' + qi
             + '" style="height:46px;width:100%">' + esc(((PAPER.decisions[s.k] || [])[qi]) || "") + '</textarea>').join("")
         + '</div>'
@@ -5311,12 +5313,15 @@ function renderPaperStages() {
       ? '<span style="color:#c8a24b;font-size:10.5px;border:1px solid #c8a24b;border-radius:10px;padding:1px 6px;margin-left:6px">you decide</span>'
       : "";
     return '<div class="issue' + (done ? ' done' : '') + '" style="margin:6px 0">'
-      + '<div class="rowbtn" style="align-items:center"><b style="font-size:13px">' + (i + 1) + '. ' + esc(s.t) + '</b>' + kindTag
+      + '<div class="rowbtn" style="align-items:center;flex-wrap:wrap"><b style="font-size:13px">' + (i + 1) + '. ' + esc(s.t) + '</b>' + kindTag
       + '<span style="flex:1"></span>'
+      + '<button class="btn alt paperAsk" data-k="' + s.k + '" style="width:auto;font-size:11px;padding:2px 9px">'
+      + (gen ? '↻ New questions' : '❓ Ask me') + '</button>'
       + '<button class="btn ' + (done ? 'alt' : 'gold') + ' paperDraft" data-k="' + s.k + '" style="width:auto;font-size:11px;padding:2px 9px">'
-      + (done ? '↻ Redraft' : (s.kind === "decide" ? 'Answer & draft' : 'Draft')) + '</button></div>'
-      + qs + out + '</div>';
+      + (done ? '↻ Redraft' : (gen ? 'Draft from my answers' : 'Draft')) + '</button></div>'
+      + qBlock + out + '</div>';
   }).join("");
+  wrap.querySelectorAll(".paperAsk").forEach(b => b.onclick = () => paperAsk(b.dataset.k, b));
   wrap.querySelectorAll(".paperDraft").forEach(b => b.onclick = () => draftStage(b.dataset.k, b));
   wrap.querySelectorAll(".paperSecEdit").forEach(t => t.onchange = () => { PAPER.sections[t.dataset.k] = t.value; });
   wrap.querySelectorAll(".paperAns").forEach(t => t.onchange = () => {
@@ -5324,15 +5329,40 @@ function renderPaperStages() {
     PAPER.decisions[t.dataset.k][+t.dataset.qi] = t.value;
   });
 }
+// Generate the intake questions for a stage (like the exam breakdown generating issues) so the
+// author answers them and the section is written from their answers.
+async function paperAsk(k, btn) {
+  if (!PAPER) return;
+  const s = PAPER.stages.find(x => x.k === k); if (!s) return;
+  const prior = PAPER.stages.filter(x => (PAPER.sections[x.k] || "").trim())
+    .map(x => "## " + x.t + "\n" + PAPER.sections[x.k]).join("\n\n").slice(0, 6000);
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = "Thinking…";
+  $("#paperStatus").textContent = "❓ Working out what to ask you for “" + s.t + "”…";
+  try {
+    const r = await (await fetch("/api/paper/questions", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({type: PAPER.type, stage: k, topic: PAPER.topic, prior, course: COURSE, courses: examCourses()})})).json();
+    if (r.error) { $("#paperStatus").textContent = "⚠ " + r.error; }
+    else { PAPER.qs[k] = r.questions || []; $("#paperStatus").textContent = "Answer the questions for “" + s.t + "”, then Draft from my answers."; renderPaperStages(); }
+  } catch (e) { $("#paperStatus").textContent = "Error — try again."; }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
 async function draftStage(k, btn) {
   if (!PAPER) return;
   const s = PAPER.stages.find(x => x.k === k); if (!s) return;
-  // collect the author's decision answers for a 'decide' stage
+  // collect the author's answers to the generated questions (if any were asked)
   let decisions = "";
-  if (s.kind === "decide") {
+  const gen = PAPER.qs[k];
+  if (gen && gen.length) {
     const ans = PAPER.decisions[k] || [];
-    if (!ans.some(a => (a || "").trim())) { $("#paperStatus").textContent = "Answer the questions for this stage first, then draft."; return; }
-    decisions = s.q.map((q, i) => q + "\n→ " + ((ans[i] || "").trim() || "(no answer)")).join("\n\n");
+    if (!ans.some(a => (a || "").trim())) {
+      $("#paperStatus").textContent = "Answer at least one question for this stage, then draft — or click Draft again to let it write without your steer.";
+      // allow a second click to proceed without answers
+      if (!s._skipAsk) { s._skipAsk = true; return; }
+    }
+    decisions = gen.map((q, i) => q + "\n→ " + ((ans[i] || "").trim() || "(no answer)")).join("\n\n");
+  } else if (s.kind === "decide") {
+    $("#paperStatus").textContent = "Click “❓ Ask me” first — this stage needs your research-design decisions.";
+    return;
   }
   // prior = the sections already written, in stage order (for continuity)
   const prior = PAPER.stages.filter(x => (PAPER.sections[x.k] || "").trim())

@@ -13431,10 +13431,15 @@ def api_paper_stage():
     parts = ["PAPER TOPIC / TITLE:\n" + topic]
     if prior:
         parts.append("\n\nSECTIONS ALREADY WRITTEN (for continuity — build on these, don't repeat):\n" + prior[:8000])
-    if sdef.get("kind") == "decide" and decisions:
-        parts.append("\n\nTHE AUTHOR'S OWN RESEARCH-DESIGN DECISIONS FOR THIS SECTION (write the "
-                     "section from THESE — this is the author's choice, state and justify it, do not "
-                     "substitute a different design):\n" + decisions[:4000])
+    if decisions:
+        label = ("THE AUTHOR'S OWN RESEARCH-DESIGN DECISIONS FOR THIS SECTION (write the section "
+                 "from THESE — this is the author's choice; state and justify it, do NOT substitute a "
+                 "different design):" if sdef.get("kind") == "decide" else
+                 "THE AUTHOR'S ANSWERS / STEER FOR THIS SECTION (the author was asked targeted "
+                 "questions and gave these answers — write the section so it REFLECTS the author's "
+                 "position, angle and choices here; this is their paper, argue THEIR line, grounded "
+                 "in the law):")
+        parts.append("\n\n" + label + "\n" + decisions[:4000])
     if ctx:
         parts.append("\n\nRETRIEVED MATERIALS (ground the law/literature here; cite with pinpoints):\n" + ctx[:12000])
     parts.append("\n\nWrite the '" + sdef["t"] + "' section now, in plain simple English.")
@@ -13451,6 +13456,75 @@ def api_paper_stage():
     if not section:
         return jsonify({"error": "The section came back empty — try again."}), 500
     return jsonify({"section": section})
+
+
+@app.route("/api/paper/questions", methods=["POST"])
+def api_paper_questions():
+    """Generate the targeted intake QUESTIONS for one stage — the same idea as the exam breakdown
+    generating issues: given the paper type, the stage and the topic (grounded in the corpus), ask
+    the author the 2–4 questions whose answers the bot needs to write THIS section as the author's
+    own. Design stages (methodology/data/sampling/ethics) yield the research-design decisions; the
+    argumentative stages yield the author's thesis, angle, comparators, reforms, etc."""
+    body = request.json or {}
+    ptype = body.get("type")
+    stage_k = body.get("stage")
+    p = PAPER_TYPES.get(ptype)
+    if not p:
+        return jsonify({"error": "Unknown paper type."}), 400
+    sdef = next((s for s in p["stages"] if s["k"] == stage_k), None)
+    if not sdef:
+        return jsonify({"error": "Unknown stage."}), 400
+    topic = (body.get("topic") or "").strip()
+    if not topic:
+        return jsonify({"error": "Give the paper's topic first."}), 400
+    prior = (body.get("prior") or "").strip()
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    courses = _exam_courses(body, safe_course(body.get("course", "")))
+    ctx = ""
+    try:
+        ctx = course_context_multi(courses, (topic + " " + sdef["t"])[:1200], 10) if courses else ""
+    except Exception:
+        ctx = ""
+    seed = ""
+    if sdef.get("kind") == "decide" and sdef.get("q"):
+        seed = ("\n\nThis is a RESEARCH-DESIGN stage; base your questions on these decision points, but "
+                "tailor them to the specific topic:\n- " + "\n- ".join(sdef["q"]))
+    system = (
+        "You help a law student write " + p["style"] + "\n\n"
+        "The student is about to write the '" + sdef["t"] + "' section. Its purpose: " + sdef["g"] + "\n\n"
+        "Generate the SHORT LIST of questions you must ask the STUDENT so that this section is THEIRS "
+        "— their position, angle, choices and knowledge — not your guess. Ask ONLY what you genuinely "
+        "need from the author to write this specific section well and cannot simply pull from the "
+        "law: their thesis/position, the line they want to argue, which jurisdictions or examples to "
+        "compare, what reforms they favour, sources they must engage, and (for research-design "
+        "stages) the method/data/sampling/ethics decisions. Make the questions CONCRETE and specific "
+        "to THIS topic (refer to the actual instruments/issues where helpful), not generic. Ask 2–4 "
+        "questions, each answerable in a sentence or two, in plain simple English. Do NOT ask for "
+        "information already settled by the law itself. Output STRICT JSON: an array of question "
+        "strings. No preamble, no fences." + seed)
+    user = ("PAPER TOPIC / TITLE:\n" + topic
+            + (("\n\nSECTIONS ALREADY WRITTEN (context — don't re-ask what these settle):\n" + prior[:5000]) if prior else "")
+            + (("\n\nRELEVANT MATERIALS (so your questions are specific to what the corpus holds):\n" + ctx[:6000]) if ctx else "")
+            + "\n\nGenerate the questions for the '" + sdef["t"] + "' section now.")
+    try:
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1200,
+                                system=system, messages=[{"role": "user", "content": user}])
+        record_cost(resp, m)
+        qs = _parse_json(_text_of(resp))
+        qs = [str(q).strip() for q in qs if isinstance(q, (str,)) and str(q).strip()][:5]
+    except Exception:
+        app.logger.exception("paper questions failed")
+        qs = []
+    if not qs:
+        # fall back to the stage's own decision prompts, or a single open steer
+        qs = list(sdef.get("q") or []) or ["What is your position or angle for this section, in your own words?"]
+    return jsonify({"questions": qs})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
