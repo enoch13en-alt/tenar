@@ -1586,7 +1586,32 @@ async function pdfTextInfo(arrayBuf) {
   }
   return { len: txt.trim().length, pages: pdf.numPages };
 }
-// OCR a scanned PDF entirely in the browser. Returns transcribed text with '--- page N ---' markers.
+// THE ARRANGER: Tesseract returns blocks in its own detected order, which SCATTERS multi-column and
+// complex legal-page layouts. Re-order the blocks by their position on the page — column-aware
+// (left column fully, then right), each column top-to-bottom — so the text reads in the right order.
+function arrangeBlocks(blocks, pageWidth) {
+  const bs = (blocks || [])
+    .filter(b => b && b.bbox && (b.text || "").trim())
+    .map(b => ({ x0: b.bbox.x0, x1: b.bbox.x1, y0: b.bbox.y0,
+                 xc: (b.bbox.x0 + b.bbox.x1) / 2, text: b.text.trim() }));
+  if (!bs.length) return "";
+  const mid = pageWidth / 2;
+  // two-column only if blocks clearly sit on both sides of the middle and few/none cross it
+  const leftCol = bs.filter(b => b.x1 < mid * 1.03);
+  const rightCol = bs.filter(b => b.x0 > mid * 0.97);
+  const crossing = bs.filter(b => b.x0 <= mid * 0.97 && b.x1 >= mid * 1.03);
+  const twoCol = leftCol.length >= 2 && rightCol.length >= 2 && crossing.length <= 1;
+  let ordered;
+  if (twoCol) {
+    const L = bs.filter(b => b.xc < mid).sort((a, b) => a.y0 - b.y0);
+    const R = bs.filter(b => b.xc >= mid).sort((a, b) => a.y0 - b.y0);
+    ordered = L.concat(R);                                // whole left column, then whole right
+  } else {
+    ordered = bs.slice().sort((a, b) => (a.y0 - b.y0) || (a.x0 - b.x0));  // top→bottom, then left→right
+  }
+  return ordered.map(b => b.text).join("\n\n");
+}
+// OCR a scanned PDF entirely in the browser, in correct reading order, with clear page markers.
 async function browserOcrPdf(arrayBuf, onProg) {
   await ensureOcrLibs();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuf.slice(0) }).promise;
@@ -1600,15 +1625,19 @@ async function browserOcrPdf(arrayBuf, onProg) {
       const cv = document.createElement("canvas");
       cv.width = vp.width; cv.height = vp.height;
       await pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
-      const { data: { text } } = await worker.recognize(cv);
-      out += "\n--- page " + i + " ---\n" + ((text || "").trim()) + "\n";
+      // ask Tesseract for structured BLOCKS (with bounding boxes) so we can re-order them
+      const { data } = await worker.recognize(cv, {}, { blocks: true, text: true });
+      let pageText = "";
+      if (data && data.blocks && data.blocks.length) pageText = arrangeBlocks(data.blocks, cv.width);
+      if (!pageText.trim()) pageText = (data && data.text ? data.text : "").trim();  // fallback
+      out += "\n\n--- Page " + i + " of " + pdf.numPages + " ---\n\n" + pageText.trim() + "\n";
       cv.width = cv.height = 0;                            // free the canvas
     }
   } finally { try { await worker.terminate(); } catch (e) {} }
   return out.trim();
 }
 function _ocrTextIsUsable(t) {
-  return t && t.replace(/---\s*page\s*\d+\s*---/gi, "").trim().length > 50;
+  return t && t.replace(/---[^\n]*---/g, "").trim().length > 50;
 }
 
 async function upload(files) {
