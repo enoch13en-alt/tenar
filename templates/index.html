@@ -296,7 +296,6 @@
   <button class="btn gold" id="openPolish">✍️ Polish / Shorten a work</button>
   <button class="btn gold" id="openInterpret" title="Statutory interpretation, your way: give a provision + the facts and CHOOSE the interpretive line you want to argue (a canon or a school). The bot argues that line to a conclusion, then names the equal-and-opposite rule, applies it, shows the problems that reading would cause, and gives reasons you didn't go that way. Grounded in your uploaded interpretation materials.">⚖️ Interpret (pick your line)</button>
   <button class="btn gold" id="openAdvisory">⚖️ Advisory (draft a deliverable)</button>
-  <button class="btn gold" id="openPaper" title="Write a Special Paper or a Dissertation, guided stage by stage. Pick the type and give your topic; the bot walks you through the right stages — drafting the doctrinal/analysis stages from your corpus, and for a dissertation ASKING you the research-design decisions (methodology, data, sampling, ethics) it cannot invent. Assembles into a full document.">📄 Special paper / dissertation</button>
   <button class="btn gold" id="openResearch" style="display:none">🔎 Research (facts → advice)</button>
 
   <div style="margin-top:auto; display:flex; flex-direction:column; gap:8px;">
@@ -324,37 +323,6 @@
     <input id="q" placeholder="Ask a question about this course's documents…" autofocus>
     <button class="btn" id="send" style="width:auto">Ask</button>
     <button class="btn gold" id="findCases" style="width:auto" title="Find decided cases that can be applied to this question — each verified online with a link (uses one web credit).">⚖️ Cases</button>
-  </div>
-</div>
-
-<!-- Research writing: Special Paper / Dissertation (guided, stage by stage) -->
-<div class="modal" id="paperModal">
-  <div class="box" style="max-width:900px;max-height:92vh;overflow:auto">
-    <div class="rowbtn" style="align-items:center;margin-bottom:6px">
-      <b style="font-size:15px">📄 Research writing</b>
-      <span style="flex:1"></span>
-      <button class="btn alt" id="paperClose" style="width:auto">✕ Close</button>
-    </div>
-    <div id="paperSetup">
-      <p style="font-size:12.5px;color:#8b93a7;margin:2px 0 8px">Pick the type and give your topic. A <b>special paper</b> is a tight, mostly-doctrinal argument; a <b>dissertation</b> needs the full research design (the bot will ask you the method, data, sampling and ethics decisions it can't invent). Grounded in your selected course materials + connected databases.</p>
-      <label style="font-size:12px;color:#aab4c6">Type</label>
-      <select id="paperType" style="width:100%">
-        <option value="special">Special Paper — article-style, focused, doctrinal/comparative</option>
-        <option value="dissertation">Dissertation — chapter-based, full research architecture</option>
-      </select>
-      <label style="font-size:12px;color:#aab4c6;margin-top:8px;display:block">Topic / working title</label>
-      <textarea id="paperTopic" style="height:70px" placeholder="e.g. Parliamentary approval of concessionary-loan procurement in Ghana: the limits of section 96 of Act 663"></textarea>
-      <div class="rowbtn" style="margin-top:8px"><button class="btn gold" id="paperStart" style="width:auto">Start →</button></div>
-    </div>
-    <div id="paperWork" style="display:none">
-      <div id="paperStatus" style="font-size:12px;color:#8b93a7;margin:4px 0"></div>
-      <div id="paperStages"></div>
-      <div class="rowbtn" style="margin-top:10px">
-        <button class="btn gold" id="paperAssemble" style="width:auto" title="Stitch every drafted section into one document (with headings) — then use the export bar to add OSCOLA footnotes / download.">🧵 Assemble the document</button>
-        <button class="btn alt" id="paperReset" style="width:auto">↺ New paper</button>
-      </div>
-      <div id="paperOut" style="margin-top:10px"></div>
-    </div>
   </div>
 </div>
 
@@ -511,7 +479,17 @@
 <!-- Exam Coach -->
 <div class="modal" id="examModal">
   <div class="card" style="width:760px">
-    <h3>📝 Exam Coach</h3>
+    <div class="rowbtn" style="align-items:center;margin-bottom:6px">
+      <h3 style="margin:0">📚 Coach</h3><span style="flex:1"></span>
+      <label style="font-size:12px;color:#aab4c6">✍️ Writing:
+        <select id="coachType" style="width:auto;display:inline-block;max-width:230px">
+          <option value="exam">Exam answer / case study</option>
+          <option value="special">Special paper</option>
+          <option value="dissertation">Dissertation</option>
+        </select></label>
+      <button class="btn alt" id="coachClose" style="width:auto">✕ Close</button>
+    </div>
+    <div id="coachExam">
     <p>Paste an exam question or case study. It maps the facts, breaks the work
        into issues grounded in this course, gathers the law for each, then
        assembles one OSCOLA-referenced answer. Facts come only from your
@@ -643,6 +621,24 @@
     </details>
     <div id="examStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="examOut"></div>
+    </div><!-- /#coachExam -->
+    <div id="coachPaper" style="display:none">
+      <div id="paperSetup">
+        <p style="font-size:12.5px;color:#8b93a7;margin:2px 0 8px">A <b>special paper</b> is a tight, mostly-doctrinal argument; a <b>dissertation</b> needs the full research design (the bot will ask you the method, data, sampling and ethics decisions it can't invent). For each stage it generates questions from your topic + course materials — you answer, and it drafts your section from your answers.</p>
+        <label style="font-size:12px;color:#aab4c6">Topic / working title</label>
+        <textarea id="paperTopic" style="height:70px" placeholder="e.g. Parliamentary approval of concessionary-loan procurement in Ghana: the limits of section 96 of Act 663"></textarea>
+        <div class="rowbtn" style="margin-top:8px"><button class="btn gold" id="paperStart" style="width:auto">Start →</button></div>
+      </div>
+      <div id="paperWork" style="display:none">
+        <div id="paperStatus" style="font-size:12px;color:#8b93a7;margin:4px 0"></div>
+        <div id="paperStages"></div>
+        <div class="rowbtn" style="margin-top:10px">
+          <button class="btn gold" id="paperAssemble" style="width:auto" title="Stitch every drafted section into one document (with headings) — then use the export bar to add OSCOLA footnotes / download.">🧵 Assemble the document</button>
+          <button class="btn alt" id="paperReset" style="width:auto">↺ New paper</button>
+        </div>
+        <div id="paperOut" style="margin-top:10px"></div>
+      </div>
+    </div><!-- /#coachPaper -->
   </div>
 </div>
 
@@ -2594,6 +2590,7 @@ $("#openExam").onclick = () => {
   focusUserTouched = false;
   lastFocusQ = "";
   $("#examModal").style.display = "flex";
+  try { coachSetType(); } catch (e) {}   // show the right sub-panel for the current writing type
   if (EXAM && EXAM.issues && EXAM.issues.length) unstickBlockedIssues();  // free any cap/error-stuck issues
   maybeOfferResume();                  // offer to restore a saved run (survives crash/power cut)
   try { renderInterviewPanel(); } catch (e) {}   // restore captured views/questions if any
@@ -5270,14 +5267,27 @@ $("#interpClose").onclick = () => { $("#interpretModal").style.display = "none";
 // ============ Research writing: Special Paper / Dissertation (guided, stage by stage) ============
 let PAPER = null;   // {type, topic, stages:[...], sections:{k:text}, decisions:{k:[a1,a2]}}
 let PAPER_TYPES_CACHE = null;
-if ($("#openPaper")) $("#openPaper").onclick = () => { $("#paperModal").style.display = "flex"; };
-if ($("#paperClose")) $("#paperClose").onclick = () => { $("#paperModal").style.display = "none"; };
+// The Coach's "what are you writing?" picker: Exam answer (the existing breakdown→gather→compile
+// flow) vs Special paper / Dissertation (the staged ask→draft→assemble paper workflow). Both live
+// in the one Coach modal; the picker just shows the right sub-panel.
+function coachSetType() {
+  const t = (($("#coachType") || {}).value) || "exam";
+  const paper = (t === "special" || t === "dissertation");
+  if ($("#coachExam")) $("#coachExam").style.display = paper ? "none" : "block";
+  if ($("#coachPaper")) $("#coachPaper").style.display = paper ? "block" : "none";
+  if (paper && (!PAPER || PAPER.type !== t)) {            // switched to a fresh paper type → setup
+    if ($("#paperWork")) $("#paperWork").style.display = "none";
+    if ($("#paperSetup")) $("#paperSetup").style.display = "block";
+  }
+}
+if ($("#coachType")) $("#coachType").onchange = coachSetType;
+if ($("#coachClose")) $("#coachClose").onclick = () => { $("#examModal").style.display = "none"; };
 if ($("#paperReset")) $("#paperReset").onclick = () => {
   PAPER = null; $("#paperWork").style.display = "none"; $("#paperSetup").style.display = "block";
   $("#paperOut").innerHTML = "";
 };
 if ($("#paperStart")) $("#paperStart").onclick = async () => {
-  const type = $("#paperType").value, topic = $("#paperTopic").value.trim();
+  const type = (($("#coachType") || {}).value) || "special", topic = $("#paperTopic").value.trim();
   if (!topic) { $("#paperTopic").focus(); return; }
   const btn = $("#paperStart"); btn.disabled = true; btn.textContent = "Loading…";
   try {
