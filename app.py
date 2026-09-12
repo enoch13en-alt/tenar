@@ -7850,11 +7850,28 @@ def _norm_for_quote(s):
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def _verbatim_quote_check(text, courses):
-    """DETERMINISTIC (no LLM) fidelity check: every quoted string of real length in `text` must
-    appear VERBATIM in the corpus of `courses` (after whitespace/typography normalisation).
-    Returns [{quote, ok, nearest}] — nearest = the closest actual corpus passage for a miss.
-    This is what makes 'reproduce the law' provably exact rather than model-trusted."""
+def _quote_is_author_prose(q):
+    """A quoted span that is the AUTHOR'S OWN prose (not a reproduction of statutory/case text) and
+    so should NOT be verbatim-checked against the corpus. Footnote markers, first-person/meta
+    connectives, or an over-long span (usually a stray/unbalanced quote swallowing paragraphs of
+    argument) all mark author prose rather than a reproduced provision."""
+    if re.search(r"\[\d{1,3}\]", q):                     # footnote marker → the essay's own text
+        return True
+    if len(q) > 380:                                     # a single provision is rarely this long;
+        return True                                      # usually a stray-quote artifact spanning prose
+    ql = q.lower()
+    if re.search(r"(?i)\b(this essay|the specialist|the board|the better view|this reading|"
+                 r"the missing half|the question|i would|we should|our |as noted|as above|"
+                 r"issue (one|two|three|four|five|1|2|3|4|5))\b", ql):
+        return True
+    return False
+
+
+def _verbatim_quote_check(text, courses, verified_text=""):
+    """DETERMINISTIC (no LLM) fidelity check on GENUINE reproduced-law quotes: each is confirmed
+    against the corpus OR the verified database text (judy/CourtListener/EULEX). The author's own
+    prose and database quotes are NOT flagged — only a quote that purports to reproduce a provision
+    and is missing from every source. Returns [{quote, ok, nearest}]."""
     if not text:
         return []
     raws = []
@@ -7864,11 +7881,12 @@ def _verbatim_quote_check(text, courses):
             raws.extend(ch.get("text", "") for ch in INDEXES[course]["chunks"])
         except Exception:
             pass
-    if not raws:
+    # the verified database text (statutes/treaties/cases the live pass returned) is a valid source
+    vt = _norm_for_quote(verified_text or "")
+    if not raws and not vt:
         return []
     big = _norm_for_quote("\n".join(raws))
     norms = [(_norm_for_quote(r), r) for r in raws]
-    # extract double-quoted spans of >=25 chars (skip trivial quotes like "a person")
     t2 = text.replace("“", '"').replace("”", '"')
     out, seen = [], set()
     for q in re.findall(r'"([^"]{25,})"', t2):
@@ -7876,9 +7894,12 @@ def _verbatim_quote_check(text, courses):
         if not q or q in seen:
             continue
         seen.add(q)
+        if _quote_is_author_prose(q):                    # skip the essay's own prose entirely
+            continue
         qn = _norm_for_quote(q)
-        item = {"quote": q[:300], "ok": qn in big}
-        if not item["ok"]:
+        ok = (qn in big) or (bool(vt) and qn in vt)      # corpus OR verified database text
+        item = {"quote": q[:300], "ok": ok}
+        if not ok:
             qw = set(re.findall(r"[a-z0-9]{4,}", qn))
             best, score = "", 0
             for rn, raw in norms:
@@ -8304,7 +8325,8 @@ def api_audit():
     # Deterministic verbatim-quote fidelity check — run on the corrected text if we produced
     # one, else the input. Provably confirms every quoted provision is in the corpus verbatim.
     try:
-        result["quotes"] = _verbatim_quote_check(result.get("corrected") or answer, courses)
+        result["quotes"] = _verbatim_quote_check(result.get("corrected") or answer, courses,
+                                                  verified_text=body.get("verified_text") or "")
     except Exception:
         result["quotes"] = []
     return jsonify(result)
