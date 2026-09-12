@@ -8264,9 +8264,22 @@ def api_audit():
             n_unique = sum(1 for v in doc_cache.values() if v and v[0])
             if n_unique:
                 consume("questions", n_unique)
-            # anything STILL unverified after the full read is genuinely ungrounded -> cut it
-            removed = [(items[i], out[i]) for i in range(len(items))
-                       if out[i]["verdict"] == "unverified"]
+            # anything STILL unverified after the full read is genuinely ungrounded -> cut it,
+            # UNLESS a connected legal database vouches for it. judy.legal is authoritative for
+            # Ghanaian law, so an authority it returned is TRUSTED to fill a corpus gap and is kept
+            # (a corpus-present but misattributed section is still corrected via the flagged path).
+            removed = []
+            for i in range(len(items)):
+                if out[i]["verdict"] != "unverified":
+                    continue
+                an = _audit_norm(items[i].get("authority", ""))
+                if _vtext and len(an) >= 5 and an in _vtext:
+                    out[i]["verdict"] = "supported"
+                    out[i]["note"] = ("Not in the uploaded corpus, but verified via a connected legal "
+                                      "database (judy.legal — authoritative for Ghanaian law). Relied "
+                                      "on to fill the corpus gap; confirm against the database entry.")
+                    continue
+                removed.append((items[i], out[i]))
 
         flagged = [(items[i], out[i]) for i in range(len(items))
                    if out[i]["verdict"] in ("misattributed", "contradicted")]
