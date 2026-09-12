@@ -13310,6 +13310,149 @@ def api_exam_defence_pptx():
         return jsonify({"error": "Couldn't build the PowerPoint — try again."}), 500
 
 
+# ================= RESEARCH WRITING — Special Paper & Dissertation (guided, stage by stage) =========
+# A special paper is a narrow, tightly-argued, mostly-doctrinal piece; a dissertation needs the full
+# research architecture (methodology, data strategy, sampling, ethics, contribution). Each type is a
+# STAGE LIST: 'draft' stages the bot writes grounded in the corpus; 'decide' stages ask the user the
+# research-design questions it cannot invent, then draft the section from those answers.
+PAPER_TYPES = {
+    "special": {
+        "label": "Special Paper",
+        "style": ("an ARTICLE-STYLE special paper: ONE tightly-framed research question argued to a "
+                  "conclusion, mostly doctrinal and comparative, with NO chapter apparatus. Narrower "
+                  "and more sharply argued than a dissertation; strong analysis or synthesis is "
+                  "enough — it does NOT need its own methodology chapter, fieldwork or data."),
+        "stages": [
+            {"k": "problem", "t": "The problem", "g": "State the precise legal/policy problem and why it matters — the specific difficulty, who it affects, and the stakes. No literature yet; frame the problem crisply."},
+            {"k": "question", "t": "Research question & thesis", "g": "Frame ONE narrow research question, then state the paper's thesis (central argument) in a sentence or two — the position you will defend."},
+            {"k": "framework", "t": "Governing legal & policy framework", "g": "Set out the governing framework: the controlling instruments and provisions (quoted where they matter, with pinpoints) and any key policy. This is the law the analysis will apply."},
+            {"k": "literature", "t": "Focused literature", "g": "Position the paper in the debate using ONLY the literature directly tied to the question — the main scholars/works and what each argues, attributed by name. Selective, not a survey; show the gap the paper fills."},
+            {"k": "analysis", "t": "Analysis", "g": "The heart of the paper: apply the framework to the problem, argue the thesis, raise the strongest counter-argument and answer it, reach reasoned mini-conclusions."},
+            {"k": "comparative", "t": "Comparative / empirical", "g": "Bring in comparable jurisdictions or data ONLY where it genuinely strengthens the argument — how a similar country handles the same point, or a report/figure that bears on it. If it adds nothing, say the section is not needed."},
+            {"k": "gaps", "t": "Gaps", "g": "Identify the specific gaps or weaknesses in the current law/framework that the analysis has exposed."},
+            {"k": "reforms", "t": "Reform proposals", "g": "Propose concrete, workable reforms that close the gaps — each tied to a gap you identified."},
+            {"k": "conclusion", "t": "Conclusion", "g": "Answer the research question directly and restate the thesis as now proven. No new material."},
+        ],
+    },
+    "dissertation": {
+        "label": "Dissertation",
+        "style": ("a CHAPTER-BASED dissertation: a full independent research project showing the "
+                  "complete research architecture and a clear ORIGINAL CONTRIBUTION. Broader and "
+                  "deeper than a special paper; the examiner asks not only 'is the answer "
+                  "persuasive?' but 'was the question well framed, the method suitable, the sources "
+                  "adequate, the analysis rigorous, and what is the contribution?'"),
+        "stages": [
+            {"k": "problem", "t": "Research problem (Ch.1)", "g": "Introduce the research problem, its context and significance, and the scope of the study."},
+            {"k": "question", "t": "Research question, objectives & sub-questions", "g": "State ONE main research question, then the objectives and the sub-questions that break it down."},
+            {"k": "literature", "t": "Literature review (Ch.2)", "g": "A systematic, comprehensive review of the relevant literature — themes, what is settled, what is contested, and the gap this study fills. Attribute every position by author."},
+            {"k": "framework", "t": "Conceptual / theoretical framework", "g": "Set out the conceptual or theoretical framework the study uses to analyse the problem, and why it fits."},
+            {"k": "methodology", "t": "Methodology (Ch.3)", "kind": "decide",
+             "q": ["Is your research doctrinal, empirical, or mixed — and why is that the right method for your question?",
+                   "What is your overall research design (e.g. black-letter analysis, comparative, case study, qualitative interviews, survey)?"],
+             "g": "Write the methodology chapter FROM THE AUTHOR'S ANSWERS below — state and justify the chosen method, the design, and why it suits the research question. Do not invent a method the author did not choose."},
+            {"k": "data", "t": "Source / data strategy", "kind": "decide",
+             "q": ["What sources or data will you use (primary law, cases, reports, interviews, documents)?",
+                   "Where will they come from and how will you access them?"],
+             "g": "Write the source/data strategy FROM THE AUTHOR'S ANSWERS — what sources/data, from where, and how gathered."},
+            {"k": "sampling", "t": "Sampling (if empirical)", "kind": "decide",
+             "q": ["If empirical: who/what is your sample (population, size) and how will you select it?",
+                   "If purely doctrinal, say so."],
+             "g": "Write the sampling section FROM THE AUTHOR'S ANSWERS. If the study is purely doctrinal, state plainly that sampling does not apply and why."},
+            {"k": "ethics", "t": "Ethics (if human participants)", "kind": "decide",
+             "q": ["Do you involve human participants? If so, what consent, confidentiality and ethics approval apply?",
+                   "If there are no human participants, say so."],
+             "g": "Write the ethics section FROM THE AUTHOR'S ANSWERS. If there are no human participants, state that ethics approval is not required and why."},
+            {"k": "analysis", "t": "Analysis & findings", "g": "Present and analyse the material/data against the framework, and set out the findings that answer the sub-questions. Ground every point."},
+            {"k": "discussion", "t": "Discussion", "g": "Interpret the findings: what they mean for the research question, how they sit against the literature, and what the original contribution is."},
+            {"k": "conclusion", "t": "Conclusions & recommendations", "g": "State the conclusions that follow from the evidence, answer the main research question, and give concrete recommendations."},
+            {"k": "limitations", "t": "Limitations & further research", "g": "State honestly the limitations of the study (scope, method, data) and directions for further research."},
+        ],
+    },
+}
+
+
+@app.route("/api/paper/types")
+def api_paper_types():
+    """The Research-Writing workflow definitions (Special Paper / Dissertation) for the frontend:
+    each type's stage list, which stages are 'decide' (ask the author first) and their questions."""
+    if current_user() is None:
+        return jsonify({"error": "login required"}), 401
+    out = {}
+    for key, p in PAPER_TYPES.items():
+        out[key] = {"label": p["label"], "style": p["style"],
+                    "stages": [{"k": s["k"], "t": s["t"], "kind": s.get("kind", "draft"),
+                                "q": s.get("q", [])} for s in p["stages"]]}
+    return jsonify({"types": out})
+
+
+@app.route("/api/paper/stage", methods=["POST"])
+def api_paper_stage():
+    """Draft ONE stage/section of a special paper or dissertation, grounded in the corpus and in the
+    prior sections already written. For a 'decide' stage the author's answers arrive in `decisions`
+    and the section is written FROM them (the research design is the author's, never invented)."""
+    body = request.json or {}
+    ptype = body.get("type")
+    stage_k = body.get("stage")
+    p = PAPER_TYPES.get(ptype)
+    if not p:
+        return jsonify({"error": "Unknown paper type."}), 400
+    sdef = next((s for s in p["stages"] if s["k"] == stage_k), None)
+    if not sdef:
+        return jsonify({"error": "Unknown stage."}), 400
+    topic = (body.get("topic") or "").strip()
+    if not topic:
+        return jsonify({"error": "Give the paper's topic/title first."}), 400
+    prior = (body.get("prior") or "").strip()          # accumulated summary of sections already written
+    decisions = (body.get("decisions") or "").strip()   # the author's answers (decide stages)
+    c = _client()
+    if not c:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
+    ok, msg = can_consume("questions")
+    if not ok:
+        return jsonify({"error": msg, "limit": True})
+    consume("questions")
+    courses = _exam_courses(body, safe_course(body.get("course", "")))
+    ctx = ""
+    try:
+        probe = (topic + "\n" + sdef["t"] + "\n" + decisions)[:1500]
+        ctx = course_context_multi(courses, probe, 18) if courses else ""
+    except Exception:
+        ctx = ""
+    system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + LEGAL_METHOD + "\n\n"
+              + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRECISION_DISCIPLINE + "\n\n"
+              + REFORM_METHOD + "\n\n"
+              "RESEARCH WRITING — you are writing " + p["style"] + "\n\n"
+              "You are drafting ONE section: '" + sdef["t"] + "'. " + sdef["g"] + "\n"
+              "Write ONLY this section — do not write the other sections, no overall intro/outro, no "
+              "meta-commentary about what you are doing. Open with the section's own H2 heading "
+              "('## " + sdef["t"] + "'). Keep it coherent with the sections already written (given "
+              "below) — build on them, do not repeat them. Ground every legal proposition in the "
+              "retrieved materials or the connected databases; never invent an authority.")
+    parts = ["PAPER TOPIC / TITLE:\n" + topic]
+    if prior:
+        parts.append("\n\nSECTIONS ALREADY WRITTEN (for continuity — build on these, don't repeat):\n" + prior[:8000])
+    if sdef.get("kind") == "decide" and decisions:
+        parts.append("\n\nTHE AUTHOR'S OWN RESEARCH-DESIGN DECISIONS FOR THIS SECTION (write the "
+                     "section from THESE — this is the author's choice, state and justify it, do not "
+                     "substitute a different design):\n" + decisions[:4000])
+    if ctx:
+        parts.append("\n\nRETRIEVED MATERIALS (ground the law/literature here; cite with pinpoints):\n" + ctx[:12000])
+    parts.append("\n\nWrite the '" + sdef["t"] + "' section now, in plain simple English.")
+    user = "".join(parts)
+    try:
+        resp, m = _create_final(c, model=ANSWER_MODEL, max_tokens=6000,
+                                system=cached_system(system),
+                                messages=[{"role": "user", "content": user}])
+        record_cost(resp, m)
+        section = (_text_of(resp) or "").strip()
+    except Exception:
+        app.logger.exception("paper stage failed")
+        return jsonify({"error": "Couldn't draft that section — try again."}), 500
+    if not section:
+        return jsonify({"error": "The section came back empty — try again."}), 500
+    return jsonify({"section": section})
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
