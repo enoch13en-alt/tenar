@@ -12408,18 +12408,19 @@ def api_updates_fetch():
             results.append({"title": title, "ok": False, "why": f"could not fetch ({e})"})
             continue
         safe = re.sub(r'[^\w %()&.,-]', '_', title).strip()[:80] or "new-law"
-        # dedup: drop any prior copy of THIS instrument (either extension) before
-        # writing, so re-fetching REPLACES rather than accumulating a .pdf + .md pair
-        for _ext in (".pdf", ".md"):
-            _prev = f"New law — {safe}{_ext}"
-            _pp = os.path.join(pdf_dir, _prev)
-            if os.path.exists(_pp):
-                try:
-                    os.remove(_pp)
-                except Exception:
-                    pass
-                SOURCES.pop(_prev, None)
-                DOCTYPES.pop(_prev, None)
+        # dedup: drop any prior copy of THIS item (either label, either extension)
+        # before writing, so re-fetching REPLACES rather than accumulating copies
+        for _pref in ("New law — ", "Reference — "):
+            for _ext in (".pdf", ".md"):
+                _prev = f"{_pref}{safe}{_ext}"
+                _pp = os.path.join(pdf_dir, _prev)
+                if os.path.exists(_pp):
+                    try:
+                        os.remove(_pp)
+                    except Exception:
+                        pass
+                    SOURCES.pop(_prev, None)
+                    DOCTYPES.pop(_prev, None)
         is_pdf = ("pdf" in ctype or url.lower().split("?")[0].endswith(".pdf")
                   or data[:5] == b"%PDF-")
         try:
@@ -12457,10 +12458,11 @@ def api_updates_fetch():
             else:
                 text = _html_to_text(data)
                 low = text.lower()
+                words = text.split()
                 cookie_hits = sum(low.count(k) for k in
                                   ("cookie", "accept all", "manage preferences",
                                    "non-essential", "privacy policy"))
-                # legal-document markers — a real statute page has these
+                # legal-document markers — a real STATUTE page has these
                 legal_hits = sum(low.count(k) for k in
                                  ("section ", "shall", "enacted", "parliament",
                                   "hereby", "in force", "repeal", "act, 20", "act 20"))
@@ -12468,19 +12470,31 @@ def api_updates_fetch():
                     results.append({"title": title, "ok": False,
                                     "why": "page had little readable text (may need manual download)"})
                     continue
-                # reject website chrome / cookie-consent pages and thin summaries: a
-                # JS-rendered mirror (e.g. judy.legal AMP) returns cookie boilerplate,
-                # not the law. Require real legal text and little cookie noise.
-                if legal_hits < 5 or (cookie_hits >= 3 and legal_hits < 15) or \
-                        (len(text.split()) < 400 and legal_hits < 8):
+                # Reject ONLY genuine junk — a page that is mostly cookie/consent chrome
+                # with almost no real content (e.g. a JS-only mirror that returns nothing
+                # but a consent wall). We KEEP substantive non-statute pages: reports,
+                # policy papers and official summaries carry vital empirical/comparative
+                # info the paper needs, even though they are not the statute's own words.
+                cookie_wall = (len(words) < 250 and cookie_hits >= 3 and legal_hits < 3)
+                if cookie_wall:
                     results.append({"title": title, "ok": False,
-                        "why": ("this page looks like a website/cookie or summary page, "
-                                "not the statute's own text — try the official PDF, or "
-                                "download it and use Upload.")})
+                        "why": ("this page was almost all cookie/consent text with no real "
+                                "content — try the official PDF, or download it and use Upload.")})
                     continue
-                fn = f"New law — {safe}.md"
-                hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today} (web copy — verify "
-                       "against the official published version)\n\n")
+                # A page rich in legal markers is treated as the law itself (web copy);
+                # anything else substantive is kept as a WEB REFERENCE (secondary source),
+                # linked and citeable but never presented as the statute's verbatim text.
+                is_statute = legal_hits >= 5
+                if is_statute:
+                    fn = f"New law — {safe}.md"
+                    hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today} (web copy — verify "
+                           "against the official published version)\n\n")
+                else:
+                    fn = f"Reference — {safe}.md"
+                    hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today}\n"
+                           "TYPE: WEB REFERENCE — a report / policy / summary page, NOT the "
+                           "verbatim statute. Cite it as a secondary web source (with the link "
+                           "above) and verify any legal wording against the primary instrument.\n\n")
                 with open(os.path.join(pdf_dir, fn), "w", encoding="utf-8") as f:
                     f.write(hdr + text)
         except Exception as e:
