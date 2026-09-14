@@ -12531,11 +12531,17 @@ def api_updates_fetch():
                     hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today} (web copy — verify "
                            "against the official published version)\n\n")
                 else:
+                    from urllib.parse import urlparse
+                    _site = (urlparse(url).netloc or "").replace("www.", "")
                     fn = f"Reference — {safe}.md"
-                    hdr = (f"# {title}\n\nSOURCE: {url}\nFetched: {today}\n"
-                           "TYPE: WEB REFERENCE — a report / policy / summary page, NOT the "
-                           "verbatim statute. Cite it as a secondary web source (with the link "
-                           "above) and verify any legal wording against the primary instrument.\n\n")
+                    hdr = (f"# {title}\n\nSOURCE (URL): {url}\nSITE: {_site}\n"
+                           f"ACCESSED: {today}   (this is the OSCOLA 'accessed' date)\n"
+                           "TYPE: WEB REFERENCE — a report / policy / summary page, NOT the verbatim "
+                           "statute. Cite in OSCOLA (4th edn) ONLINE form: Author/Institution, 'Title' "
+                           f"(Site, publication date) <{url}> accessed {today}. Use the publication "
+                           "date shown ON the page if there is one; otherwise omit it. Treat as a "
+                           "SECONDARY web source and verify any legal wording against the primary "
+                           "instrument.\n\n")
                 with open(os.path.join(pdf_dir, fn), "w", encoding="utf-8") as f:
                     f.write(hdr + text)
         except Exception as e:
