@@ -3519,7 +3519,7 @@ async function gatherIssue(i, force) {
     // For a paper stage, hand the gather the whole SOURCE BASE (not just statutes) so it draws on the
     // current reports, books, articles and policy the corpus holds — as of today — alongside the law.
     const _srcHint = (EXAM.paperType && EXAM.paperSources)
-      ? (' Draw also on these current sources from the corpus (reports, books, articles, policy/news — prefer the most recent, keep their dates): ' + EXAM.paperSources + '.')
+      ? (' Draw also on these sources from the corpus (reports, books, articles, policy/news), keeping their dates — use CURRENT sources for present-day facts and the state of the law, but KEEP older/foundational works (e.g. a 2009 or 2015 article) for the doctrine or concept they establish; age alone never drops a source: ' + EXAM.paperSources + '.')
       : '';
     const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
       + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
