@@ -2525,7 +2525,7 @@ function saveExam() {
       userViews: EXAM.userViews || [], _interviewItems: EXAM._interviewItems || null,
       _interviewQs: EXAM._interviewQs || null,
       issues: (EXAM.issues || []).map(it => ({
-        n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link, weight: it.weight,
+        n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, link: it.link, weight: it.weight,
         _paperK: it._paperK, _paperInput: it._paperInput,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
@@ -2764,14 +2764,22 @@ async function setupPaperSections(ctype, topic) {
       frameworkLaw = (fr && fr.law) || "";
       frameworkSources = (fr && fr.sources) || "";
     } catch (e) {}
+    // TAILOR the basis per stage, so it is not the same statutes cloned onto every section:
+    // a stage that APPLIES LAW anchors on the governing instruments; a stage that leans on
+    // SCHOLARSHIP / COMPARATIVE / REPORTS anchors on the source map instead; a pure restatement
+    // stage (conclusion, limitations) and the design/'decide' stages get neither.
+    const LAW_ROLE = new Set(["problem", "question", "framework", "analysis", "gaps", "reforms", "discussion"]);
+    const SRC_ROLE = new Set(["problem", "question", "literature", "framework", "analysis", "comparative", "gaps", "reforms", "discussion"]);
     EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
       paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw, paperSources: frameworkSources,
-      issues: def.stages.map((s, i) => ({
-        n: i + 1, issue: s.t, why: s.g || "", weight: "core",
-        // design/'decide' stages are written from the author's own answers, not law retrieval, so
-        // leave their law hint empty; every other stage anchors on the topic's governing framework.
-        law: (s.kind === "decide") ? "" : frameworkLaw,
-        _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false })) };
+      issues: def.stages.map((s, i) => {
+        const decide = (s.kind === "decide");
+        return {
+          n: i + 1, issue: s.t, why: s.g || "", weight: "core",
+          law: (!decide && LAW_ROLE.has(s.k)) ? frameworkLaw : "",
+          srcHint: (!decide && SRC_ROLE.has(s.k)) ? frameworkSources : "",
+          _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false };
+      }) };
     renderExam();
     const inputN = EXAM.issues.filter(x => x._paperInput).length;
     const _nLaw = frameworkLaw ? frameworkLaw.split(";").filter(x => x.trim()).length : 0;
@@ -3222,8 +3230,18 @@ function renderExam() {
               + '</div>').join('')
           + '</div>'
         : '';
+      // basis line: law where the stage applies law, sources (reports/books/articles) where it
+      // leans on them — labelled so it's clear the work is built on more than statute.
+      let _basis = "";
+      if (!_hasSubs) {
+        const _sShort = it.srcHint ? (it.srcHint.length > 200 ? it.srcHint.slice(0, 200) + "…" : it.srcHint) : "";
+        const _parts = [];
+        if (it.law) _parts.push('⚖ ' + esc(it.law));
+        if (it.srcHint) _parts.push('<span title="' + esc(it.srcHint) + '">📚 ' + esc(_sShort) + '</span>');
+        if (_parts.length) _basis = ' · <i>' + _parts.join('  ·  ') + '</i>';
+      }
       return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+'</h5>'
-        + '<div class="why">'+esc(it.why||'')+(!_hasSubs && it.law?(' · <i>'+esc(it.law)+'</i>'):'')+'</div>'
+        + '<div class="why">'+esc(it.why||'')+_basis+'</div>'
         + _subsHtml + _auditNote + link + body + '</div>';
     }).join("");
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
@@ -3530,8 +3548,9 @@ async function gatherIssue(i, force) {
       : '';
     // For a paper stage, hand the gather the whole SOURCE BASE (not just statutes) so it draws on the
     // current reports, books, articles and policy the corpus holds — as of today — alongside the law.
-    const _srcHint = (EXAM.paperType && EXAM.paperSources)
-      ? (' Draw also on these sources from the corpus (reports, books, articles, policy/news), keeping their dates — use CURRENT sources for present-day facts and the state of the law, but KEEP older/foundational works (e.g. a 2009 or 2015 article) for the doctrine or concept they establish; age alone never drops a source: ' + EXAM.paperSources + '.')
+    const _paperSrc = it.srcHint || (EXAM.paperType ? EXAM.paperSources : '');
+    const _srcHint = _paperSrc
+      ? (' Draw also on these sources from the corpus (reports, books, articles, policy/news), keeping their dates — use CURRENT sources for present-day facts and the state of the law, but KEEP older/foundational works (e.g. a 2009 or 2015 article) for the doctrine or concept they establish; age alone never drops a source: ' + _paperSrc + '.')
       : '';
     const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
       + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
