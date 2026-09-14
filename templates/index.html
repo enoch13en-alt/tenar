@@ -2739,10 +2739,23 @@ async function setupPaperSections(ctype, topic) {
     if (!PAPER_TYPES_CACHE) PAPER_TYPES_CACHE = (await (await fetch("/api/paper/types")).json()).types || {};
     const def = PAPER_TYPES_CACHE[ctype];
     if (!def) { $("#examStatus").textContent = "Couldn't load the workflow — try again."; return false; }
+    // Give the stages a GOVERNING-LAW hint for THIS topic — the paper equivalent of the exam
+    // breakdown giving each issue its law. A stage worded as a section label ('Conceptual framework')
+    // names no Act, so retrieval can't anchor on the controlling provisions and reports them missing.
+    $("#examStatus").textContent = "Reading the corpus for the governing framework…";
+    let frameworkLaw = "";
+    try {
+      const fr = await (await fetch("/api/paper/framework", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, courses: examCourses(), topic})})).json();
+      frameworkLaw = (fr && fr.law) || "";
+    } catch (e) {}
     EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
-      paperType: ctype, paperLabel: def.label,
+      paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw,
       issues: def.stages.map((s, i) => ({
         n: i + 1, issue: s.t, why: s.g || "", weight: "core",
+        // design/'decide' stages are written from the author's own answers, not law retrieval, so
+        // leave their law hint empty; every other stage anchors on the topic's governing framework.
+        law: (s.kind === "decide") ? "" : frameworkLaw,
         _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false })) };
     renderExam();
     const inputN = EXAM.issues.filter(x => x._paperInput).length;

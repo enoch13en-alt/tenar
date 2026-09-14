@@ -13739,6 +13739,62 @@ def api_paper_questions():
     return jsonify({"questions": qs})
 
 
+@app.route("/api/paper/framework", methods=["POST"])
+def api_paper_framework():
+    """Identify the GOVERNING PRIMARY-LAW FRAMEWORK for a paper's topic FROM THE CORPUS, so each
+    paper stage carries a real 'governing law' hint — the paper equivalent of the exam breakdown
+    giving each issue its law. Without it a paper stage worded as a section label ('Conceptual
+    framework', 'Research question & thesis') names no Act, so retrieval never anchors on the
+    controlling provisions and the gather wrongly reports in-corpus sections 'not in the materials'.
+    Returns a compact '; '-joined instrument list (grounded — only instruments the corpus shows)."""
+    body = request.json or {}
+    topic = (body.get("topic") or "").strip()
+    courses = _exam_courses(body, safe_course(body.get("course", "")))
+    c = _client()
+    if not topic or not courses or not c:
+        return jsonify({"law": ""})
+    # pull the topic-relevant DOMESTIC-PRIMARY statute passages from the corpus
+    hits = []
+    for cc in courses:
+        try:
+            hits += auto_pin_primary_hits(cc, topic, total=12, k_per=3)
+        except Exception:
+            pass
+    ctx = ""
+    try:
+        ctx = "\n\n".join((h.get("text") or "")[:900] for h in hits[:24])[:12000]
+    except Exception:
+        ctx = ""
+    if not ctx:
+        try:
+            ctx = course_context_multi(courses, topic[:1200], 10) or ""
+        except Exception:
+            ctx = ""
+    if not ctx:
+        return jsonify({"law": ""})
+    system = (
+        "From the corpus passages, identify the GOVERNING PRIMARY-LAW FRAMEWORK for the stated topic: "
+        "the controlling Constitution provisions, Acts and subsidiary legislation (L.I./Regulations) "
+        "that a legal analysis of this topic must apply. List ONLY instruments that ACTUALLY APPEAR in "
+        "the passages — never invent one. Give each by its FULL citation as the passages give it "
+        "(short title, year and number — e.g. 'Renewable Energy Act, 2011 (Act 832)'). Order "
+        "domestic-primary first (Constitution, then Acts, then L.I.s/Regulations). Output STRICT JSON: "
+        "{\"instruments\":[\"...\"]}. No prose, no fences.")
+    user = "TOPIC:\n" + topic[:1500] + "\n\nCORPUS PASSAGES:\n" + ctx
+    insts = []
+    try:
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=600, system=system,
+                                messages=[{"role": "user", "content": user}])
+        record_cost(resp, m)
+        d = _first_json_obj(_text_of(resp)) or {}
+        raw = d.get("instruments") if isinstance(d, dict) else None
+        insts = [str(x).strip() for x in (raw or []) if str(x).strip()][:8]
+    except Exception:
+        app.logger.exception("paper framework failed")
+        insts = []
+    return jsonify({"law": "; ".join(insts)})
+
+
 @app.route("/api/exam/breakdown", methods=["POST"])
 def api_exam_breakdown():
     """Step 0 fact/data characterisation + decomposition into issues,
