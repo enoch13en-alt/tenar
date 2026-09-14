@@ -5375,10 +5375,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "THEN SET THEM AGAINST THE LAW. Under '## Rule', gather what the FRAMEWORK PROMISED — "
                 "the governing provisions and their stated aims/objects — as the BENCHMARK the facts "
                 "are measured against (a doctrinal audit of the promise), NEVER a rule applied to a "
-                "scenario. The analytical payoff — what the law promised VERSUS what the facts on the "
-                "ground show is LACKING — is the point of the paper, but it is DRAWN AT COMPILE; here "
-                "you only gather the two sides (the facts, and the promise) so that gap can later be "
-                "shown. Lead with the facts / literature; keep the law as the yardstick.\n"
+                "scenario. KEEP THE RULE LEAN — the KEY provisions that carry the promise or the gap "
+                "for THIS section (the enabling powers, the fund, the licensing/tariff hooks, the "
+                "target-setting provisions), NOT an exhaustive section-by-section recital of the whole "
+                "Act; a wall of every provision buries the point and crowds out the facts and the "
+                "comparators. The analytical payoff — what the law promised VERSUS what the facts on "
+                "the ground show is LACKING — is the point of the paper, but it is DRAWN AT COMPILE; "
+                "here you only gather the two sides (the facts, and the promise) so that gap can later "
+                "be shown. Lead with the facts / literature; keep the law as the yardstick.\n"
                 "'## Cases' HERE MEANS CASES AND INCIDENTS — gather BOTH: (a) any DECIDED CASE "
                 "genuinely in the materials, with what it HELD; and (b) REAL-WORLD INCIDENTS AND "
                 "EVENTS ON THE GROUND — a private operator's closure or forced exit (e.g. Black Star "
@@ -7609,8 +7613,10 @@ def api_ask():
     if body.get("brief"):
         # The gather is a TIGHT data sheet — Rule (verbatim) + Cases + Scholarly + Comparative — NOT an
         # essay (the compile writes the prose). A big ceiling let each issue balloon into a full essay,
-        # so cap it and keep gathers lean.
-        max_out = 4000
+        # so cap it and keep gathers lean. A RESEARCH-PAPER gather carries more first-class material
+        # (facts/reports + law-as-benchmark + cases AND incidents + comparators), so give it more room
+        # or the last section (Comparative — the whole point of a comparative issue) truncates away.
+        max_out = 7000 if body.get("paper_type") else 4000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
