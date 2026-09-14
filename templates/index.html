@@ -2520,6 +2520,10 @@ function saveExam() {
       cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
       paperType: EXAM.paperType || "", paperLabel: EXAM.paperLabel || "",
       paperFramework: EXAM.paperFramework || "", paperSources: EXAM.paperSources || "",
+      // interview: PERSIST the student's own answers + the generated items, so a reload/resume
+      // never loses the work the author typed in the interview (this used to vanish with the tab).
+      userViews: EXAM.userViews || [], _interviewItems: EXAM._interviewItems || null,
+      _interviewQs: EXAM._interviewQs || null,
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link, weight: it.weight,
         _paperK: it._paperK, _paperInput: it._paperInput,
@@ -2564,8 +2568,13 @@ function resumeExam(snap) {
   EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
   EXAM.paperType = snap.paperType || ""; EXAM.paperLabel = snap.paperLabel || "";
   EXAM.paperFramework = snap.paperFramework || ""; EXAM.paperSources = snap.paperSources || "";
+  // restore the interview answers + items so a resumed session shows what the author already typed
+  EXAM.userViews = snap.userViews || [];
+  EXAM._interviewItems = snap._interviewItems || null;
+  EXAM._interviewQs = snap._interviewQs || null;
   if ($("#coachType") && EXAM.paperType) { $("#coachType").value = EXAM.paperType; try { coachSetType(); } catch (e) {} }
   if ($("#examQ")) $("#examQ").value = snap.question || "";
+  try { if (typeof renderInterviewPanel === "function") renderInterviewPanel(); } catch (e) {}
   const _unstuck = unstickBlockedIssues();     // any issue stuck on a cap/error message → re-gatherable
   renderExam();
   if (EXAM.doc) {
