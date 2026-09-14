@@ -5379,9 +5379,15 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "ground show is LACKING — is the point of the paper, but it is DRAWN AT COMPILE; here "
                 "you only gather the two sides (the facts, and the promise) so that gap can later be "
                 "shown. Lead with the facts / literature; keep the law as the yardstick.\n"
-                "'## Cases' IS OPTIONAL here — this OVERRIDES the general 'all five headings' rule: "
-                "include a Cases section only if judicial decisions are genuinely in the materials. A "
-                "doctrinal / policy paper often cites none, and that is normal, not a gap to flag.")
+                "'## Cases' HERE MEANS CASES AND INCIDENTS — gather BOTH: (a) any DECIDED CASE "
+                "genuinely in the materials, with what it HELD; and (b) REAL-WORLD INCIDENTS AND "
+                "EVENTS ON THE GROUND — a private operator's closure or forced exit (e.g. Black Star "
+                "Energy), mini-grids that failed, were abandoned or handed over, pilot projects, "
+                "disasters, spills or outages — each stated as a DATED FACT with its source. These "
+                "incidents are HARD FACTS that evidence the gap between what the law promised and what "
+                "actually happened, so gather them EVEN WHERE THERE IS NO judicial decision; treat an "
+                "incident as evidence of fact, not as authority for a legal rule. Never invent a case "
+                "or an incident — only what the materials show.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
