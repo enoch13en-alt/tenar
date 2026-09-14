@@ -4048,8 +4048,18 @@ def _anchor_queries(question):
                    "licence application and categories",
                    "tariff rate setting and purchase price"):
             anchors.append((i + " " + bb).strip())
+    # COMPARATOR ANCHORS — a comparative question names other jurisdictions and their programmes /
+    # regulators by name and acronym (Kenya, Nigeria, KOSAP, EPRA, NERC, REREC…). A Ghana-framed
+    # search buries the report passages that DISCUSS those comparators, so search for each named
+    # entity directly and union it in — this is what surfaces 'the comparator IS in the reports'.
+    acronyms = [m.group(0) for m in re.finditer(r'\b[A-Z]{3,6}\b', question)]
+    _COMP_STOP = {"AND", "THE", "FOR", "ACT", "NOT", "LAW", "USD", "GHS", "USE"}
+    for a in acronyms:
+        if a not in _COMP_STOP and a not in insts:
+            anchors.append(a)
+            anchors.append(a + " regulations framework programme")
     anchors += subjects
-    return list(dict.fromkeys(a for a in anchors if a))[:14]
+    return list(dict.fromkeys(a for a in anchors if a))[:18]
 
 
 def retrieve_expanded(client, courses, question, multi, k=TOP_K):
@@ -5394,6 +5404,16 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "the ground show is LACKING — is the point of the paper, but it is DRAWN AT COMPILE; "
                 "here you only gather the two sides (the facts, and the promise) so that gap can later "
                 "be shown. Lead with the facts / literature; keep the law as the yardstick.\n"
+                "COMPARATORS COME FROM THE CORPUS'S REPORTS TOO. A comparator jurisdiction's approach "
+                "as DESCRIBED IN A REPORT, working paper or article in the materials — for example a "
+                "report's account of Kenya's KOSAP programme and EPRA regime, or Nigeria's mini-grid "
+                "model — IS valid comparative data: gather it under '## Comparative', ATTRIBUTED to "
+                "that source, and state the mechanism it describes. Do NOT require the foreign "
+                "country's OWN legislation to be in the corpus before you use it — a secondary / "
+                "report account of the comparator COUNTS. Write '⚠ none in the materials' for a "
+                "comparator ONLY when the corpus says NOTHING about it at all; if you have a report's "
+                "account but not the foreign statute, USE the account and add a 【FILL】 pointer for the "
+                "primary instrument (do not discard the account).\n"
                 "'## Cases' HERE MEANS CASES AND INCIDENTS — gather BOTH: (a) any DECIDED CASE "
                 "genuinely in the materials, with what it HELD; and (b) REAL-WORLD INCIDENTS AND "
                 "EVENTS ON THE GROUND — a private operator's closure or forced exit (e.g. Black Star "
