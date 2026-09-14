@@ -3561,6 +3561,7 @@ async function gatherIssue(i, force) {
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
         prior: priorRulesLedger(i),
+        paper_type: EXAM.paperType || "",   // research-paper gather: facts-first, not a case study
         use_context: false,
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),

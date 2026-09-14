@@ -4915,7 +4915,8 @@ SOURCE_COVERAGE = (
 def answer_question(course, question, include_web=True, fmt="essay", max_out=8000,
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
-                    pinned=None, auto_pin_primary=False, writer_model=None, use_judy=False):
+                    pinned=None, auto_pin_primary=False, writer_model=None, use_judy=False,
+                    paper_mode=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -5359,6 +5360,28 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "full rule statement the reader has already been given — it wastes the piece's word "
                 "budget. If this issue is governed ENTIRELY by already-established law, keep the Rule "
                 "to a one-line cross-reference and gather only what is NEW here.")
+        if paper_mode:
+            system = system + "\n\n" + (
+                "RESEARCH-PAPER GATHER — NOT A CASE STUDY. This is a SECTION of a research paper "
+                "(special paper / dissertation), not an exam answer to a hypothetical. There is NO "
+                "fact pattern to resolve and NOTHING to 'apply the law to facts' — do not use "
+                "case-study language ('these facts', 'the problem raises', 'apply the law').\n"
+                "INFORMATION FLOWS FROM THE HARD FACTS ON THE GROUND. The reports, web references / "
+                "links, recent updates and news, and scholarly writings in the corpus hold the "
+                "empirical reality — access rates, deployment numbers, what has actually happened, "
+                "targets, timelines, who is affected. GATHER THESE FIRST AND FULLY under '## Scholarly "
+                "& secondary', each ATTRIBUTED and DATED; they are the SUBSTANCE of the section, not a "
+                "garnish, and they hold the facts the paper argues from.\n"
+                "THEN SET THEM AGAINST THE LAW. Under '## Rule', gather what the FRAMEWORK PROMISED — "
+                "the governing provisions and their stated aims/objects — as the BENCHMARK the facts "
+                "are measured against (a doctrinal audit of the promise), NEVER a rule applied to a "
+                "scenario. The analytical payoff — what the law promised VERSUS what the facts on the "
+                "ground show is LACKING — is the point of the paper, but it is DRAWN AT COMPILE; here "
+                "you only gather the two sides (the facts, and the promise) so that gap can later be "
+                "shown. Lead with the facts / literature; keep the law as the yardstick.\n"
+                "'## Cases' IS OPTIONAL here — this OVERRIDES the general 'all five headings' rule: "
+                "include a Cases section only if judicial decisions are genuinely in the materials. A "
+                "doctrinal / policy paper often cites none, and that is normal, not a gap to flag.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -7611,7 +7634,8 @@ def api_ask():
                            pinned=body.get("pinned"),
                            auto_pin_primary=body.get("auto_pin_primary", True),
                            writer_model=body.get("writer_model"),
-                           use_judy=(mode == "gather"))   # judy is BAKED IN for every gather (no-op if not connected)
+                           use_judy=(mode == "gather"),   # judy is BAKED IN for every gather (no-op if not connected)
+                           paper_mode=bool(body.get("paper_type")))   # research-paper gather (facts-first, not a case study)
     if isinstance(_res, dict):
         _res["build"] = BUILD_SHA          # stamp the answer with the build that produced it (freshness mark)
     return jsonify(_res)
