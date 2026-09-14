@@ -2519,6 +2519,7 @@ function saveExam() {
       facts: EXAM.facts || [], assumptions: EXAM.assumptions || [], focus: EXAM.focus || [],
       cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
       paperType: EXAM.paperType || "", paperLabel: EXAM.paperLabel || "",
+      paperFramework: EXAM.paperFramework || "", paperSources: EXAM.paperSources || "",
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, link: it.link, weight: it.weight,
         _paperK: it._paperK, _paperInput: it._paperInput,
@@ -2562,6 +2563,7 @@ function resumeExam(snap) {
   EXAM.question = snap.question || ""; EXAM.focus = snap.focus || []; EXAM.cost = snap.cost || 0;
   EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
   EXAM.paperType = snap.paperType || ""; EXAM.paperLabel = snap.paperLabel || "";
+  EXAM.paperFramework = snap.paperFramework || ""; EXAM.paperSources = snap.paperSources || "";
   if ($("#coachType") && EXAM.paperType) { $("#coachType").value = EXAM.paperType; try { coachSetType(); } catch (e) {} }
   if ($("#examQ")) $("#examQ").value = snap.question || "";
   const _unstuck = unstickBlockedIssues();     // any issue stuck on a cap/error message → re-gatherable
@@ -2742,15 +2744,16 @@ async function setupPaperSections(ctype, topic) {
     // Give the stages a GOVERNING-LAW hint for THIS topic — the paper equivalent of the exam
     // breakdown giving each issue its law. A stage worded as a section label ('Conceptual framework')
     // names no Act, so retrieval can't anchor on the controlling provisions and reports them missing.
-    $("#examStatus").textContent = "Reading the corpus for the governing framework…";
-    let frameworkLaw = "";
+    $("#examStatus").textContent = "Reading the corpus for the sources this work is built on…";
+    let frameworkLaw = "", frameworkSources = "";
     try {
       const fr = await (await fetch("/api/paper/framework", {method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({course: COURSE, courses: examCourses(), topic})})).json();
       frameworkLaw = (fr && fr.law) || "";
+      frameworkSources = (fr && fr.sources) || "";
     } catch (e) {}
     EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
-      paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw,
+      paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw, paperSources: frameworkSources,
       issues: def.stages.map((s, i) => ({
         n: i + 1, issue: s.t, why: s.g || "", weight: "core",
         // design/'decide' stages are written from the author's own answers, not law retrieval, so
@@ -2759,7 +2762,13 @@ async function setupPaperSections(ctype, topic) {
         _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false })) };
     renderExam();
     const inputN = EXAM.issues.filter(x => x._paperInput).length;
-    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up. Click "
+    const _nLaw = frameworkLaw ? frameworkLaw.split(";").filter(x => x.trim()).length : 0;
+    const _nSrc = frameworkSources ? frameworkSources.split(";").filter(x => x.trim()).length : 0;
+    const _built = (_nLaw || _nSrc)
+      ? (" Built on " + _nLaw + " instrument" + (_nLaw === 1 ? "" : "s") + " + " + _nSrc
+         + " report/book/article source" + (_nSrc === 1 ? "" : "s") + " from your corpus.")
+      : "";
+    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up." + _built + " Click "
       + "🎤 Interview me to give your input (" + inputN + " decisions are yours: thesis, "
       + (ctype === "dissertation" ? "methodology, data, sampling, ethics, " : "") + "comparators, reforms), "
       + "then Gather all → Synthesise.";
@@ -3507,10 +3516,16 @@ async function gatherIssue(i, force) {
       ? ('\n\nFor EACH of these sub-questions, GATHER the governing law (Act first, then the L.I. that implements it) — do NOT answer or analyse them, just collect the provisions that bear on each:\n'
          + _subs.map(s => '- ' + (s.q || '') + (s.law ? ('   [governing law: ' + s.law + ']') : '')).join('\n'))
       : '';
+    // For a paper stage, hand the gather the whole SOURCE BASE (not just statutes) so it draws on the
+    // current reports, books, articles and policy the corpus holds — as of today — alongside the law.
+    const _srcHint = (EXAM.paperType && EXAM.paperSources)
+      ? (' Draw also on these current sources from the corpus (reports, books, articles, policy/news — prefer the most recent, keep their dates): ' + EXAM.paperSources + '.')
+      : '';
     const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
       + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
+      + _srcHint
       + _subText;
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),

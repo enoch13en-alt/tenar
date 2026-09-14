@@ -13753,46 +13753,71 @@ def api_paper_framework():
     c = _client()
     if not topic or not courses or not c:
         return jsonify({"law": ""})
-    # pull the topic-relevant DOMESTIC-PRIMARY statute passages from the corpus
+    # Build a BROAD, TYPE-TAGGED context so the model can map the WHOLE source base — not just
+    # statutes but the reports, books, articles and policy/news the paper is built on. Pull the
+    # topic-relevant PRIMARY statute passages AND a wide topic search across every doc type, then
+    # tag each passage with its [doctype] and source title so the model can classify it.
     hits = []
     for cc in courses:
         try:
-            hits += auto_pin_primary_hits(cc, topic, total=12, k_per=3)
+            hits += auto_pin_primary_hits(cc, topic, total=8, k_per=2)
         except Exception:
             pass
-    ctx = ""
     try:
-        ctx = "\n\n".join((h.get("text") or "")[:900] for h in hits[:24])[:12000]
+        broad = search_multi(courses, topic, k=34) if len(courses) > 1 else search(courses[0], topic, k=34)
     except Exception:
-        ctx = ""
+        broad = []
+    ctx_parts, seen = [], set()
+    for h in (hits + (broad or [])):
+        doc = h.get("doc", "")
+        key = (doc, h.get("page"))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            label = SOURCES.get(doc, doc) or doc
+            ctx_parts.append("[" + display_type(doc) + "] " + str(label)[:120] + ": "
+                             + (h.get("text") or "")[:520])
+        except Exception:
+            ctx_parts.append((h.get("text") or "")[:520])
+    ctx = "\n\n".join(ctx_parts[:44])[:17000]
     if not ctx:
         try:
             ctx = course_context_multi(courses, topic[:1200], 10) or ""
         except Exception:
             ctx = ""
     if not ctx:
-        return jsonify({"law": ""})
+        return jsonify({"law": "", "sources": ""})
     system = (
-        "From the corpus passages, identify the GOVERNING PRIMARY-LAW FRAMEWORK for the stated topic: "
-        "the controlling Constitution provisions, Acts and subsidiary legislation (L.I./Regulations) "
-        "that a legal analysis of this topic must apply. List ONLY instruments that ACTUALLY APPEAR in "
-        "the passages — never invent one. Give each by its FULL citation as the passages give it "
-        "(short title, year and number — e.g. 'Renewable Energy Act, 2011 (Act 832)'). Order "
-        "domestic-primary first (Constitution, then Acts, then L.I.s/Regulations). Output STRICT JSON: "
-        "{\"instruments\":[\"...\"]}. No prose, no fences.")
-    user = "TOPIC:\n" + topic[:1500] + "\n\nCORPUS PASSAGES:\n" + ctx
-    insts = []
+        "From the corpus passages — each tagged with its [type] and source — build the SOURCE MAP for "
+        "the stated topic: everything the paper should be built on, AS OF TODAY. Return STRICT JSON "
+        "with TWO arrays, {\"instruments\":[...], \"sources\":[...]}:\n"
+        "- instruments: the GOVERNING PRIMARY LAW a legal analysis must apply — controlling "
+        "Constitution provisions, Acts, and subsidiary legislation (L.I./Regulations). Give each by "
+        "its FULL citation as the passages give it (e.g. 'Renewable Energy Act, 2011 (Act 832)'). "
+        "Domestic-primary first (Constitution, then Acts, then L.I.s/Regulations).\n"
+        "- sources: the key SECONDARY and FACTUAL works relevant to the topic — reports, books, "
+        "journal articles, policy papers and recent news — each NAMED as the passages give it "
+        "(author and/or title, WITH its year/date). PREFER the most CURRENT material and always keep "
+        "the date, so the paper reflects the position as of today; where two cover the same ground, "
+        "list the more recent. \n"
+        "List ONLY items that ACTUALLY APPEAR in the passages — never invent a citation, an author or "
+        "a date. No prose, no fences.")
+    user = ("TODAY: " + datetime.date.today().isoformat() + "\nTOPIC:\n" + topic[:1500]
+            + "\n\nCORPUS PASSAGES:\n" + ctx)
+    insts, srcs = [], []
     try:
-        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=600, system=system,
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1100, system=system,
                                 messages=[{"role": "user", "content": user}])
         record_cost(resp, m)
         d = _first_json_obj(_text_of(resp)) or {}
-        raw = d.get("instruments") if isinstance(d, dict) else None
-        insts = [str(x).strip() for x in (raw or []) if str(x).strip()][:8]
+        if isinstance(d, dict):
+            insts = [str(x).strip() for x in (d.get("instruments") or []) if str(x).strip()][:10]
+            srcs = [str(x).strip() for x in (d.get("sources") or []) if str(x).strip()][:14]
     except Exception:
         app.logger.exception("paper framework failed")
-        insts = []
-    return jsonify({"law": "; ".join(insts)})
+        insts, srcs = [], []
+    return jsonify({"law": "; ".join(insts), "sources": "; ".join(srcs)})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
