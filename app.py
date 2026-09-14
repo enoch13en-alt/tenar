@@ -298,6 +298,16 @@ REPORTS / INSTITUTIONAL / IGO
 ONLINE
 - Author, 'Title' (Website, Date) <URL> accessed Date.
 
+NEWSPAPER / NEWS ARTICLES
+- Print: Author, 'Title' Newspaper Name (City, Date) page — e.g. Jane Croft,
+  'Supreme Court Warns on Quality' Financial Times (London, 1 July 2010) 3.
+- Online (no page number): end with the URL and accessed date INSTEAD of a page —
+  Author, 'Title' Newspaper Name (City, Date) <URL> accessed Date. The newspaper's
+  NAME is given in the citation (roman here; italic where the document supports it),
+  NOT parenthesised like a generic website. If there is no named author, start with
+  the title. Treat a news report as a SOURCE OF FACT (what happened, and when), not
+  as authority for a legal proposition — attribute the fact to it.
+
 SUBSEQUENT CITATIONS
 - Immediately after the same source: ibid (with pinpoint if different, e.g. 'ibid 122').
 - Later: short form — Author surname (n X) pinpoint; cases: short party name (n X).
@@ -5293,7 +5303,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "Mine the readings for cases they cite — a case named inside an article counts.\n"
                   "Under '## Scholarly & secondary' — ONE bullet per academic point, each ATTRIBUTED to "
                   "its author/work by name and pinpoint: '- Ainuson argues … (p.28)'. Give the analytical "
-                  "PROPOSITION the compile will draw on, not a bare title.\n"
+                  "PROPOSITION the compile will draw on, not a bare title. A RECENT REPORT or NEWS "
+                  "ARTICLE in the materials that supplies a CURRENT FACT the answer needs — a present-day "
+                  "figure, a recent development, the status of a draft/Bill, a policy change — ALSO "
+                  "belongs here: state the fact, attribute it to the source WITH ITS DATE (e.g. '- As at "
+                  "[source, date], X …'), and treat it as evidence of FACT, not authority for law. These "
+                  "recent-fact sources are how the answer speaks to TODAY where the older corpus is out "
+                  "of date; gather them, do not skip them as 'not a rule'.\n"
                   "Under '## Comparative' — ONE bullet per other-jurisdiction rule on the SAME point "
                   "(name the country and state its rule/authority).\n"
                   "For Cases / Scholarly / Comparative: these are DATA the compile will apply — cite "
