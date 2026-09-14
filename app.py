@@ -4025,7 +4025,9 @@ def _anchor_queries(question):
     subjects = [m.group(1).strip() for m in
                 re.finditer(r'[\"“\'‘]([^\"”\'’]{4,60})[\"”\'’]', question)]
     for m in re.finditer(r'\b((?:[a-z]+\s+){0,3}(?:fund|allowance|royalty|interest|deduction|expenditure|'
-                         r'relief|exemption|cost[s]?|take|income))\b', question, re.I):
+                         r'relief|exemption|cost[s]?|take|income|definition[s]?|interpretation|licen[cs]\w*|'
+                         r'tariff[s]?|permit[s]?|authority|scheme|obligation[s]?|compensation|net[- ]?meter\w*))\b',
+                         question, re.I):
         subjects.append(m.group(1).strip())
     anchors += insts
     # pair each named instrument with each subject so the exact provision (subject wording present in
@@ -4033,8 +4035,21 @@ def _anchor_queries(question):
     for i in insts[:3]:
         for s in subjects[:4]:
             anchors.append((i + " " + s).strip())
+    # STRUCTURAL BACKBONE — a named Act's definitions/interpretation section and its fund/financing,
+    # licensing and tariff provisions are load-bearing in almost any legal audit, yet they rank BELOW
+    # a broadly-framed issue query ('research question and thesis…') and never get pulled — the section
+    # is in the corpus but not retrieved, so the writer wrongly reports it 'not in the materials'. Pull
+    # them on a targeted query for EACH named instrument even when the issue text never says 'fund' or
+    # 'definition'. This is the recurring retrieval-miss the user hit on the Renewable Energy Fund (s.32)
+    # and the mini-grid definition (s.51) of Act 832.
+    for i in insts[:2]:
+        for bb in ("definitions interpretation meaning of",
+                   "establishment object and sources of the fund",
+                   "licence application and categories",
+                   "tariff rate setting and purchase price"):
+            anchors.append((i + " " + bb).strip())
     anchors += subjects
-    return list(dict.fromkeys(a for a in anchors if a))[:8]
+    return list(dict.fromkeys(a for a in anchors if a))[:14]
 
 
 def retrieve_expanded(client, courses, question, multi, k=TOP_K):
@@ -4042,7 +4057,10 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
     the operative provisions, then UNION the results (dedup by doc+page) so numbered
     articles surface alongside the framing chunks. Falls back to plain single-query search
     if expansion yields nothing."""
-    queries = [question] + expand_queries(client, question) + _anchor_queries(question)
+    # ANCHOR queries FIRST (after the main question): they target EXACT provisions (a named Act's
+    # definitions, fund, licensing…), so inserting their hits early means the merged-list cap below
+    # cannot truncate them before the broad LLM-expansion and comparative queries fill the window.
+    queries = [question] + _anchor_queries(question) + expand_queries(client, question)
     # Also pull the corpus's COMPARATIVE (other-jurisdiction) and CASE-LAW material on this topic — a
     # Ghana-framed query buries the comparative chapter and the case reports even when they ARE in the
     # corpus, so search for them explicitly and union them in.
@@ -4063,7 +4081,7 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
             if key not in seen:
                 seen.add(key)
                 merged.append(h)
-    return merged[:max(k, 60)]
+    return merged[:max(k, 80)]
 
 
 def search_in_docs(course, query, docs, k_per=8):
