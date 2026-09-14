@@ -3639,9 +3639,26 @@ function applyAuthority(i, p) {
 // A concise per-issue query for the live-authority pass (used at Compile, in parallel).
 function authorityQueryFor(it) {
   const exq = (EXAM.question || "").trim();
-  return (exq ? ('In the context of this problem — "' + exq.slice(0, 700) + '" — ') : '')
+  // Provisions the gather FLAGGED AS MISSING / not-verbatim in the uploaded corpus — this is exactly
+  // where the live legal database earns its keep, so tell it to FETCH THEIR EXACT TEXT (Ghanaian
+  // primary law → judy.legal, authoritative). Pull them out of this issue's Rule section.
+  const rule = (typeof extractRuleSection === "function" ? (extractRuleSection(it.answer) || "") : "") || (it.law || "");
+  const gaps = [];
+  rule.split("\n").forEach(line => {
+    if (/⚠|not reproduced verbatim|unconfirmed on the materials|not in the materials|NOT VERBATIM|provision unconfirmed/i.test(line)) {
+      const t = line.replace(/^[\s\-·*>]+/, "").replace(/⚠/g, "").replace(/⌄.*$/, "").trim();
+      if (t) gaps.push(t.slice(0, 220));
+    }
+  });
+  let q = (exq ? ('In the context of this problem — "' + exq.slice(0, 700) + '" — ') : '')
     + 'find the governing statutes/treaties and the leading cases for this issue: "' + (it.issue || '') + '".'
     + (it.law ? (' Likely governed by: ' + it.law + '.') : '');
+  if (gaps.length) {
+    q += ' MY CORPUS IS MISSING the exact text of the provisions below — FETCH THEIR VERBATIM TEXT'
+       + ' from the legal database and quote each IN FULL (these are primary law; for Ghanaian'
+       + ' provisions judy.legal is authoritative): ' + gaps.slice(0, 8).join('  ||  ');
+  }
+  return q;
 }
 function clearAuthPending(i) {
   const it = EXAM.issues[i]; if (!it) return;
