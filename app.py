@@ -5366,6 +5366,14 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "(special paper / dissertation), not an exam answer to a hypothetical. There is NO "
                 "fact pattern to resolve and NOTHING to 'apply the law to facts' — do not use "
                 "case-study language ('these facts', 'the problem raises', 'apply the law').\n"
+                "SECTION ORDER FOR THIS GATHER (this OVERRIDES the default heading order): write the "
+                "headings in THIS order — '## Issue', then '## Scholarly & secondary' (the facts on "
+                "the ground), then '## Comparative' (the comparator jurisdictions), then '## Rule' "
+                "(what the law promised — the benchmark), then '## Cases' (cases AND incidents). Facts "
+                "and comparators come FIRST because they are the substance; the law follows as the "
+                "yardstick. EVERY heading MUST appear — if the response runs long, COMPRESS the Rule "
+                "and the Scholarly bullets to their essentials; NEVER drop or truncate the Comparative "
+                "or Cases sections (a comparative issue is defined by its comparators).\n"
                 "INFORMATION FLOWS FROM THE HARD FACTS ON THE GROUND. The reports, web references / "
                 "links, recent updates and news, and scholarly writings in the corpus hold the "
                 "empirical reality — access rates, deployment numbers, what has actually happened, "
@@ -7616,7 +7624,7 @@ def api_ask():
         # so cap it and keep gathers lean. A RESEARCH-PAPER gather carries more first-class material
         # (facts/reports + law-as-benchmark + cases AND incidents + comparators), so give it more room
         # or the last section (Comparative — the whole point of a comparative issue) truncates away.
-        max_out = 7000 if body.get("paper_type") else 4000
+        max_out = 8000 if body.get("paper_type") else 4000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
