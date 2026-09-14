@@ -12612,6 +12612,13 @@ def api_updates_fetch():
             results.append({"title": title, "ok": False, "why": f"could not save ({e})"})
             continue
         SOURCES[fn] = title            # nice display title in citations
+        if fn.startswith("Reference — "):
+            # a WEB REFERENCE is SECONDARY — pin its doctype so guess_type can't read a title like
+            # 'Mini Grid Regulations 2026' as a statute and let a commentary page be treated as
+            # primary law (auto-pinned, or allowed to carry a rule). It stays report-tier: fact,
+            # commentary and proposals only, never the authority for a legal rule.
+            DOCTYPES[fn] = "report"
+            save_doctypes()
         added += 1
         results.append({"title": title, "ok": True, "file": fn})
     if added:
