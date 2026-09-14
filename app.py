@@ -14404,7 +14404,11 @@ def api_exam_extract():
             text = data.decode("utf-8", "ignore")
         else:
             return jsonify({"error": "Upload a PDF, Word (.docx) or .txt file."}), 400
-        return jsonify({"text": re.sub(r"\n{3,}", "\n\n", text).strip()[:20000]})
+        cleaned = re.sub(r"\n{3,}", "\n\n", text).strip()
+        CAP = 120000   # generous — a full research-paper outline/proposal fits (was 20k, which
+        # silently truncated long uploads). Prompt-embedding spots downstream bound their own length.
+        return jsonify({"text": cleaned[:CAP], "truncated": len(cleaned) > CAP,
+                        "full_chars": len(cleaned)})
     except Exception as e:
         return jsonify({"error": f"Could not read file: {e}"}), 400
 

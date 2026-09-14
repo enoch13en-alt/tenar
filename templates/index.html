@@ -2644,7 +2644,7 @@ async function autoFillFocus() {
     // (which also used to jam focusBusy=true and block every later attempt).
     const r = await (await fetchT("/api/exam/focus", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({course: COURSE, question: q})}, 45000)).json();
+      body: JSON.stringify({course: COURSE, question: q.slice(0, 12000)})}, 45000)).json();
     const areas = (r.focus || []).filter(Boolean);
     if (!focusUserTouched && areas.length) {
       $("#focusList").innerHTML = "";                 // clear the empty starter row
@@ -2673,8 +2673,11 @@ $("#examFile").onchange = async () => {
     const r = await (await fetch("/api/exam/extract", {method:"POST", body: fd})).json();
     if (r.error) { $("#examStatus").textContent = r.error; return; }
     $("#examQ").value = r.text;
-    $("#examStatus").textContent = "Loaded " + f.name + " (" + r.text.length
-      + " chars). Review it, then Break it down.";
+    $("#examStatus").textContent = "Loaded " + f.name + " (" + r.text.length + " chars)."
+      + (r.truncated ? (" ⚠ The file was very long (" + (r.full_chars || r.text.length)
+          + " chars) and was trimmed to " + r.text.length + " — if the end is missing, split it into"
+          + " two uploads or add the rest via the paste box.") : "")
+      + " Review it, then Break it down.";
     lastFocusQ = ""; autoFillFocus();   // auto-pick focus areas from the uploaded exam
   } catch (e) { $("#examStatus").textContent = "Upload error: " + e; }
 };
@@ -3521,7 +3524,7 @@ async function gatherIssue(i, force) {
     const _srcHint = (EXAM.paperType && EXAM.paperSources)
       ? (' Draw also on these sources from the corpus (reports, books, articles, policy/news), keeping their dates — use CURRENT sources for present-day facts and the state of the law, but KEEP older/foundational works (e.g. a 2009 or 2015 article) for the doctrine or concept they establish; age alone never drops a source: ' + EXAM.paperSources + '.')
       : '';
-    const gq = (exq ? ('In the context of this problem — "' + exq + '" —\n\n') : '')
+    const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
       + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
