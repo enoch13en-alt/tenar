@@ -12084,11 +12084,52 @@ def _safe_fetch(url, max_bytes=30_000_000, timeout=25):
 
 
 def _html_to_text(data):
+    """Extract the READABLE BODY of a web page — the article/commentary — and drop the
+    surrounding site chrome (menus, sidebars, share bars, cookie banners). Many sites
+    build their nav out of plain <div>s, so tag-name stripping alone leaks the menu in;
+    when BeautifulSoup is available we isolate the main content region and decompose the
+    chrome. Falls back to the old regex strip if bs4 isn't installed."""
     import html as _html
     try:
         s = data.decode("utf-8", "ignore")
     except Exception:
         s = str(data)
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(s, "html.parser")
+        # 1) throw away obvious non-content elements outright
+        for t in soup(["script", "style", "nav", "header", "footer", "form",
+                       "aside", "noscript", "button", "svg", "iframe"]):
+            t.decompose()
+        # 2) drop elements whose class/id marks them as chrome (menu, sidebar, share…)
+        CHROME = ("menu", "navbar", "nav-", "sidebar", "breadcrumb", "share", "social",
+                  "widget", "cookie", "consent", "footer", "header", "topbar", "offcanvas",
+                  "search", "related", "pagination", "skip-link", "screen-reader")
+        for el in soup.find_all(True):
+            if el.attrs is None:          # already removed as a child of a decomposed node
+                continue
+            cls = el.attrs.get("class") or []
+            if isinstance(cls, str):
+                cls = [cls]
+            ident = " ".join([" ".join(cls), str(el.attrs.get("id") or ""),
+                              str(el.attrs.get("role") or "")]).lower().strip()
+            if ident and any(k in ident for k in CHROME):
+                el.decompose()
+        # 3) prefer the main content region if the page marks one (article/main/
+        #    WordPress .entry-content etc.), else fall back to the whole body
+        region = (soup.find("article") or soup.find("main")
+                  or soup.find(attrs={"class": re.compile(
+                      r"(entry|post|article|page|single)[-_]?content|content[-_]?(area|body)", re.I)})
+                  or soup.body or soup)
+        text = region.get_text("\n")
+        text = re.sub(r'\n[ \t]+', '\n', text)
+        text = re.sub(r'[ \t]{2,}', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        if len(text) >= 200:
+            return text
+        # too thin after trimming (over-aggressive strip) → fall through to regex
+    except Exception:
+        pass
     s = re.sub(r'(?is)<(script|style|nav|footer|header|form)[^>]*>.*?</\1>', ' ', s)
     s = re.sub(r'(?s)<[^>]+>', ' ', s)
     s = _html.unescape(s)

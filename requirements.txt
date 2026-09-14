@@ -10,3 +10,4 @@ httpx
 gunicorn
 gevent
 python-pptx
+beautifulsoup4
