@@ -3794,15 +3794,18 @@ function applyAuthority(i, p) {
 // A concise per-issue query for the live-authority pass (used at Compile, in parallel).
 function authorityQueryFor(it) {
   const exq = (EXAM.question || "").trim();
-  // Provisions the gather FLAGGED AS MISSING / not-verbatim in the uploaded corpus — this is exactly
-  // where the live legal database earns its keep, so tell it to FETCH THEIR EXACT TEXT (Ghanaian
-  // primary law → judy.legal, authoritative). Pull them out of this issue's Rule section.
-  const rule = (typeof extractRuleSection === "function" ? (extractRuleSection(it.answer) || "") : "") || (it.law || "");
-  const gaps = [];
-  rule.split("\n").forEach(line => {
-    if (/⚠|not reproduced verbatim|unconfirmed on the materials|not in the materials|NOT VERBATIM|provision unconfirmed/i.test(line)) {
-      const t = line.replace(/^[\s\-·*>]+/, "").replace(/⚠/g, "").replace(/⌄.*$/, "").trim();
-      if (t) gaps.push(t.slice(0, 220));
+  // Provisions the gather FLAGGED as missing / not-verbatim / 🔎 FILL anywhere in the answer — this is
+  // exactly where the live database earns its keep. Scan the WHOLE answer (paper gathers use
+  // 'Governing framework', not 'Rule', and mark gaps with '🔎 FILL'), so judy is told precisely what to
+  // fetch. Ghanaian primary law → judy.legal is authoritative.
+  const src = it.answer || it.law || "";
+  const gaps = [], _seen = new Set();
+  src.split("\n").forEach(line => {
+    if (/🔎|\bFILL\b|NOT VERBATIM|not reproduced verbatim|unconfirmed on the materials|provision unconfirmed/i.test(line)) {
+      const t = line.replace(/^[\s\-·*>]+/, "").replace(/[⚠🔎▸✎]/g, "").replace(/\bFILL\b/i, "")
+                    .replace(/⌄.*$/, "").replace(/…\s*$/, "").trim();
+      const key = t.slice(0, 60).toLowerCase();
+      if (t.length > 10 && !_seen.has(key)) { _seen.add(key); gaps.push(t.slice(0, 220)); }
     }
   });
   let q = (exq ? ('In the context of this problem — "' + exq.slice(0, 700) + '" — ') : '')
