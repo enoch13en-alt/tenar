@@ -3018,6 +3018,27 @@ def display_type(fname):
     return DOCTYPES.get(fname) or "report"
 
 
+# Authority hierarchy for routing retrieval and the gather, so the bot knows WHERE each
+# section's material comes from instead of searching everything for everything:
+#   PRIMARY   = hard law — Constitution, statutes, cases, treaties (the Rule / governing law)
+#   SECONDARY = books, journal articles — commentary and analysis (the scholarship)
+#   TERTIARY  = reports, news, web links, data, incidents — evidence of FACT, never legal authority
+_SECONDARY_TYPES = {"article", "book"}
+_PRIMARY_LAW_TYPES = {"constitution", "statute", "case", "treaty"}
+
+def source_class(fname):
+    """Return 'primary' | 'secondary' | 'tertiary' for a document (by its doctype). A WEB
+    REFERENCE / report / news link falls to 'tertiary' (fact, not authority); a book or journal
+    article is 'secondary'; hard law is 'primary'. Used to sort sources so law is gathered from
+    primary, scholarship from secondary, and facts/incidents from tertiary."""
+    t = display_type(fname)
+    if t in _PRIMARY_LAW_TYPES:
+        return "primary"
+    if t in _SECONDARY_TYPES:
+        return "secondary"
+    return "tertiary"
+
+
 def ensure_types(files):
     """Give any untyped doc a heuristic default (no PDF open needed)."""
     ch = False
@@ -5080,17 +5101,23 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         _title = f'{display_name(ch["doc"])} — p.{page}'
         if multi:
             _title = f'[{ch_course}] {_title}'
-        # SECONDARY-SOURCE SALIENCE (literature engagement): for a book/article the author
-        # sits only in the citation-metadata title, so the model reasons over the body text
-        # and launders the scholar's analysis into unattributed 'law'. Precede the document
-        # with a short text cue naming the work, so the author is salient in what the model
-        # reads and can be attributed in prose. Primary sources (statute/case/constitution/
-        # treaty) are untouched — reproduced primary text stays primary, no over-attribution.
-        if display_type(ch["doc"]) in ("article", "book"):
-            content.append({"type": "text",
-                "text": (f'[The next document is a SECONDARY source — the commentary '
-                         f'"{display_name(ch["doc"])}". Attribute its analysis, arguments and '
-                         f'characterisations to this author/work by name; it is not primary law.]')})
+        # SOURCE-TIER TAG: sort every passage into the authority hierarchy so the model knows WHERE
+        # its material comes from — PRIMARY (hard law) carries the Rule/governing law, SECONDARY
+        # (books/articles) carries scholarship (attributed, never laundered into 'law'), TERTIARY
+        # (reports/news/links/data) carries facts and incidents (attributed, never legal authority).
+        _cls = source_class(ch["doc"])
+        if _cls == "primary":
+            _tier_cue = ("PRIMARY (hard law — constitution/statute/case/treaty). Its exact words are "
+                         "the governing law: quote it VERBATIM in the Rule; do not paraphrase.")
+        elif _cls == "secondary":
+            _tier_cue = (f'SECONDARY (book / journal article — "{display_name(ch["doc"])}"). Attribute '
+                         f'its analysis, arguments and characterisations to this author/work by name; '
+                         f'it is commentary, NOT primary law.')
+        else:
+            _tier_cue = (f'TERTIARY (report / news / web link / data — "{display_name(ch["doc"])}"). '
+                         f'Use it for FACTS, figures and incidents, attributed with its date; it is '
+                         f'evidence of fact, NEVER authority for a legal rule.')
+        content.append({"type": "text", "text": "[SOURCE TIER — " + _tier_cue + "]"})
         # DATE CUE: make the model aware of THIS source's date so it can prefer the most recent
         # on-point material (and flag when it relies on older material). Kept out of the citation
         # title so page/footnote matching downstream is unaffected. Only when a year is known.
@@ -5345,6 +5372,15 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "For Cases / Scholarly / Comparative: these are DATA the compile will apply — cite "
                   "them, do NOT argue them out. Where a source type is genuinely absent for this issue, "
                   "put ONE line under its heading — '⚠ none in the materials' — rather than invent one.\n"
+                  "SOURCE HIERARCHY — every passage is tagged '[SOURCE TIER — PRIMARY / SECONDARY / "
+                  "TERTIARY]'. Use it to know WHERE each section's material comes from, so you are not "
+                  "hunting the whole corpus for everything: (a) the Rule / governing law comes ONLY from "
+                  "PRIMARY passages (Constitution, statute, case, treaty), quoted verbatim; (b) the "
+                  "'## Scholarly & secondary' analysis comes from SECONDARY passages (books, journal "
+                  "articles), attributed to the author by name; (c) FACTS, figures, reports and "
+                  "incidents come from TERTIARY passages (reports, news, web links, data), attributed "
+                  "with dates and NEVER used as authority for a legal rule. A TERTIARY source never "
+                  "carries the Rule; a SECONDARY source never carries the Rule; only PRIMARY does.\n"
                   "ALL FIVE HEADINGS ARE MANDATORY AND ALWAYS PRESENT — never DROP a heading because it "
                   "is empty; keep the heading and put the '⚠ none in the materials' line under it. This "
                   "matters most for '## Comparative': when the issue turns on other jurisdictions (it "
