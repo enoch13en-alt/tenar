@@ -4118,7 +4118,13 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
                     _b + " decided cases case law court held judgment ruling"]
     queries = list(dict.fromkeys(q for q in queries if q))
     per = 15 if len(queries) > 1 else k
-    merged, seen = [], set()
+    # PER-DOC DIVERSITY CAP: one large document (e.g. a whole regs PDF, or a big safeguard framework)
+    # can otherwise fill the window with its own chunks and STARVE a thin-but-on-point comparator doc
+    # (this is why Kenya's Energy (Mini-Grid) Regs 2022 kept reading 'not in the materials' while the
+    # KOSAP safeguard framework and the NERC regs hogged the slots). Queries are ordered anchors-first,
+    # so a doc's FIRST hits are its most relevant — cap each doc's share to leave room for every source.
+    PER_DOC = 16
+    merged, seen, per_doc = [], set(), {}
     for q in queries:
         hits = search_multi(courses, q, k=per) if multi else search(courses[0], q, k=per)
         for h in hits:
@@ -4126,10 +4132,15 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
             # 28(2)) can share a page, and neighbour expansion relies on keeping both
             key = (h.get("_course", ""), h.get("doc"), h.get("page"),
                    (h.get("text") or "")[:60])
-            if key not in seen:
-                seen.add(key)
-                merged.append(h)
-    return merged[:max(k, 95)]
+            if key in seen:
+                continue
+            d = (h.get("_course", ""), h.get("doc"))
+            if per_doc.get(d, 0) >= PER_DOC:
+                continue
+            seen.add(key)
+            per_doc[d] = per_doc.get(d, 0) + 1
+            merged.append(h)
+    return merged[:max(k, 110)]
 
 
 def search_in_docs(course, query, docs, k_per=8):
