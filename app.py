@@ -13863,25 +13863,43 @@ def api_paper_questions():
         "stages) the method/data/sampling/ethics decisions. Make the questions CONCRETE and specific "
         "to THIS topic (refer to the actual instruments/issues where helpful), not generic. Ask 2–4 "
         "questions, each answerable in a sentence or two, in plain simple English. Do NOT ask for "
-        "information already settled by the law itself. Output STRICT JSON: an array of question "
-        "strings. No preamble, no fences." + seed)
+        "information already settled by the law itself.\n"
+        "PRE-FILL FROM THE AUTHOR'S OWN PROPOSAL: for EACH question, if the TOPIC / ABSTRACT (or the "
+        "sections already written) ALREADY states the author's answer, provide it as a SUGGESTED "
+        "answer 'a' — drawn ONLY from what the author has written there (quote or closely paraphrase "
+        "the author's own words; NEVER invent a position, a figure or a reform the author did not "
+        "state). If the author has NOT stated it, set 'a' to an empty string. The author will confirm "
+        "or edit each suggestion. Output STRICT JSON: an array of objects {\"q\":\"…\",\"a\":\"…\"} "
+        "(q = the question; a = the suggested answer from the author's proposal, or \"\"). No preamble, "
+        "no fences." + seed)
     user = ("PAPER TOPIC / TITLE:\n" + topic
             + (("\n\nSECTIONS ALREADY WRITTEN (context — don't re-ask what these settle):\n" + prior[:5000]) if prior else "")
             + (("\n\nRELEVANT MATERIALS (so your questions are specific to what the corpus holds):\n" + ctx[:6000]) if ctx else "")
             + "\n\nGenerate the questions for the '" + sdef["t"] + "' section now.")
+    items = []
     try:
-        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1200,
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1500,
                                 system=system, messages=[{"role": "user", "content": user}])
         record_cost(resp, m)
-        qs = _parse_json(_text_of(resp))
-        qs = [str(q).strip() for q in qs if isinstance(q, (str,)) and str(q).strip()][:5]
+        raw = _parse_json(_text_of(resp)) or []
+        for it in raw:
+            if isinstance(it, dict):
+                q = str(it.get("q") or it.get("question") or "").strip()
+                a = str(it.get("a") or it.get("answer") or it.get("suggested") or "").strip()
+                if q:
+                    items.append({"q": q, "a": a})
+            elif str(it).strip():
+                items.append({"q": str(it).strip(), "a": ""})
+        items = items[:5]
     except Exception:
         app.logger.exception("paper questions failed")
-        qs = []
-    if not qs:
+        items = []
+    if not items:
         # fall back to the stage's own decision prompts, or a single open steer
-        qs = list(sdef.get("q") or []) or ["What is your position or angle for this section, in your own words?"]
-    return jsonify({"questions": qs})
+        for q in (list(sdef.get("q") or []) or ["What is your position or angle for this section, in your own words?"]):
+            items.append({"q": q, "a": ""})
+    # keep `questions` (strings) for backward-compat; `items` carries the pre-filled suggestions
+    return jsonify({"questions": [it["q"] for it in items], "items": items})
 
 
 @app.route("/api/paper/framework", methods=["POST"])

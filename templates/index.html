@@ -2528,7 +2528,7 @@ function saveExam() {
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, link: it.link, weight: it.weight,
         _paperK: it._paperK, _paperInput: it._paperInput, _paperDecide: it._paperDecide,
-        _q: it._q || null, _views: it._views || null,
+        _q: it._q || null, _views: it._views || null, _suggested: it._suggested || null,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
         _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
@@ -2818,10 +2818,14 @@ function paperStageInputHtml(it, idx) {
     h += '<button class="btn mini stageAskBtn" data-i="' + idx + '">❓ Questions for this section</button>';
   } else {
     qs.forEach((q, qi) => {
-      const a = (views.find(v => v.q === q) || {}).a || "";
+      const savedV = views.find(v => v.q === q);
+      const sugg = (it._suggested && it._suggested[q]) || "";
+      const a = savedV ? savedV.a : sugg;                 // pre-fill from the proposal if not yet saved
+      const fromProposal = (!savedV && sugg);
       h += '<div style="margin:6px 0"><div style="font-size:12px;color:#e8ecf4">' + (qi + 1) + '. ' + esc(q) + '</div>'
+        + (fromProposal ? '<div style="font-size:10.5px;color:#8fce8f;margin:1px 0 2px">✎ pre-filled from your proposal — confirm or edit</div>' : '')
         + '<textarea class="stageAns" data-i="' + idx + '" data-q="' + esc(q) + '" placeholder="Your answer…" '
-        + 'style="width:100%;height:46px;font-size:12px">' + esc(a) + '</textarea></div>';
+        + 'style="width:100%;height:' + (a.length > 120 ? 74 : 46) + 'px;font-size:12px">' + esc(a) + '</textarea></div>';
     });
     h += '<button class="btn mini gold stageSaveBtn" data-i="' + idx + '">✓ Save my answers</button>'
       + ' <button class="btn mini stageAskBtn" data-i="' + idx + '" title="Regenerate the questions">↻ new questions</button>';
@@ -2835,7 +2839,10 @@ async function stageAsk(i, btn) {
   try {
     const r = await (await fetch("/api/paper/questions", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({type: EXAM.paperType, stage: it._paperK, topic: EXAM.question, prior, course: COURSE, courses: examCourses()})})).json();
-    it._q = (r && r.questions) || [];
+    const items = (r && r.items) || ((r && r.questions) || []).map(q => ({q, a: ""}));
+    it._q = items.map(x => x.q);
+    it._suggested = {};
+    items.forEach(x => { if (x.a) it._suggested[x.q] = x.a; });   // pre-fill from the author's proposal
   } catch (e) {}
   renderExam();
 }
