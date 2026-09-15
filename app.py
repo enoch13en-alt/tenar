@@ -3025,17 +3025,33 @@ def display_type(fname):
 #   TERTIARY  = reports, news, web links, data, incidents — evidence of FACT, never legal authority
 _SECONDARY_TYPES = {"article", "book"}
 _PRIMARY_LAW_TYPES = {"constitution", "statute", "case", "treaty"}
+# NAME patterns — the stored doctype is often the unreliable 'report' default (real statutes were
+# seen mis-typed as 'report'), so source_class reads the document's NAME with these first.
+_TIER_SECONDARY_MARK = re.compile(
+    r'(\benel\s*\d|\blecture\b|\bseminar\b|\bslides?\b|lecture notes|working paper|\bwp\s*\d|'
+    r'\bdiis\b|\bet al\b|law review|\bjournal\b|\bquarterly\b|\bbulletin\b|university press|'
+    r'\bedn?\b|\bedition\b|textbook|treatise|handbook)', re.I)
+_TIER_INSTRUMENT = re.compile(
+    r'(\bconstitution\b|\bact\b[\s,]*(?:no\.?\s*\d+|\d{4})|\(act\s*\d+\)|\bregulations?\b|'
+    r'\bl\.?\s?i\.?\s*\d+\b|legislative instrument|statutory instrument|\bdecree\b|\bordinance\b|'
+    r'\bconvention\b|\btreaty\b|\bprotocol\b|\bcharter\b|\bcovenant\b)', re.I)
+_TIER_CASE = re.compile(r"\b[A-Z][A-Za-z.'&-]+\s+v\.?\s+[A-Z]")
 
 def source_class(fname):
-    """Return 'primary' | 'secondary' | 'tertiary' for a document (by its doctype). A WEB
-    REFERENCE / report / news link falls to 'tertiary' (fact, not authority); a book or journal
-    article is 'secondary'; hard law is 'primary'. Used to sort sources so law is gathered from
-    primary, scholarship from secondary, and facts/incidents from tertiary."""
+    """Return 'primary' | 'secondary' | 'tertiary' for a document, from its NAME first (the stored
+    doctype defaults to 'report' too often to trust). PRIMARY = the instrument itself (Constitution,
+    Act, Regulations/L.I., case, treaty); SECONDARY = lecture/paper/journal article/book/commentary;
+    TERTIARY = report, policy, plan, news, web link, data. Order matters: a LECTURE titled '…Act 832'
+    is scholarship (secondary), not the statute, so the scholarship markers are tested FIRST."""
+    nm = (display_name(fname) or "") + " " + (fname or "")
     t = display_type(fname)
-    if t in _PRIMARY_LAW_TYPES:
-        return "primary"
-    if t in _SECONDARY_TYPES:
+    # 1) teaching materials / scholarship first (so a lecture that merely cites an Act isn't 'primary')
+    if t in _SECONDARY_TYPES or _TIER_SECONDARY_MARK.search(nm):
         return "secondary"
+    # 2) the instrument ITSELF — hard law
+    if t in _PRIMARY_LAW_TYPES or _TIER_INSTRUMENT.search(nm) or _TIER_CASE.search(nm):
+        return "primary"
+    # 3) reports / policy / plans / news / links / data
     return "tertiary"
 
 
