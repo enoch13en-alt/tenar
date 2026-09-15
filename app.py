@@ -4029,6 +4029,17 @@ def _anchor_queries(question):
                          r'tariff[s]?|permit[s]?|authority|scheme|obligation[s]?|compensation|net[- ]?meter\w*))\b',
                          question, re.I):
         subjects.append(m.group(1).strip())
+    # COMPARATOR ANCHORS FIRST — a comparative question names other jurisdictions and their programmes/
+    # regulators by acronym (KOSAP, EPRA, NERC, REREC…). A locally-dominant instrument (e.g. Nigeria's
+    # whole mini-grid regs PDF) floods retrieval and crowds the comparator chunks out of the merge cap,
+    # so query each named acronym DIRECTLY and put it AT THE FRONT so its hits are inserted before the
+    # local material fills the window. This is what surfaces Kenya's KOSAP/EPRA once they are uploaded.
+    acronyms = [m.group(0) for m in re.finditer(r'\b[A-Z]{3,6}\b', question)]
+    _COMP_STOP = {"AND", "THE", "FOR", "ACT", "NOT", "LAW", "USD", "GHS", "USE", "PPA", "OPEX", "REMP"}
+    for a in acronyms:
+        if a not in _COMP_STOP and a not in insts:
+            anchors.append(a)
+            anchors.append(a + " regulations framework programme licensing tariff")
     anchors += insts
     # pair each named instrument with each subject so the exact provision (subject wording present in
     # the section text) ranks high even in a large multi-Act corpus
@@ -4048,18 +4059,8 @@ def _anchor_queries(question):
                    "licence application and categories",
                    "tariff rate setting and purchase price"):
             anchors.append((i + " " + bb).strip())
-    # COMPARATOR ANCHORS — a comparative question names other jurisdictions and their programmes /
-    # regulators by name and acronym (Kenya, Nigeria, KOSAP, EPRA, NERC, REREC…). A Ghana-framed
-    # search buries the report passages that DISCUSS those comparators, so search for each named
-    # entity directly and union it in — this is what surfaces 'the comparator IS in the reports'.
-    acronyms = [m.group(0) for m in re.finditer(r'\b[A-Z]{3,6}\b', question)]
-    _COMP_STOP = {"AND", "THE", "FOR", "ACT", "NOT", "LAW", "USD", "GHS", "USE"}
-    for a in acronyms:
-        if a not in _COMP_STOP and a not in insts:
-            anchors.append(a)
-            anchors.append(a + " regulations framework programme")
     anchors += subjects
-    return list(dict.fromkeys(a for a in anchors if a))[:18]
+    return list(dict.fromkeys(a for a in anchors if a))[:20]
 
 
 def retrieve_expanded(client, courses, question, multi, k=TOP_K):
@@ -4091,7 +4092,7 @@ def retrieve_expanded(client, courses, question, multi, k=TOP_K):
             if key not in seen:
                 seen.add(key)
                 merged.append(h)
-    return merged[:max(k, 80)]
+    return merged[:max(k, 95)]
 
 
 def search_in_docs(course, query, docs, k_per=8):
