@@ -4077,27 +4077,27 @@ def _anchor_queries(question):
         if a not in _COMP_STOP and a not in insts:
             anchors.append(a)
             anchors.append(a + " regulations framework programme licensing tariff")
+    # STRUCTURAL BACKBONE — a named Act's fund/financing, definitions/interpretation, licensing and
+    # tariff provisions are load-bearing in almost any legal audit, yet they rank BELOW a broadly-framed
+    # or empirically-framed stage query and get cut by the merge cap — so the section is IN the corpus
+    # but not retrieved, and the writer wrongly reports it 'not in the materials'. Query them for EACH
+    # named instrument and place them RIGHT AFTER the comparators (before the broad instrument/subject
+    # anchors), so these provisions survive the cap on every stage that names the Act. This is the
+    # recurring miss on the Renewable Energy Fund (s.32) and the mini-grid definition (s.51) of Act 832.
+    for i in insts[:2]:
+        for bb in ("establishment object and sources of the renewable energy fund",
+                   "definitions interpretation meaning of terms in this Act",
+                   "licence application requirements and categories",
+                   "tariff rate setting and purchase price"):
+            anchors.append((i + " " + bb).strip())
     anchors += insts
     # pair each named instrument with each subject so the exact provision (subject wording present in
     # the section text) ranks high even in a large multi-Act corpus
     for i in insts[:3]:
         for s in subjects[:4]:
             anchors.append((i + " " + s).strip())
-    # STRUCTURAL BACKBONE — a named Act's definitions/interpretation section and its fund/financing,
-    # licensing and tariff provisions are load-bearing in almost any legal audit, yet they rank BELOW
-    # a broadly-framed issue query ('research question and thesis…') and never get pulled — the section
-    # is in the corpus but not retrieved, so the writer wrongly reports it 'not in the materials'. Pull
-    # them on a targeted query for EACH named instrument even when the issue text never says 'fund' or
-    # 'definition'. This is the recurring retrieval-miss the user hit on the Renewable Energy Fund (s.32)
-    # and the mini-grid definition (s.51) of Act 832.
-    for i in insts[:2]:
-        for bb in ("definitions interpretation meaning of",
-                   "establishment object and sources of the fund",
-                   "licence application and categories",
-                   "tariff rate setting and purchase price"):
-            anchors.append((i + " " + bb).strip())
     anchors += subjects
-    return list(dict.fromkeys(a for a in anchors if a))[:20]
+    return list(dict.fromkeys(a for a in anchors if a))[:24]
 
 
 def retrieve_expanded(client, courses, question, multi, k=TOP_K):
