@@ -2526,7 +2526,7 @@ function saveExam() {
       userViews: EXAM.userViews || [], _interviewItems: EXAM._interviewItems || null,
       _interviewQs: EXAM._interviewQs || null,
       issues: (EXAM.issues || []).map(it => ({
-        n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, link: it.link, weight: it.weight,
+        n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, retrieveAs: it.retrieveAs, link: it.link, weight: it.weight,
         _paperK: it._paperK, _paperInput: it._paperInput, _paperDecide: it._paperDecide,
         _q: it._q || null, _views: it._views || null, _suggested: it._suggested || null,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
@@ -2760,14 +2760,16 @@ async function setupPaperSections(ctype, topic) {
     // breakdown giving each issue its law. A stage worded as a section label ('Conceptual framework')
     // names no Act, so retrieval can't anchor on the controlling provisions and reports them missing.
     $("#examStatus").textContent = "Reading your proposal for its direction, and the corpus for the sources…";
-    let frameworkLaw = "", frameworkSources = "", paperDirection = {thesis:"", gaps:[], comparators:[]};
+    let frameworkLaw = "", frameworkSources = "", paperDirection = {thesis:"", gaps:[], comparators:[]}, paperFocus = {};
     try {
       const fr = await (await fetch("/api/paper/framework", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({course: COURSE, courses: examCourses(), topic})})).json();
+        body: JSON.stringify({course: COURSE, courses: examCourses(), topic,
+          stages: def.stages.map(s => ({k: s.k, t: s.t, g: s.g}))})})).json();
       frameworkLaw = (fr && fr.law) || "";
       frameworkSources = (fr && fr.sources) || "";
       if (fr && fr.direction) paperDirection = {
         thesis: fr.direction.thesis || "", gaps: fr.direction.gaps || [], comparators: fr.direction.comparators || [] };
+      paperFocus = (fr && fr.focus) || {};
     } catch (e) {}
     // TAILOR the basis per stage, so it is not the same statutes cloned onto every section:
     // a stage that APPLIES LAW anchors on the governing instruments; a stage that leans on
@@ -2784,6 +2786,7 @@ async function setupPaperSections(ctype, topic) {
           n: i + 1, issue: s.t, why: s.g || "", weight: "core",
           law: (!decide && LAW_ROLE.has(s.k)) ? frameworkLaw : "",
           srcHint: (!decide && SRC_ROLE.has(s.k)) ? frameworkSources : "",
+          retrieveAs: (paperFocus && paperFocus[s.k]) ? paperFocus[s.k] : "",
           _paperK: s.k, _paperInput: !!s.input, _paperDecide: decide, answer: null, sources: [], done: false };
       }) };
     renderExam();
@@ -3636,8 +3639,11 @@ async function gatherIssue(i, force) {
          + (_dir.gaps && _dir.gaps.length ? (' Gaps/claims to establish: ' + _dir.gaps.join('; ') + '.') : '')
          + (_dir.comparators && _dir.comparators.length ? (' Comparators: ' + _dir.comparators.join('; ') + '.') : ''))
       : '';
+    // For a paper stage, retrieve on the TIGHT focus line (names the exact instruments/gaps/comparators
+    // this section needs) rather than the generic heading — sharper anchors, better recall.
+    const _target = (EXAM.paperType && it.retrieveAs) ? (it.retrieveAs + ' — for the "' + (it.issue || '') + '" section') : (it.issue || '');
     const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
-      + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
+      + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + _target + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
       + _srcHint

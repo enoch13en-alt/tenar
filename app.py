@@ -13912,6 +13912,7 @@ def api_paper_framework():
     Returns a compact '; '-joined instrument list (grounded — only instruments the corpus shows)."""
     body = request.json or {}
     topic = (body.get("topic") or "").strip()
+    stages = body.get("stages") or []          # [{k,t,g}] — to draft a tight retrieval FOCUS per stage
     courses = _exam_courses(body, safe_course(body.get("course", "")))
     c = _client()
     if not topic or not courses or not c:
@@ -13959,8 +13960,9 @@ def api_paper_framework():
     system = (
         "From the material below, build the paper's SETUP. Return STRICT JSON: "
         "{\"instruments\":[...], \"sources\":[...], \"direction\":{\"thesis\":\"\",\"gaps\":[...],"
-        "\"comparators\":[...]}}. The instruments and sources come ONLY from the CORPUS PASSAGES; the "
-        "direction comes ONLY from the TOPIC / ABSTRACT.\n"
+        "\"comparators\":[...]}, \"focus\":{\"<stageKey>\":\"…\"}}. The instruments and sources come "
+        "ONLY from the CORPUS PASSAGES; the direction comes ONLY from the TOPIC / ABSTRACT; focus is "
+        "one retrieval line per stage (only when STAGES are given below).\n"
         "- instruments: the GOVERNING PRIMARY LAW a legal analysis must apply — controlling "
         "Constitution provisions, Acts, and subsidiary legislation (L.I./Regulations). Give each by "
         "its FULL citation as the passages give it (e.g. 'Renewable Energy Act, 2011 (Act 832)'). "
@@ -13987,12 +13989,27 @@ def api_paper_framework():
         "List instruments/sources ONLY as they ACTUALLY APPEAR in the passages, and direction ONLY as "
         "the abstract actually states it — never invent a citation, author, date, thesis or gap. No "
         "prose, no fences.")
+    _stage_lines = ""
+    if isinstance(stages, list) and stages:
+        _stage_lines = "\n".join("- " + str(s.get("k")) + ": " + str(s.get("t") or "")
+                                 + (" — " + str(s.get("g")) if s.get("g") else "") for s in stages[:14])
+        system = system + (
+            "\n- focus: for EACH stage in STAGES below, a TIGHT, keyword-rich RETRIEVAL line (12–28 "
+            "words) that names the EXACT instruments/provisions, subjects, gaps and comparators THAT "
+            "stage needs FOR THIS TOPIC, so a search surfaces the right passages — NOT the generic "
+            "section label. Base it on the topic, the instruments and the direction: a governing-"
+            "framework/analysis stage names the controlling Acts and the operative provisions; a "
+            "gaps/reform stage names the specific gaps and the enabling powers/fund/licensing-tariff "
+            "hooks; a comparative stage names the comparator jurisdictions and their instruments; a "
+            "literature stage names the scholarly themes/authors. Return 'focus' as an object keyed by "
+            "each stage's 'k'. Use only real names from the topic/instruments/direction — never invent.")
     user = ("TODAY: " + datetime.date.today().isoformat() + "\nTOPIC / ABSTRACT (the author's own "
             "proposal — the source of 'direction'):\n" + topic[:8000]
+            + (("\n\nSTAGES (draft a 'focus' line for each, keyed by 'k'):\n" + _stage_lines) if _stage_lines else "")
             + "\n\nCORPUS PASSAGES (the source of 'instruments' and 'sources'):\n" + ctx)
-    insts, srcs, direction = [], [], {"thesis": "", "gaps": [], "comparators": []}
+    insts, srcs, direction, focus = [], [], {"thesis": "", "gaps": [], "comparators": []}, {}
     try:
-        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1600, system=system,
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=2200, system=system,
                                 messages=[{"role": "user", "content": user}])
         record_cost(resp, m)
         d = _first_json_obj(_text_of(resp)) or {}
@@ -14014,10 +14031,13 @@ def api_paper_framework():
                 "gaps": [s for s in (_asstr(x) for x in (_dir.get("gaps") or [])) if s][:10],
                 "comparators": [s for s in (_asstr(x) for x in (_dir.get("comparators") or [])) if s][:8],
             }
+            _f = d.get("focus") if isinstance(d.get("focus"), dict) else {}
+            focus = {str(k): _asstr(v)[:300] for k, v in _f.items() if _asstr(v)}
     except Exception:
         app.logger.exception("paper framework failed")
         insts, srcs = [], []
-    return jsonify({"law": "; ".join(insts), "sources": "; ".join(srcs), "direction": direction})
+    return jsonify({"law": "; ".join(insts), "sources": "; ".join(srcs),
+                    "direction": direction, "focus": focus})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
