@@ -2527,7 +2527,8 @@ function saveExam() {
       _interviewQs: EXAM._interviewQs || null,
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, link: it.link, weight: it.weight,
-        _paperK: it._paperK, _paperInput: it._paperInput,
+        _paperK: it._paperK, _paperInput: it._paperInput, _paperDecide: it._paperDecide,
+        _q: it._q || null, _views: it._views || null,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
         _audited: it._audited, _audit: it._audit, _autoFixed: it._autoFixed,
@@ -2783,7 +2784,7 @@ async function setupPaperSections(ctype, topic) {
           n: i + 1, issue: s.t, why: s.g || "", weight: "core",
           law: (!decide && LAW_ROLE.has(s.k)) ? frameworkLaw : "",
           srcHint: (!decide && SRC_ROLE.has(s.k)) ? frameworkSources : "",
-          _paperK: s.k, _paperInput: !!s.input, answer: null, sources: [], done: false };
+          _paperK: s.k, _paperInput: !!s.input, _paperDecide: decide, answer: null, sources: [], done: false };
       }) };
     renderExam();
     const inputN = EXAM.issues.filter(x => x._paperInput).length;
@@ -2797,15 +2798,65 @@ async function setupPaperSections(ctype, topic) {
       ? (" Following your thesis: “" + paperDirection.thesis.slice(0, 160) + (paperDirection.thesis.length > 160 ? "…" : "") + "”"
          + (paperDirection.gaps.length ? (" · " + paperDirection.gaps.length + " gap(s) to establish") : "") + ".")
       : "";
-    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up." + _built + _dir + " Click "
-      + "🎤 Interview me to give your input (" + inputN + " decisions are yours: thesis, "
-      + (ctype === "dissertation" ? "methodology, data, sampling, ethics, " : "") + "comparators, reforms), "
-      + "then Gather all → Synthesise.";
+    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up." + _built + _dir
+      + " " + inputN + " section(s) ask for YOUR input (thesis, "
+      + (ctype === "dissertation" ? "methodology, data, sampling, ethics, " : "") + "comparators, reforms) — each asks "
+      + "its own questions when you open it (🎤 Your input for this section). Answer those, gather each section, then Synthesise.";
     try { saveExam(); } catch (e) {}
     return true;
   } catch (e) { $("#examStatus").textContent = "Error: " + e; return false; }
 }
 
+// PER-STAGE input (papers): each input/decide section asks its OWN questions when you reach it,
+// instead of one big interview upfront. The answers steer that section's gather and the synthesis.
+function paperStageInputHtml(it, idx) {
+  const views = it._views || [], qs = it._q || [];
+  let h = '<div style="border-left:2px solid #c9a86a;padding-left:10px;margin-bottom:8px">'
+        + '<div style="font-size:12px;color:#c9a86a;font-weight:600;margin-bottom:4px">🎤 Your input for this section'
+        + (views.length ? ' <span style="color:#8fce8f;font-weight:400">— ' + views.length + ' saved</span>' : '') + '</div>';
+  if (!qs.length) {
+    h += '<button class="btn mini stageAskBtn" data-i="' + idx + '">❓ Questions for this section</button>';
+  } else {
+    qs.forEach((q, qi) => {
+      const a = (views.find(v => v.q === q) || {}).a || "";
+      h += '<div style="margin:6px 0"><div style="font-size:12px;color:#e8ecf4">' + (qi + 1) + '. ' + esc(q) + '</div>'
+        + '<textarea class="stageAns" data-i="' + idx + '" data-q="' + esc(q) + '" placeholder="Your answer…" '
+        + 'style="width:100%;height:46px;font-size:12px">' + esc(a) + '</textarea></div>';
+    });
+    h += '<button class="btn mini gold stageSaveBtn" data-i="' + idx + '">✓ Save my answers</button>'
+      + ' <button class="btn mini stageAskBtn" data-i="' + idx + '" title="Regenerate the questions">↻ new questions</button>';
+  }
+  return h + '</div>';
+}
+async function stageAsk(i, btn) {
+  const it = EXAM.issues[i]; if (!it) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Thinking…"; }
+  const prior = (EXAM.issues || []).filter(x => x.done && x.answer).map(x => "## " + (x.issue || "")).join("\n").slice(0, 4000);
+  try {
+    const r = await (await fetch("/api/paper/questions", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({type: EXAM.paperType, stage: it._paperK, topic: EXAM.question, prior, course: COURSE, courses: examCourses()})})).json();
+    it._q = (r && r.questions) || [];
+  } catch (e) {}
+  renderExam();
+}
+function stageSaveViews(i) {
+  const it = EXAM.issues[i]; if (!it) return;
+  const views = [];
+  document.querySelectorAll('#examOut .stageAns[data-i="' + i + '"]').forEach(t => {
+    const a = (t.value || "").trim(); if (a) views.push({q: t.getAttribute("data-q"), a}); });
+  it._views = views;
+  try { saveExam(); } catch (e) {}
+  renderExam();
+}
+// Aggregate the per-stage answers into the compile's "user views" (its argued spine). Falls back to
+// the global interview for the exam route.
+function paperViews() {
+  if (!EXAM.paperType) return EXAM.userViews || [];
+  const out = [];
+  (EXAM.issues || []).forEach(it => (it._views || []).forEach(v => out.push({q: '[' + (it.issue || '') + '] ' + v.q, a: v.a})));
+  (EXAM.userViews || []).forEach(v => out.push(v));
+  return out;
+}
 // ORIGINALITY — interview the student, capture their view, feed it to the compile.
 function renderInterviewPanel() {
   const p = $("#examInterviewPanel"); if (!p) return;
@@ -3218,7 +3269,11 @@ function renderExam() {
           + '<div class="reportsIssueOut" data-i="'+idx+'" style="margin-top:5px"></div>'
           + followHTML(it, idx);
       }
-      else body = '<button class="btn mini gatherBtn" data-i="'+idx+'">Gather the law</button>';
+      else {
+        const _si = (EXAM.paperType && (it._paperInput || it._paperDecide)) ? paperStageInputHtml(it, idx) : "";
+        const _gLabel = EXAM.paperType ? "Gather this section" : "Gather the law";
+        body = _si + '<button class="btn mini gatherBtn" data-i="'+idx+'">'+_gLabel+'</button>';
+      }
       const link = (it.link && it.link.toLowerCase() !== 'standalone')
         ? '<div class="why" style="color:#c9a86a;margin-top:2px">↳ '+esc(it.link)+'</div>' : '';
       const _wt = (it.weight||'').toLowerCase();
@@ -3266,6 +3321,10 @@ function renderExam() {
     b.onclick = () => verifyAssumption(+b.dataset.a, b));
   $("#examOut").querySelectorAll(".gatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i));
+  $("#examOut").querySelectorAll(".stageAskBtn").forEach(b =>
+    b.onclick = () => stageAsk(+b.dataset.i, b));
+  $("#examOut").querySelectorAll(".stageSaveBtn").forEach(b =>
+    b.onclick = () => stageSaveViews(+b.dataset.i));
   $("#examOut").querySelectorAll(".reGatherBtn").forEach(b =>
     b.onclick = () => gatherIssue(+b.dataset.i, true));   // force a fresh gather, wiping the stale one
   $("#examOut").querySelectorAll(".auditIssueBtn").forEach(b =>
@@ -3576,6 +3635,10 @@ async function gatherIssue(i, force) {
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
       + _srcHint
       + _dirHint
+      + ((EXAM.paperType && it._views && it._views.length)
+          ? (' THE AUTHOR\'S OWN INPUT FOR THIS SECTION (their position — gather and frame toward it, argue THEIR line): '
+             + it._views.map(v => v.q + ' → ' + v.a).join(' | ') + '.')
+          : '')
       + _subText;
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
@@ -4560,7 +4623,7 @@ async function compileExam(finalize) {
         footnotes_inclusive: (($("#fnCount")||{}).value === "count"),
         web: usingWeb, focus: EXAM.focus || [], course: COURSE, courses: examCourses(),
         use_context: false,
-        user_views: EXAM.userViews || [],
+        user_views: paperViews(),
         interp_approach: (($("#examInterp")||{}).value || ""),
         assumptions: !!($("#examAssume") && $("#examAssume").checked),
         max_quality: $("#examMaxQ") && $("#examMaxQ").checked,
@@ -5410,6 +5473,9 @@ function coachSetType() {
     ? "Your paper's topic / working title — e.g. Parliamentary approval of concessionary-loan procurement in Ghana (s.96, Act 663)…"
     : "Paste the exam question / case study here — or upload it below…";
   const bd = $("#examBreak"); if (bd) bd.textContent = paper ? "Set up the sections" : "Break it down";
+  // Papers take input PER STAGE (each section asks its own questions when you reach it), not one
+  // big interview upfront — so hide the global interview button in paper mode.
+  if ($("#examInterview")) $("#examInterview").style.display = paper ? "none" : "";
 }
 if ($("#coachType")) $("#coachType").onchange = coachSetType;
 if ($("#coachClose")) $("#coachClose").onclick = () => { $("#examModal").style.display = "none"; };
