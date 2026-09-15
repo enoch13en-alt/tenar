@@ -13978,14 +13978,23 @@ def api_paper_framework():
                                 messages=[{"role": "user", "content": user}])
         record_cost(resp, m)
         d = _first_json_obj(_text_of(resp)) or {}
+        # the model sometimes returns list items as OBJECTS ({"citation": "..."} / {"title": "..."})
+        # instead of plain strings — coerce so a stage's law hint is never a stringified dict.
+        def _asstr(x):
+            if isinstance(x, dict):
+                for k in ("citation", "title", "name", "instrument", "source", "text", "value"):
+                    if x.get(k):
+                        return str(x[k]).strip()
+                return str(next((v for v in x.values() if v), "")).strip()
+            return str(x).strip()
         if isinstance(d, dict):
-            insts = [str(x).strip() for x in (d.get("instruments") or []) if str(x).strip()][:10]
-            srcs = [str(x).strip() for x in (d.get("sources") or []) if str(x).strip()][:14]
+            insts = [s for s in (_asstr(x) for x in (d.get("instruments") or [])) if s][:10]
+            srcs = [s for s in (_asstr(x) for x in (d.get("sources") or [])) if s][:14]
             _dir = d.get("direction") if isinstance(d.get("direction"), dict) else {}
             direction = {
-                "thesis": str(_dir.get("thesis") or "").strip()[:700],
-                "gaps": [str(x).strip() for x in (_dir.get("gaps") or []) if str(x).strip()][:10],
-                "comparators": [str(x).strip() for x in (_dir.get("comparators") or []) if str(x).strip()][:8],
+                "thesis": _asstr(_dir.get("thesis") or "")[:700],
+                "gaps": [s for s in (_asstr(x) for x in (_dir.get("gaps") or [])) if s][:10],
+                "comparators": [s for s in (_asstr(x) for x in (_dir.get("comparators") or [])) if s][:8],
             }
     except Exception:
         app.logger.exception("paper framework failed")
