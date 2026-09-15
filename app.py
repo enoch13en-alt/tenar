@@ -13931,12 +13931,18 @@ def api_paper_framework():
             ctx = course_context_multi(courses, topic[:1200], 10) or ""
         except Exception:
             ctx = ""
+    # Direction comes from the ABSTRACT, not the corpus — so still run when there are no corpus
+    # passages, as long as the topic is a real abstract (not just a short title). Only bail when
+    # BOTH the corpus and the abstract are too thin to yield anything.
+    if not ctx and len(topic) < 300:
+        return jsonify({"law": "", "sources": "", "direction": {"thesis": "", "gaps": [], "comparators": []}})
     if not ctx:
-        return jsonify({"law": "", "sources": ""})
+        ctx = "(no corpus passages retrieved — return empty instruments/sources; still extract direction from the abstract.)"
     system = (
-        "From the corpus passages — each tagged with its [type] and source — build the SOURCE MAP for "
-        "the stated topic: everything the paper should be built on, AS OF TODAY. Return STRICT JSON "
-        "with TWO arrays, {\"instruments\":[...], \"sources\":[...]}:\n"
+        "From the material below, build the paper's SETUP. Return STRICT JSON: "
+        "{\"instruments\":[...], \"sources\":[...], \"direction\":{\"thesis\":\"\",\"gaps\":[...],"
+        "\"comparators\":[...]}}. The instruments and sources come ONLY from the CORPUS PASSAGES; the "
+        "direction comes ONLY from the TOPIC / ABSTRACT.\n"
         "- instruments: the GOVERNING PRIMARY LAW a legal analysis must apply — controlling "
         "Constitution provisions, Acts, and subsidiary legislation (L.I./Regulations). Give each by "
         "its FULL citation as the passages give it (e.g. 'Renewable Energy Act, 2011 (Act 832)'). "
@@ -13953,23 +13959,38 @@ def api_paper_framework():
         "the current ones; only drop a source when a NEWER one covers the SAME time-sensitive point "
         "and the older is genuinely superseded. Always keep every date so the paper can show what was "
         "true when, as of today.\n"
-        "List ONLY items that ACTUALLY APPEAR in the passages — never invent a citation, an author or "
-        "a date. No prose, no fences.")
-    user = ("TODAY: " + datetime.date.today().isoformat() + "\nTOPIC:\n" + topic[:1500]
-            + "\n\nCORPUS PASSAGES:\n" + ctx)
-    insts, srcs = [], []
+        "- direction: the AUTHOR'S OWN DIRECTION, taken ONLY from the TOPIC / ABSTRACT (NOT the corpus). "
+        "'thesis' = the central argument the paper defends, in ONE or two sentences, in the author's "
+        "OWN line (quote/paraphrase what the abstract states — do not substitute your own). 'gaps' = "
+        "the specific gaps, claims or points the abstract says the paper will establish or argue "
+        "(each a short line). 'comparators' = the comparator jurisdictions / instruments the abstract "
+        "names. If the topic is only a short title with NO stated thesis or gaps, return an EMPTY "
+        "thesis and empty arrays — never invent a thesis, gap or comparator the author did not state.\n"
+        "List instruments/sources ONLY as they ACTUALLY APPEAR in the passages, and direction ONLY as "
+        "the abstract actually states it — never invent a citation, author, date, thesis or gap. No "
+        "prose, no fences.")
+    user = ("TODAY: " + datetime.date.today().isoformat() + "\nTOPIC / ABSTRACT (the author's own "
+            "proposal — the source of 'direction'):\n" + topic[:8000]
+            + "\n\nCORPUS PASSAGES (the source of 'instruments' and 'sources'):\n" + ctx)
+    insts, srcs, direction = [], [], {"thesis": "", "gaps": [], "comparators": []}
     try:
-        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1100, system=system,
+        resp, m = _create_final(c, model=AUDIT_MODEL, max_tokens=1600, system=system,
                                 messages=[{"role": "user", "content": user}])
         record_cost(resp, m)
         d = _first_json_obj(_text_of(resp)) or {}
         if isinstance(d, dict):
             insts = [str(x).strip() for x in (d.get("instruments") or []) if str(x).strip()][:10]
             srcs = [str(x).strip() for x in (d.get("sources") or []) if str(x).strip()][:14]
+            _dir = d.get("direction") if isinstance(d.get("direction"), dict) else {}
+            direction = {
+                "thesis": str(_dir.get("thesis") or "").strip()[:700],
+                "gaps": [str(x).strip() for x in (_dir.get("gaps") or []) if str(x).strip()][:10],
+                "comparators": [str(x).strip() for x in (_dir.get("comparators") or []) if str(x).strip()][:8],
+            }
     except Exception:
         app.logger.exception("paper framework failed")
         insts, srcs = [], []
-    return jsonify({"law": "; ".join(insts), "sources": "; ".join(srcs)})
+    return jsonify({"law": "; ".join(insts), "sources": "; ".join(srcs), "direction": direction})
 
 
 @app.route("/api/exam/breakdown", methods=["POST"])
@@ -14933,6 +14954,24 @@ def api_exam_assemble():
             "Keep every grounding rule above: cite ONLY the gathered, verified authorities (plus the "
             "author's supplied updates, attributed to the author's source), and write in plain, simple "
             "English.")
+        # DIRECTION FROM THE ABSTRACT — the author's proposal states the thesis, the gaps to establish
+        # and the comparators. Lock the whole paper onto THAT line rather than a re-derived one.
+        _pdir = body.get("paper_direction") if isinstance(body.get("paper_direction"), dict) else None
+        if _pdir and (str(_pdir.get("thesis") or "").strip() or (_pdir.get("gaps") or [])):
+            _thesis = str(_pdir.get("thesis") or "").strip()[:700]
+            _gaps = [str(x).strip() for x in (_pdir.get("gaps") or []) if str(x).strip()][:10]
+            _comps = [str(x).strip() for x in (_pdir.get("comparators") or []) if str(x).strip()][:8]
+            system = system + "\n\n" + (
+                "THE PAPER'S DIRECTION — from the AUTHOR'S OWN PROPOSAL / ABSTRACT. This is the line the "
+                "whole paper must argue; do NOT re-derive a different thesis or drift from it.\n"
+                + (("THESIS to defend (build every section toward proving this, and confirm it in the "
+                    "conclusion): " + _thesis + "\n") if _thesis else "")
+                + (("GAPS / CLAIMS the paper must establish (each should be made out by the evidence and "
+                    "the doctrinal audit): " + "; ".join(_gaps) + "\n") if _gaps else "")
+                + (("COMPARATORS the paper draws on: " + "; ".join(_comps) + "\n") if _comps else "")
+                + "Where the author's interview answers refine or update this direction, follow the "
+                "answers; otherwise hold to the abstract's stated line. Never contradict the author's "
+                "thesis, and never quietly swap in your own.")
     system = system + "\n\n" + (
         "ENGAGE EVERY CASE AND SCHOLAR — do NOT name-drop. For EACH case the gathered data provides, do "
         "BOTH, explicitly: (1) state its RATIO — the principle it decided — in a line; (2) APPLY it to "

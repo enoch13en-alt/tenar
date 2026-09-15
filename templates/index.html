@@ -2520,6 +2520,7 @@ function saveExam() {
       cost: EXAM.cost || 0, doc: EXAM.doc || "", pipelineCases: EXAM._pipelineCases || null,
       paperType: EXAM.paperType || "", paperLabel: EXAM.paperLabel || "",
       paperFramework: EXAM.paperFramework || "", paperSources: EXAM.paperSources || "",
+      paperDirection: EXAM.paperDirection || null,
       // interview: PERSIST the student's own answers + the generated items, so a reload/resume
       // never loses the work the author typed in the interview (this used to vanish with the tab).
       userViews: EXAM.userViews || [], _interviewItems: EXAM._interviewItems || null,
@@ -2568,6 +2569,7 @@ function resumeExam(snap) {
   EXAM.doc = snap.doc || ""; EXAM._pipelineCases = snap.pipelineCases || null;
   EXAM.paperType = snap.paperType || ""; EXAM.paperLabel = snap.paperLabel || "";
   EXAM.paperFramework = snap.paperFramework || ""; EXAM.paperSources = snap.paperSources || "";
+  EXAM.paperDirection = snap.paperDirection || {thesis:"", gaps:[], comparators:[]};
   // restore the interview answers + items so a resumed session shows what the author already typed
   EXAM.userViews = snap.userViews || [];
   EXAM._interviewItems = snap._interviewItems || null;
@@ -2756,13 +2758,15 @@ async function setupPaperSections(ctype, topic) {
     // Give the stages a GOVERNING-LAW hint for THIS topic — the paper equivalent of the exam
     // breakdown giving each issue its law. A stage worded as a section label ('Conceptual framework')
     // names no Act, so retrieval can't anchor on the controlling provisions and reports them missing.
-    $("#examStatus").textContent = "Reading the corpus for the sources this work is built on…";
-    let frameworkLaw = "", frameworkSources = "";
+    $("#examStatus").textContent = "Reading your proposal for its direction, and the corpus for the sources…";
+    let frameworkLaw = "", frameworkSources = "", paperDirection = {thesis:"", gaps:[], comparators:[]};
     try {
       const fr = await (await fetch("/api/paper/framework", {method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({course: COURSE, courses: examCourses(), topic})})).json();
       frameworkLaw = (fr && fr.law) || "";
       frameworkSources = (fr && fr.sources) || "";
+      if (fr && fr.direction) paperDirection = {
+        thesis: fr.direction.thesis || "", gaps: fr.direction.gaps || [], comparators: fr.direction.comparators || [] };
     } catch (e) {}
     // TAILOR the basis per stage, so it is not the same statutes cloned onto every section:
     // a stage that APPLIES LAW anchors on the governing instruments; a stage that leans on
@@ -2772,6 +2776,7 @@ async function setupPaperSections(ctype, topic) {
     const SRC_ROLE = new Set(["problem", "question", "literature", "framework", "analysis", "comparative", "gaps", "reforms", "discussion"]);
     EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
       paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw, paperSources: frameworkSources,
+      paperDirection: paperDirection,
       issues: def.stages.map((s, i) => {
         const decide = (s.kind === "decide");
         return {
@@ -2788,7 +2793,11 @@ async function setupPaperSections(ctype, topic) {
       ? (" Built on " + _nLaw + " instrument" + (_nLaw === 1 ? "" : "s") + " + " + _nSrc
          + " report/book/article source" + (_nSrc === 1 ? "" : "s") + " from your corpus.")
       : "";
-    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up." + _built + " Click "
+    const _dir = (paperDirection.thesis)
+      ? (" Following your thesis: “" + paperDirection.thesis.slice(0, 160) + (paperDirection.thesis.length > 160 ? "…" : "") + "”"
+         + (paperDirection.gaps.length ? (" · " + paperDirection.gaps.length + " gap(s) to establish") : "") + ".")
+      : "";
+    $("#examStatus").textContent = def.label + " — " + EXAM.issues.length + " sections set up." + _built + _dir + " Click "
       + "🎤 Interview me to give your input (" + inputN + " decisions are yours: thesis, "
       + (ctype === "dissertation" ? "methodology, data, sampling, ethics, " : "") + "comparators, reforms), "
       + "then Gather all → Synthesise.";
@@ -3552,11 +3561,21 @@ async function gatherIssue(i, force) {
     const _srcHint = _paperSrc
       ? (' Draw also on these sources from the corpus (reports, books, articles, policy/news), keeping their dates — use CURRENT sources for present-day facts and the state of the law, but KEEP older/foundational works (e.g. a 2009 or 2015 article) for the doctrine or concept they establish; age alone never drops a source: ' + _paperSrc + '.')
       : '';
+    // DIRECTION BRIEF — steer this gather toward the AUTHOR'S OWN stated line (from the abstract),
+    // so the paper argues the thesis and establishes the gaps the author set, not a re-derived one.
+    const _dir = EXAM.paperType && EXAM.paperDirection ? EXAM.paperDirection : null;
+    const _dirHint = (_dir && (_dir.thesis || (_dir.gaps && _dir.gaps.length)))
+      ? (' THE PAPER\'S DIRECTION (from the author\'s proposal — gather toward THIS line, do not re-derive a different one):'
+         + (_dir.thesis ? (' Thesis: ' + _dir.thesis) : '')
+         + (_dir.gaps && _dir.gaps.length ? (' Gaps/claims to establish: ' + _dir.gaps.join('; ') + '.') : '')
+         + (_dir.comparators && _dir.comparators.length ? (' Comparators: ' + _dir.comparators.join('; ') + '.') : ''))
+      : '';
     const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
       + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + (it.issue || '') + '".'
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
       + _srcHint
+      + _dirHint
       + _subText;
     const body = JSON.stringify({course: COURSE, courses: examCourses(), question: gq, web: false, brief: true,
         pinned: getPinned(),
@@ -4533,6 +4552,7 @@ async function compileExam(finalize) {
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
         paper_type: EXAM.paperType || "",
+        paper_direction: EXAM.paperDirection || null,
         word_limit: parseInt(($("#wordLimit")||{}).value) || 0,
         page_limit: parseInt(($("#pageLimit")||{}).value) || 0,
         line_spacing: parseFloat(($("#docSpacing")||{}).value) || 0,
