@@ -4998,7 +4998,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                     mode="answer", use_context=False, max_quality=False, prior="",
                     extract_model=None, simple=False, siblings=None, issue_index=None,
                     pinned=None, auto_pin_primary=False, writer_model=None, use_judy=False,
-                    paper_mode=False):
+                    paper_mode=False, sweep=False):
     # `course` may be a single course name OR a list (consultant multi-course
     # research). Multi-course merges each selected course's index by similarity.
     courses = course if isinstance(course, list) else [course]
@@ -5536,6 +5536,25 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "a dated fact / a holding with its source; an incident is evidence of fact, never "
                 "authority for a rule. Never invent a case, an incident, a figure or a date — gather "
                 "only what the materials actually show.")
+        if sweep:
+            system = system + "\n\n" + (
+                "SUPPORTING-SOURCES SWEEP — THIS OVERRIDES THE SECTION STRUCTURE ABOVE. This issue is "
+                "NOT answered with law and NOT with an argument: do NOT restate any primary law or "
+                "provisions, do NOT apply law to facts, do NOT conclude. Produce ONLY a tiered DATA "
+                "SHEET of the SUPPORTING sources in the corpus that DISCUSS or EVIDENCE the issues "
+                "above, under EXACTLY these headings (drop a heading only if it is genuinely empty):\n"
+                "'## Scholarship (secondary)' — books, journal articles, lectures: ONE bullet each, "
+                "ATTRIBUTED to the author/work by name, stating what it argues, with pinpoint/date.\n"
+                "'## Reports & commentary (tertiary)' — reports, policy papers, news: ONE bullet each, "
+                "what it says, with its source and date.\n"
+                "'## Official record & data (quaternary)' — State of the Nation Address, Parliament/"
+                "Hansard, budget & estimates, national compact, official statistics: ONE bullet each, "
+                "the FIGURE / target / official position it states, with its source and date. REACH "
+                "ESPECIALLY for these; they carry the authoritative data.\n"
+                "'## Comparative' — any other-jurisdiction supporting material, named by country.\n"
+                "Every item ATTRIBUTED and DATED, each drawn from a real retrieved passage, never "
+                "invented. NO Issue/Rule/Cases/Governing-framework headings, NO primary-law quotation, "
+                "NO analysis — this is a sweep of the supporting evidence only.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -7792,7 +7811,8 @@ def api_ask():
                            auto_pin_primary=body.get("auto_pin_primary", True),
                            writer_model=body.get("writer_model"),
                            use_judy=(mode == "gather"),   # judy is BAKED IN for every gather (no-op if not connected)
-                           paper_mode=bool(body.get("paper_type")))   # research-paper gather (facts-first, not a case study)
+                           paper_mode=bool(body.get("paper_type")),   # research-paper gather (facts-first, not a case study)
+                           sweep=bool(body.get("sweep")))   # supporting-sources sweep (tiered non-primary evidence sheet)
     if isinstance(_res, dict):
         _res["build"] = BUILD_SHA          # stamp the answer with the build that produced it (freshness mark)
     return jsonify(_res)

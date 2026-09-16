@@ -3694,6 +3694,7 @@ async function gatherIssue(i, force) {
         pinned: getPinned(),
         prior: priorRulesLedger(i),
         paper_type: EXAM.paperType || "",   // research-paper gather: facts-first, not a case study
+        sweep: !!it._sweep,                 // supporting-sources sweep → tiered non-primary evidence sheet
         use_context: false,
         max_quality: !!($("#examMaxQ") && $("#examMaxQ").checked),
         simple: !!($("#examSimple") && $("#examSimple").checked),
