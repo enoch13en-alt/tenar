@@ -5089,11 +5089,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 ensure_loaded(cc)
                 _idx = INDEXES.get(cc) or {}
                 _docs = sorted({ch.get("doc") for ch in _idx.get("chunks", []) if ch.get("doc")})
-                _want = [d for d in _docs if source_class(d) in ("secondary", "tertiary", "quaternary")]
-                # official record/data and scholarship are the at-risk high-value tiers → 3 chunks each;
-                # tertiary is numerous → 1 each (still guarantees each report/link is touched).
+                # Force the AT-RISK high-value tiers only — SECONDARY scholarship and QUATERNARY official
+                # record/data (the SoNA, budget, Parliament, compact links that get starved). Do NOT
+                # force all 31 tertiary reports: that made the sweep overrun its output and truncate.
+                # Tertiary still surfaces through normal retrieval + the official-data/comparator anchors.
+                _want = [d for d in _docs if source_class(d) in ("secondary", "quaternary")]
                 for d in _want:
-                    _kp = 3 if source_class(d) in ("secondary", "quaternary") else 1
+                    _kp = 3 if source_class(d) == "quaternary" else 2
                     for h in search_in_docs(cc, question, [d], k_per=_kp):
                         hh = dict(h); hh.setdefault("_course", cc)
                         _k = (hh.get("_course", ""), hh.get("doc"), hh.get("page"), (hh.get("text") or "")[:60])
@@ -5582,10 +5584,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "ALL FOUR headings MUST appear. The '## Official record & data (quaternary)' section is "
                 "REQUIRED and is the PRIORITY — never omit or truncate it; if the response is running "
                 "long, COMPRESS the Scholarship and Reports sections to their key items so the official "
-                "record/data is fully written. Keep every tier's bullets tight (the key items, not "
-                "every sentence). Every item ATTRIBUTED and DATED, each drawn from a real retrieved "
-                "passage, never invented. NO Issue/Rule/Cases/Governing-framework headings, NO "
-                "primary-law quotation, NO analysis — this is a sweep of the supporting evidence only.")
+                "record/data is fully written. BE ECONOMICAL — you may have MANY sources; give each "
+                "ONE tight sentence (source + what it says + date), so ALL FOUR sections are written "
+                "and the answer is COMPLETE. Never stop mid-sentence or mid-list; if you are running "
+                "out of room, shorten the remaining entries rather than truncating. Every item "
+                "ATTRIBUTED and DATED, each drawn from a real retrieved passage, never invented. NO "
+                "Issue/Rule/Cases/Governing-framework headings, NO primary-law quotation, NO analysis "
+                "— this is a sweep of the supporting evidence only.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
