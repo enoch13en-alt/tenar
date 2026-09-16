@@ -14363,6 +14363,21 @@ def api_exam_breakdown():
                 app.logger.exception("breakdown guaranteed reconcile failed")
     if not want_assumptions and isinstance(data, dict):
         data["assumptions"] = []                 # hard-guarantee no assumptions section
+    # ALWAYS append a final SUPPORTING-SOURCES issue that directs the bot to the NON-primary tiers
+    # (scholarship, reports/news, and official record/data — SoNA, Parliament, budget, compact,
+    # statistics) that discuss or evidence the issues above, so no vital report or dataset is missed.
+    if isinstance(data, dict) and isinstance(data.get("issues"), list) and data["issues"]:
+        if not any(isinstance(it, dict) and it.get("_sweep") for it in data["issues"]):
+            data["issues"].append({
+                "n": len(data["issues"]) + 1, "weight": "minor", "_sweep": True, "law": "",
+                "issue": "Supporting sources & data (reports, official records and scholarship on the issues above)",
+                "why": ("Sweep the corpus's NON-primary sources for material that discusses or evidences the "
+                        "issues above, so no vital report, dataset or official record is missed."),
+                "link": "supporting sweep across every issue above",
+                "retrieveAs": ("reports, policy papers, news, official record and data — State of the Nation "
+                               "Address, Parliament/Hansard, budget & estimates, national energy compact, "
+                               "official statistics — and scholarship that discuss or evidence the issues above"),
+            })
     return jsonify(data)
 
 
