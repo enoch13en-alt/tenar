@@ -1309,6 +1309,20 @@ function tierBadge(tier){
   return "<span title='" + m[3] + "' style='font-size:9px;font-weight:700;background:" + m[1]
     + ";color:" + m[2] + ";padding:1px 5px;border-radius:8px;margin-right:4px'>" + m[0] + "</span>";
 }
+// Which source tiers each paper SECTION reaches (1=primary, 2=secondary, 3=tertiary, 4=official/data)
+// — shown as compact badges on the stage line so you can see where each section gathers from.
+const _TIER_N = {1: "primary", 2: "secondary", 3: "tertiary", 4: "quaternary"};
+const STAGE_TIERS = {
+  problem: [2,3,4], question: [2], framework: [1,2,3], literature: [2],
+  analysis: [1,2,3,4], comparative: [1,2,3,4], gaps: [1,2,3], reforms: [1,2,3],
+  supporting: [2,3,4], discussion: [1,2,3,4], conclusion: [], limitations: [],
+  methodology: [], data: [], sampling: [], ethics: []
+};
+function tierMini(n){
+  const m = _TIER_BADGE[_TIER_N[n]]; if (!m) return "";
+  return "<span title='" + m[3] + "' style='font-size:8.5px;font-weight:700;background:" + m[1]
+    + ";color:" + m[2] + ";padding:0 3px;border-radius:6px;margin-right:2px'>" + n + "°</span>";
+}
 
 let _statusHold = false;    // while true, the 2.5s poller leaves #status alone
 // Prominent floating banner. Mirrors upload/indexing progress to the top of the screen so
@@ -3354,7 +3368,12 @@ function renderExam() {
         if (it.srcHint) _parts.push('<span title="' + esc(it.srcHint) + '">📚 ' + esc(_sShort) + '</span>');
         if (_parts.length) _basis = ' · <i>' + _parts.join('  ·  ') + '</i>';
       }
-      return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+'</h5>'
+      // TIER REACH — which source tiers this section gathers from (paper stages + the sweep issue)
+      let _reach = "";
+      const _rk = it._sweep ? "supporting" : it._paperK;
+      const _rt = (EXAM.paperType || it._sweep) && _rk ? STAGE_TIERS[_rk] : null;
+      if (_rt && _rt.length) _reach = ' <span title="Source tiers this section reaches" style="white-space:nowrap">' + _rt.map(tierMini).join('') + '</span>';
+      return '<div class="issue'+(it.done?' done':'')+'"><h5>'+(it.n||idx+1)+'. '+esc(it.issue||'')+_wb+_reach+'</h5>'
         + '<div class="why">'+esc(it.why||'')+_basis+'</div>'
         + _subsHtml + _auditNote + link + body + '</div>';
     }).join("");
