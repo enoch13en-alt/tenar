@@ -1385,20 +1385,36 @@ async function refresh() {
   // Owner/admin (or a matter's owner) may delete a source — same gate as the /api/doc/delete route.
   const canDelete = r.plan && (r.plan.is_admin || (COURSE || "").startsWith("mtr-"));
   const pinned = getPinned();
-  $("#docs").innerHTML = r.docs.length
-    ? r.docs.map(d => {
-        const isPin = pinned.indexOf(d.file) >= 0;
-        return "<div style='display:flex;align-items:center;gap:5px'>"
-          + "<button type='button' class='pinDoc' data-file=\"" + esc(d.file) + "\" style='width:auto;padding:0 3px;background:none;border:0;cursor:pointer;font-size:13px;flex:none;"
-            + (isPin ? "" : "filter:grayscale(1);opacity:.4") + "' title='"
-            + (isPin ? "Pinned — always included in answers &amp; Exam Coach. Click to unpin."
-                     : "Pin: always include this document (forces it into context regardless of ranking).") + "'>📌</button>"
-          + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tierBadge(d.tier) + tag(d.type) + esc(d.name) + "</span>"
-          + (canDelete
-              ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
-              : "")
-          + "</div>";
-      }).join("") : "none yet";
+  // Render ONE document row (used inside each tier folder below).
+  const _renderDoc = d => {
+    const isPin = pinned.indexOf(d.file) >= 0;
+    return "<div style='display:flex;align-items:center;gap:5px'>"
+      + "<button type='button' class='pinDoc' data-file=\"" + esc(d.file) + "\" style='width:auto;padding:0 3px;background:none;border:0;cursor:pointer;font-size:13px;flex:none;"
+        + (isPin ? "" : "filter:grayscale(1);opacity:.4") + "' title='"
+        + (isPin ? "Pinned — always included in answers &amp; Exam Coach. Click to unpin."
+                 : "Pin: always include this document (forces it into context regardless of ranking).") + "'>📌</button>"
+      + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tag(d.type) + esc(d.name) + "</span>"
+      + (canDelete
+          ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
+          : "")
+      + "</div>";
+  };
+  // GROUP the corpus into tier FOLDERS — all primary together, then secondary, tertiary, official
+  // record/data — so the dashboard shows where the bot looks for each kind of source.
+  const _TORDER = ["primary", "secondary", "tertiary", "quaternary"];
+  const _TFOLDER = {primary: "Primary — hard law", secondary: "Secondary — scholarship",
+                    tertiary: "Tertiary — reports & commentary", quaternary: "Official record & data"};
+  const _grp = {}; (r.docs || []).forEach(d => { (_grp[d.tier] = _grp[d.tier] || []).push(d); });
+  let _dh = "";
+  _TORDER.forEach(t => {
+    const ds = _grp[t]; if (!ds || !ds.length) return;
+    _dh += "<div style='margin:9px 0 3px;padding-bottom:2px;border-bottom:1px solid #2a3344;"
+         + "font-weight:700;font-size:11px;display:flex;align-items:center;gap:5px'>📁 " + tierBadge(t)
+         + _TFOLDER[t] + " <span style='color:#8b93a7;font-weight:400'>(" + ds.length + ")</span></div>"
+         + "<div style='margin-left:10px'>" + ds.map(_renderDoc).join("") + "</div>";
+  });
+  (r.docs || []).filter(d => _TORDER.indexOf(d.tier) < 0).forEach(d => { _dh += _renderDoc(d); });
+  $("#docs").innerHTML = _dh || "none yet";
   // grade summary FIRST (the source hierarchy the bot gears queries by), then the doctype mix
   const _tmix = {}; (r.docs || []).forEach(d => { _tmix[d.tier] = (_tmix[d.tier] || 0) + 1; });
   const _tierSummary = ["primary", "secondary", "tertiary", "quaternary"]
