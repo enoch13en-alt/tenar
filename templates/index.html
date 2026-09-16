@@ -2546,7 +2546,7 @@ function saveExam() {
       _interviewQs: EXAM._interviewQs || null,
       issues: (EXAM.issues || []).map(it => ({
         n: it.n, issue: it.issue, why: it.why, law: it.law, srcHint: it.srcHint, retrieveAs: it.retrieveAs, link: it.link, weight: it.weight,
-        _paperK: it._paperK, _paperInput: it._paperInput, _paperDecide: it._paperDecide,
+        _paperK: it._paperK, _paperInput: it._paperInput, _paperDecide: it._paperDecide, _sweep: it._sweep || false,
         _q: it._q || null, _views: it._views || null, _suggested: it._suggested || null,
         answer: it.answer, answer_annotated: it.answer_annotated, done: it.done,
         followups: it.followups || [],
@@ -3340,6 +3340,7 @@ function renderExam() {
     h += '<div class="rowbtn"><button class="btn" id="gatherAll" style="width:auto">Gather all remaining</button>'
       + ((EXAM.issues||[]).some(x => (x.weight||'').toLowerCase()==='core' && !x.done)
           ? '<button class="btn alt" id="gatherCore" style="width:auto" title="Gather only the CORE (mark-heavy) issues — a lean, cheaper draft. Add the minor ones before you finalise.">⭐ Gather core only</button>' : '')
+      + '<button class="btn alt" id="addSweep" style="width:auto" title="Add a final SUPPORTING SOURCES &amp; DATA issue that sweeps the corpus\'s NON-primary tiers — scholarship (2°), reports/news (3°) and official record/data (4°: State of the Nation Address, Parliament, budget, national compact, statistics) — for everything that discusses or evidences the issues above, so no vital report or dataset is missed. Best after your core issues are gathered.">🔎 Supporting sources &amp; data</button>'
       + '<button class="btn alt" id="examConsistency" style="width:auto" title="Check every issue against the others and reconcile any later issue that contradicts an earlier issue\'s conclusion (e.g. Issue 1 concludes the Charter is not established as binding, but a later issue says both instruments bind). The earlier-decided point governs; contradicting issues are corrected and propagated through their conclusions. Best clicked AFTER verifying/weaving and BEFORE Synthesise.">🧩 Reconcile all issues</button>'
       + '<button class="btn gold" id="examCompile" style="width:auto" title="Synthesise ALL your issues into ONE cohesive document with OSCOLA footnotes, a bibliography and tables of cases/legislation. Best clicked AFTER you have woven in cases (⚖️) and academic literature (📚) — they carry through, attributed.">🧬 Synthesise → OSCOLA document</button>'
       + '<button class="btn alt" id="examDeck" style="width:auto" title="Build a DEFENCE presentation from your answer: story-like slides that walk from the facts → the issue → the governing law, cases and scholars (with authorities on every slide) → how your answer resolves it. Each slide carries speaker notes plus the likely examiner question and a rebuttal. Present it full-screen here, or download a PowerPoint. Best after you Synthesise.">🎤 Build defence deck</button></div>';
@@ -3402,6 +3403,7 @@ function renderExam() {
   const cp = $("#examCompile"); if (cp) cp.onclick = () => compileExam(true);
   const dk = $("#examDeck"); if (dk) dk.onclick = buildDefenceDeck;
   const cs = $("#examConsistency"); if (cs) cs.onclick = runConsistency;
+  const sw = $("#addSweep"); if (sw) sw.onclick = addSupportingSweep;
   scheduleSave();                 // persist the run after every render (debounced)
 }
 
@@ -3660,9 +3662,19 @@ async function gatherIssue(i, force) {
       : '';
     // For a paper stage, retrieve on the TIGHT focus line (names the exact instruments/gaps/comparators
     // this section needs) rather than the generic heading — sharper anchors, better recall.
-    const _target = (EXAM.paperType && it.retrieveAs) ? (it.retrieveAs + ' — for the "' + (it.issue || '') + '" section') : (it.issue || '');
+    const _target = ((EXAM.paperType || it._sweep) && it.retrieveAs) ? (it.retrieveAs + ' — for the "' + (it.issue || '') + '" section') : (it.issue || '');
+    // A SUPPORTING-SOURCES SWEEP gathers only the NON-primary tiers that DISCUSS the issues — not the law.
+    const _lead = it._sweep
+      ? ('SUPPORTING-SOURCES SWEEP (data sheet only) — do NOT restate the primary law or provisions. '
+         + 'Collect ONLY the supporting sources that DISCUSS or EVIDENCE the issues, organised by tier: '
+         + 'SECONDARY scholarship (books/articles, attributed by author); TERTIARY reports/policy/news; '
+         + 'and QUATERNARY official record/data (State of the Nation Address, Parliament/Hansard, budget '
+         + '& estimates, national energy compact, official statistics) — the authoritative figures, '
+         + 'targets and government position. For each: what it says, ATTRIBUTED, with its DATE. Reach '
+         + 'especially for the official-record/data sources. The material to sweep for: "' + _target + '".')
+      : ('GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + _target + '".');
     const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
-      + 'GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + _target + '".'
+      + _lead
       + (it.why ? (' It arises because: ' + it.why + '.') : '')
       + (it.law ? (' Likely governed by: ' + it.law + '.') : '')
       + _srcHint
@@ -4488,6 +4500,26 @@ async function calibrateAll() {
   }
   await Promise.all([worker(), worker()]);   // 2 at a time
   return {calibrated: done};
+}
+// Append a final SUPPORTING SOURCES & DATA issue that sweeps the NON-primary tiers (scholarship,
+// reports/news, official record/data) for everything discussing the issues already covered, then
+// gather it — so no vital report, dataset or official record is missed.
+async function addSupportingSweep() {
+  if (!EXAM || !EXAM.issues || !EXAM.issues.length) { $("#examStatus").textContent = "Break down / set up the issues first."; return; }
+  if (EXAM.issues.some(x => x._sweep)) { $("#examStatus").textContent = "A supporting-sources sweep is already added."; return; }
+  const titles = EXAM.issues.filter(x => !x._sweep).map(x => (x.issue || "").split("\n")[0].slice(0, 90)).filter(Boolean);
+  const it = {
+    n: EXAM.issues.length + 1, weight: "minor", _sweep: true,
+    issue: "Supporting sources & data (reports, official records and scholarship on the issues above)",
+    why: "Sweep the corpus's NON-primary sources for material that discusses or evidences the issues already covered, so no vital report, dataset or official record is missed.",
+    law: "",
+    retrieveAs: "reports, policy papers, news, official record and data — State of the Nation Address, Parliament/Hansard, budget & estimates, national energy compact, official statistics — and scholarship that discuss or evidence: " + titles.join("; "),
+    answer: null, sources: [], done: false
+  };
+  EXAM.issues.push(it);
+  renderExam();
+  await gatherIssue(EXAM.issues.length - 1);
+  $("#examStatus").textContent = "Supporting sources & data gathered — reports, official data and scholarship on your issues.";
 }
 async function gatherAll() {
   $("#examStatus").textContent = "Gathering all issues (one at a time)…";
