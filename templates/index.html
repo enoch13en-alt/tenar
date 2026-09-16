@@ -2805,6 +2805,15 @@ async function setupPaperSections(ctype, topic) {
     if (!PAPER_TYPES_CACHE) PAPER_TYPES_CACHE = (await (await fetch("/api/paper/types")).json()).types || {};
     const def = PAPER_TYPES_CACHE[ctype];
     if (!def) { $("#examStatus").textContent = "Couldn't load the workflow — try again."; return false; }
+    // Apply the paper type's Master's-standard document defaults (word limit, footnotes EXCLUDED,
+    // double-spacing, 12pt) so Synthesise builds to the right length/format. User can still override.
+    try {
+      const dd = def.defaults || {};
+      if (dd.word_limit && $("#wordLimit")) $("#wordLimit").value = dd.word_limit;
+      if (dd.font_size && $("#docFontSize")) $("#docFontSize").value = String(dd.font_size);
+      if (dd.line_spacing && $("#docSpacing")) $("#docSpacing").value = (dd.line_spacing >= 2 ? "2" : (dd.line_spacing >= 1.5 ? "1.5" : "1"));
+      if ($("#fnCount")) $("#fnCount").value = dd.footnotes_inclusive ? "count" : "nocount";
+    } catch (e) {}
     // Give the stages a GOVERNING-LAW hint for THIS topic — the paper equivalent of the exam
     // breakdown giving each issue its law. A stage worded as a section label ('Conceptual framework')
     // names no Act, so retrieval can't anchor on the controlling provisions and reports them missing.

@@ -13783,6 +13783,9 @@ def api_exam_defence_pptx():
 PAPER_TYPES = {
     "special": {
         "label": "Special Paper",
+        # Master's-level standard: ~8,000-word body, footnotes/bibliography/appendices EXCLUDED,
+        # double-spaced 12pt (see Elements-of-the-thesis structure applied at compile).
+        "defaults": {"word_limit": 8000, "footnotes_inclusive": False, "line_spacing": 2.0, "font_size": 12},
         "style": ("an ARTICLE-STYLE special paper: ONE tightly-framed research question argued to a "
                   "conclusion, mostly doctrinal and comparative, with NO chapter apparatus. Narrower "
                   "and more sharply argued than a dissertation; strong analysis or synthesis is "
@@ -13802,6 +13805,10 @@ PAPER_TYPES = {
     },
     "dissertation": {
         "label": "Dissertation",
+        # Taught-Master's dissertation standard (cf. Birmingham LM Dissertation): ~12,000-word body,
+        # footnotes/bibliography/appendices EXCLUDED from the count, double-spaced 12pt, full thesis
+        # element structure applied at compile.
+        "defaults": {"word_limit": 12000, "footnotes_inclusive": False, "line_spacing": 2.0, "font_size": 12},
         "style": ("a CHAPTER-BASED dissertation: a full independent research project showing the "
                   "complete research architecture and a clear ORIGINAL CONTRIBUTION. Broader and "
                   "deeper than a special paper; the examiner asks not only 'is the answer "
@@ -13847,6 +13854,7 @@ def api_paper_types():
     out = {}
     for key, p in PAPER_TYPES.items():
         out[key] = {"label": p["label"], "style": p["style"],
+                    "defaults": p.get("defaults", {}),
                     "stages": [{"k": s["k"], "t": s["t"], "kind": s.get("kind", "draft"),
                                 "input": bool(s.get("input") or s.get("kind") == "decide"),
                                 "sweep": bool(s.get("sweep")), "g": s.get("g", ""),
@@ -15111,10 +15119,19 @@ def api_exam_assemble():
     if _asm_pdef:
         system = system + "\n\n" + (
             "RESEARCH-WRITING OVERRIDE — this deliverable is NOT an exam answer. Write " + _asm_pdef["style"]
-            + "\nEach 'issue' in the per-part material below is a SECTION of the paper: use its title as "
+            + "\nTHESIS ELEMENT STRUCTURE — assemble the document in THIS order: (1) a TITLE PAGE — the "
+            "paper's title, the author, the degree, the department/school and university, and the month/"
+            "year (take these from the topic/abstract where given; leave a 【FILL】 for any detail not "
+            "supplied); (2) an ABSTRACT — a concise summary of about one page; (3) a TABLE OF CONTENTS "
+            "listing the parts/chapters in order (page numbers are added on export); (4) the BODY, "
+            "section by section; (5) a Bibliography / List of References in OSCOLA; (6) Tables of Cases "
+            "and of Legislation; (7) any Appendices. The PRELIMINARIES (title page, abstract, contents) "
+            "and the END PAGES (references, tables, appendices) are EXCLUDED from the word count — ONLY "
+            "the body counts toward the limit.\n"
+            "Each 'issue' in the per-part material below is a SECTION of the paper: use its title as "
             "the heading and its gathered law/authorities as the substance. Keep the sections IN ORDER "
-            "and make the whole read as ONE continuous " + _asm_pdef["label"] + " — open with the title "
-            "and a short introduction, flow section to section, and close with the concluding section. "
+            "and make the whole read as ONE continuous " + _asm_pdef["label"] + ", flowing section to "
+            "section and closing with the concluding section. "
             "NO 'Issue 1 / Issue 2' labels and NO IRAC scaffolding. The AUTHOR'S OWN DECISIONS AND "
             "POSITION (captured in the interview and shown as the student's views) are the SPINE: build "
             "the thesis, the analysis, the methodology/data/sampling/ethics (for a dissertation), the "
@@ -15161,8 +15178,13 @@ def api_exam_assemble():
     if word_limit:
         fn_rule = ("Footnotes COUNT toward the limit — include footnote wording in the budget."
                    if footnotes_inclusive else
-                   "Footnotes do NOT count toward the limit — count only the main text (body); "
-                   "exclude footnote content, the bibliography and the tables.")
+                   "Footnotes do NOT count toward the limit — count only the main BODY text; exclude "
+                   "footnote content.")
+        if _asm_pdef:
+            fn_rule += (" The word count is the BODY ONLY: EXCLUDE the preliminaries (title page, "
+                        "abstract, table of contents), the bibliography / list of references, the "
+                        "tables of cases and legislation, and any appendices — none of these count "
+                        "toward the limit.")
         system += ("\n\nLENGTH TARGET — write the document to approximately " + str(word_limit)
                    + " words"
                    + ((" (about " + str(page_limit) + " page(s))") if page_limit else "")
