@@ -5552,9 +5552,13 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "the FIGURE / target / official position it states, with its source and date. REACH "
                 "ESPECIALLY for these; they carry the authoritative data.\n"
                 "'## Comparative' — any other-jurisdiction supporting material, named by country.\n"
-                "Every item ATTRIBUTED and DATED, each drawn from a real retrieved passage, never "
-                "invented. NO Issue/Rule/Cases/Governing-framework headings, NO primary-law quotation, "
-                "NO analysis — this is a sweep of the supporting evidence only.")
+                "ALL FOUR headings MUST appear. The '## Official record & data (quaternary)' section is "
+                "REQUIRED and is the PRIORITY — never omit or truncate it; if the response is running "
+                "long, COMPRESS the Scholarship and Reports sections to their key items so the official "
+                "record/data is fully written. Keep every tier's bullets tight (the key items, not "
+                "every sentence). Every item ATTRIBUTED and DATED, each drawn from a real retrieved "
+                "passage, never invented. NO Issue/Rule/Cases/Governing-framework headings, NO "
+                "primary-law quotation, NO analysis — this is a sweep of the supporting evidence only.")
     else:
         system = (CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH
                   + "\n\n" + ORIGINALITY + "\n\n" + LEGAL_METHOD + "\n\n"
@@ -7780,7 +7784,7 @@ def api_ask():
         # so cap it and keep gathers lean. A RESEARCH-PAPER gather carries more first-class material
         # (facts/reports + law-as-benchmark + cases AND incidents + comparators), so give it more room
         # or the last section (Comparative — the whole point of a comparative issue) truncates away.
-        max_out = 8000 if body.get("paper_type") else 4000
+        max_out = 8000 if (body.get("paper_type") or body.get("sweep")) else 4000
     elif fmt == "chat":
         max_out = 1800          # conversational: keep it short by design
     elif fmt == "report":
