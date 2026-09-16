@@ -5076,6 +5076,33 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             if len(ap_hits) >= 24:
                 break
         retrieved = ap_hits[:24] + retrieved       # primary law FIRST so the budget keeps it
+    # SWEEP: GUARANTEE every non-primary SOURCE is represented. A supporting-sources sweep must touch
+    # EVERY scholarship and official-record/data document — not only the ones that rank highest — or a
+    # big doc (e.g. the Compact) hogs the window and thin link docs (SoNA, budget, Parliament, Mission
+    # 300) read as 'no data from links'. Force the top chunks of each SECONDARY and QUATERNARY doc in.
+    if sweep and courses:
+        _forced, _fseen = [], set(
+            (h.get("_course", ""), h.get("doc"), h.get("page"), (h.get("text") or "")[:60])
+            for h in retrieved)
+        for cc in courses:
+            try:
+                ensure_loaded(cc)
+                _idx = INDEXES.get(cc) or {}
+                _docs = sorted({ch.get("doc") for ch in _idx.get("chunks", []) if ch.get("doc")})
+                _want = [d for d in _docs if source_class(d) in ("secondary", "tertiary", "quaternary")]
+                # official record/data and scholarship are the at-risk high-value tiers → 3 chunks each;
+                # tertiary is numerous → 1 each (still guarantees each report/link is touched).
+                for d in _want:
+                    _kp = 3 if source_class(d) in ("secondary", "quaternary") else 1
+                    for h in search_in_docs(cc, question, [d], k_per=_kp):
+                        hh = dict(h); hh.setdefault("_course", cc)
+                        _k = (hh.get("_course", ""), hh.get("doc"), hh.get("page"), (hh.get("text") or "")[:60])
+                        if _k not in _fseen:
+                            _fseen.add(_k); _forced.append(hh)
+            except Exception:
+                app.logger.exception("sweep force-docs failed")
+        if _forced:
+            retrieved = _forced + retrieved            # forced sources FIRST so the budget keeps them
     # case-finder can run on the web alone; a normal answer needs the corpus
     if not retrieved and mode != "cases":
         return {"answer": "No documents indexed in the selected course(s) yet. Add "
