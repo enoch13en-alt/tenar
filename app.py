@@ -14957,6 +14957,17 @@ def api_exam_assemble():
         base = 280 if line_spacing >= 2 else 350 if line_spacing >= 1.5 else 500 if line_spacing else 350
         wpp = max(120, int(base * (12.0 / font_size) ** 2))
         word_limit = page_limit * wpp
+    # SAFETY NET: a research paper always has a length target even if the field was left empty (e.g. a
+    # session set up before the defaults landed) — fall back to the paper type's standard body length,
+    # and default to double-spacing / footnotes-excluded so the compile is built to the right size.
+    _asm_pdef_early = PAPER_TYPES.get(body.get("paper_type")) if body.get("paper_type") else None
+    if _asm_pdef_early and not word_limit:
+        _dd = _asm_pdef_early.get("defaults", {})
+        word_limit = int(_dd.get("word_limit") or 0)
+        if not line_spacing:
+            line_spacing = float(_dd.get("line_spacing") or 2.0)
+        if "footnotes_inclusive" not in body:
+            footnotes_inclusive = bool(_dd.get("footnotes_inclusive"))
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
