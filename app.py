@@ -3018,11 +3018,14 @@ def display_type(fname):
     return DOCTYPES.get(fname) or "report"
 
 
-# Authority hierarchy for routing retrieval and the gather, so the bot knows WHERE each
-# section's material comes from instead of searching everything for everything:
-#   PRIMARY   = hard law — Constitution, statutes, cases, treaties (the Rule / governing law)
-#   SECONDARY = books, journal articles — commentary and analysis (the scholarship)
-#   TERTIARY  = reports, news, web links, data, incidents — evidence of FACT, never legal authority
+# Source hierarchy for routing retrieval and the gather, so the bot knows WHERE each section's
+# material comes from instead of searching everything for everything:
+#   PRIMARY    = hard law — Constitution, statutes, cases, treaties (the Rule / governing law)
+#   SECONDARY  = books, journal articles, lectures — commentary and analysis (the scholarship)
+#   TERTIARY   = reports, policy papers, news, incidents — analysis/commentary evidence of FACT
+#   QUATERNARY = OFFICIAL RECORD / PRIMARY DATA — State of the Nation Address, Parliament/Hansard,
+#                budget & estimates, national compacts, official statistics: the authoritative
+#                data of record for figures, targets and the government's stated position.
 _SECONDARY_TYPES = {"article", "book"}
 _PRIMARY_LAW_TYPES = {"constitution", "statute", "case", "treaty"}
 # NAME patterns — the stored doctype is often the unreliable 'report' default (real statutes were
@@ -3036,13 +3039,21 @@ _TIER_INSTRUMENT = re.compile(
     r'\bl\.?\s?i\.?\s*\d+\b|legislative instrument|statutory instrument|\bdecree\b|\bordinance\b|'
     r'\bconvention\b|\btreaty\b|\bprotocol\b|\bcharter\b|\bcovenant\b)', re.I)
 _TIER_CASE = re.compile(r"\b[A-Z][A-Za-z.'&-]+\s+v\.?\s+[A-Z]")
+# OFFICIAL RECORD / PRIMARY DATA (quaternary) — the government's own record and data documents.
+_TIER_OFFICIAL_DATA = re.compile(
+    r'(state of the nation|\bsona\b|\bhansard\b|\bparliament\b|order paper|votes and proceedings|'
+    r'\bbudget\b|appropriation|\bestimates\b|\bpbb\b|programme[- ]based budget|(?:energy )?\bcompact\b|'
+    r'\bgazette\b|ministerial statement|official statistic|statistical (?:bulletin|release|abstract|service)|'
+    r'\bcensus\b|national accounts|mofep|parliament\.gh|statsghana|mission300|gna\.org)', re.I)
 
 def source_class(fname):
-    """Return 'primary' | 'secondary' | 'tertiary' for a document, from its NAME first (the stored
-    doctype defaults to 'report' too often to trust). PRIMARY = the instrument itself (Constitution,
-    Act, Regulations/L.I., case, treaty); SECONDARY = lecture/paper/journal article/book/commentary;
-    TERTIARY = report, policy, plan, news, web link, data. Order matters: a LECTURE titled '…Act 832'
-    is scholarship (secondary), not the statute, so the scholarship markers are tested FIRST."""
+    """Return 'primary' | 'secondary' | 'tertiary' | 'quaternary' for a document, from its NAME first
+    (the stored doctype defaults to 'report' too often to trust). PRIMARY = the instrument itself
+    (Constitution, Act, Regulations/L.I., case, treaty); SECONDARY = lecture/paper/journal article/
+    book/commentary; QUATERNARY = official record / primary DATA (State of the Nation Address,
+    Parliament/Hansard, budget & estimates, national compact, official statistics); TERTIARY =
+    everything else (reports, policy papers, news, web links). Order matters: a LECTURE titled
+    '…Act 832' is scholarship (secondary), not the statute, so scholarship markers are tested FIRST."""
     nm = (display_name(fname) or "") + " " + (fname or "")
     t = display_type(fname)
     # 1) teaching materials / scholarship first (so a lecture that merely cites an Act isn't 'primary')
@@ -3051,7 +3062,10 @@ def source_class(fname):
     # 2) the instrument ITSELF — hard law
     if t in _PRIMARY_LAW_TYPES or _TIER_INSTRUMENT.search(nm) or _TIER_CASE.search(nm):
         return "primary"
-    # 3) reports / policy / plans / news / links / data
+    # 3) OFFICIAL RECORD / PRIMARY DATA — SoNA, Parliament, budget, compact, official statistics
+    if _TIER_OFFICIAL_DATA.search(nm):
+        return "quaternary"
+    # 4) reports / policy / plans / news / links / commentary
     return "tertiary"
 
 
@@ -4077,6 +4091,15 @@ def _anchor_queries(question):
         if a not in _COMP_STOP and a not in insts:
             anchors.append(a)
             anchors.append(a + " regulations framework programme licensing tariff")
+    # OFFICIAL-DATA (quaternary) ANCHOR — deliberately reach for the government's own record/data
+    # documents (State of the Nation Address, Parliament/Hansard, budget & estimates, national
+    # compact, official statistics), which carry the authoritative figures/targets and otherwise get
+    # missed under a doctrinal query. Fires whenever the question touches facts/figures/policy.
+    if re.search(r'\b(access|rate|target|figure|budget|deploy\w*|statistic|percent|million|compact|'
+                 r'address|parliament|electrif\w*|\bdata\b|number|commitment|policy|progress)\b',
+                 question, re.I):
+        anchors.append("State of the Nation Address Parliament Hansard budget estimates national energy "
+                       "compact official statistics figures targets government commitment access rate")
     # STRUCTURAL BACKBONE — a named Act's fund/financing, definitions/interpretation, licensing and
     # tariff provisions are load-bearing in almost any legal audit, yet they rank BELOW a broadly-framed
     # or empirically-framed stage query and get cut by the merge cap — so the section is IN the corpus
@@ -5135,14 +5158,21 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         _cls = source_class(ch["doc"])
         if _cls == "primary":
             _tier_cue = ("PRIMARY (hard law — constitution/statute/case/treaty). Its exact words are "
-                         "the governing law: quote it VERBATIM in the Rule; do not paraphrase.")
+                         "the governing law: quote it VERBATIM in the Rule/Governing framework; do not paraphrase.")
         elif _cls == "secondary":
-            _tier_cue = (f'SECONDARY (book / journal article — "{display_name(ch["doc"])}"). Attribute '
-                         f'its analysis, arguments and characterisations to this author/work by name; '
-                         f'it is commentary, NOT primary law.')
+            _tier_cue = (f'SECONDARY (book / journal article / lecture — "{display_name(ch["doc"])}"). '
+                         f'Attribute its analysis, arguments and characterisations to this author/work '
+                         f'by name; it is commentary, NOT primary law.')
+        elif _cls == "quaternary":
+            _tier_cue = (f'QUATERNARY (OFFICIAL RECORD / PRIMARY DATA — "{display_name(ch["doc"])}": '
+                         f'e.g. State of the Nation Address, Parliament/Hansard, budget & estimates, a '
+                         f'national compact, official statistics). Use it as the AUTHORITATIVE source '
+                         f'for figures, targets, official commitments and the government\'s stated '
+                         f'position, cited WITH its date; it is official primary DATA, not authority '
+                         f'for a legal rule.')
         else:
-            _tier_cue = (f'TERTIARY (report / news / web link / data — "{display_name(ch["doc"])}"). '
-                         f'Use it for FACTS, figures and incidents, attributed with its date; it is '
+            _tier_cue = (f'TERTIARY (report / policy paper / news / commentary — "{display_name(ch["doc"])}"). '
+                         f'Use it for facts, analysis and incidents, attributed with its date; it is '
                          f'evidence of fact, NEVER authority for a legal rule.')
         content.append({"type": "text", "text": "[SOURCE TIER — " + _tier_cue + "]"})
         # DATE CUE: make the model aware of THIS source's date so it can prefer the most recent
@@ -5400,14 +5430,19 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                   "them, do NOT argue them out. Where a source type is genuinely absent for this issue, "
                   "put ONE line under its heading — '⚠ none in the materials' — rather than invent one.\n"
                   "SOURCE HIERARCHY — every passage is tagged '[SOURCE TIER — PRIMARY / SECONDARY / "
-                  "TERTIARY]'. Use it to know WHERE each section's material comes from, so you are not "
-                  "hunting the whole corpus for everything: (a) the Rule / governing law comes ONLY from "
-                  "PRIMARY passages (Constitution, statute, case, treaty), quoted verbatim; (b) the "
-                  "'## Scholarly & secondary' analysis comes from SECONDARY passages (books, journal "
-                  "articles), attributed to the author by name; (c) FACTS, figures, reports and "
-                  "incidents come from TERTIARY passages (reports, news, web links, data), attributed "
-                  "with dates and NEVER used as authority for a legal rule. A TERTIARY source never "
-                  "carries the Rule; a SECONDARY source never carries the Rule; only PRIMARY does.\n"
+                  "TERTIARY / QUATERNARY]'. Use it to know WHERE each section's material comes from, so "
+                  "you are not hunting the whole corpus for everything: (a) the Rule / governing law "
+                  "comes ONLY from PRIMARY passages (Constitution, statute, case, treaty), quoted "
+                  "verbatim; (b) scholarly analysis comes from SECONDARY passages (books, journal "
+                  "articles, lectures), attributed to the author by name; (c) reports, policy analysis "
+                  "and incidents come from TERTIARY passages, attributed with dates; (d) AUTHORITATIVE "
+                  "FIGURES, TARGETS, official commitments and the GOVERNMENT'S STATED POSITION come "
+                  "from QUATERNARY passages — the official record / primary data (State of the Nation "
+                  "Address, Parliament/Hansard, budget & estimates, national compacts, official "
+                  "statistics) — cited WITH their date. For any empirical claim (an access rate, a "
+                  "deployment count, a target, a financing figure) PREFER a QUATERNARY official source "
+                  "over a tertiary report where both are present. Only PRIMARY carries the Rule; "
+                  "SECONDARY, TERTIARY and QUATERNARY never do.\n"
                   "ALL FIVE HEADINGS ARE MANDATORY AND ALWAYS PRESENT — never DROP a heading because it "
                   "is empty; keep the heading and put the '⚠ none in the materials' line under it. This "
                   "matters most for '## Comparative': when the issue turns on other jurisdictions (it "
@@ -5446,12 +5481,17 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "1) '## Research point' — ONE line: the precise research question or sub-question this "
                 "section pursues (replaces 'Issue'; no facts, no 'the problem raises').\n"
                 "2) '## Empirical facts & incidents' — the HARD FACTS ON THE GROUND, gathered FIRST "
-                "and FULLY because they are the substance the paper argues from: from TERTIARY sources "
-                "(reports, data, news, web links) the access rates, deployment numbers, targets, "
-                "timelines and who is affected; AND real-world INCIDENTS / events (operator closures "
-                "or forced exits, e.g. Black Star Energy; mini-grids that failed, were abandoned or "
-                "handed over; pilots; disasters; outages). Each a DATED fact ATTRIBUTED to its source "
-                "— evidence of fact, never authority for a rule.\n"
+                "and FULLY because they are the substance the paper argues from. Draw the AUTHORITATIVE "
+                "figures, targets, official commitments and the government's stated position from the "
+                "QUATERNARY official record / primary data (State of the Nation Address, Parliament / "
+                "Hansard, budget & estimates, national compacts, official statistics) — PREFER these "
+                "for any figure; and draw further facts and analysis from TERTIARY sources (reports, "
+                "policy papers, news). Cover the access rates, deployment numbers, targets, timelines "
+                "and who is affected; AND real-world INCIDENTS / events (operator closures or forced "
+                "exits, e.g. Black Star Energy; mini-grids that failed, were abandoned or handed over; "
+                "pilots; disasters; outages). Each a DATED fact ATTRIBUTED to its source — evidence of "
+                "fact, never authority for a rule. Actively REACH FOR the official-record sources; do "
+                "not let them go untouched.\n"
                 "3) '## Scholarship' — from SECONDARY sources (books, journal articles, lecture / "
                 "working papers): the PROPOSITION each scholar advances, ATTRIBUTED by name and "
                 "pinpoint (replaces 'Scholarly & secondary').\n"
@@ -5463,7 +5503,8 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
                 "KEY provisions VERBATIM in the ⟦LAW⟧ … ⟦/LAW⟧ format specified above; keep it LEAN "
                 "(the enabling powers, the fund, the licensing / tariff hooks, the targets), NOT an "
                 "exhaustive section-by-section recital of the whole Act.\n"
-                "SOURCE TIERS DRIVE THE SORT: 'Empirical facts & incidents' ← TERTIARY passages; "
+                "SOURCE TIERS DRIVE THE SORT: 'Empirical facts & incidents' ← QUATERNARY (official "
+                "record / data — SoNA, Parliament, budget, compact, statistics) AND TERTIARY passages; "
                 "'Scholarship' ← SECONDARY passages; 'Governing framework' ← PRIMARY passages. Put "
                 "each passage's material under the heading its [SOURCE TIER] tag indicates.\n"
                 "ALL FIVE headings MUST appear — write '⚠ none in the materials' under any that is "
@@ -7056,7 +7097,8 @@ def api_docs():
         t = display_type(f)
         mix[t] = mix.get(t, 0) + 1
     return jsonify({
-        "docs": [{"file": f, "name": display_name(f), "type": display_type(f)}
+        "docs": [{"file": f, "name": display_name(f), "type": display_type(f),
+                  "tier": source_class(f)}                 # graded: primary/secondary/tertiary/quaternary
                  for f in files],
         "mix": mix,
         "chunks": len(INDEXES[course]["chunks"]),

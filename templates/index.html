@@ -1295,6 +1295,20 @@ $("#newCourse").onclick = async () => {
 const TLAB = {constitution:"Const", statute:"Statute", case:"Case", treaty:"Treaty",
               book:"Book", article:"Article", report:"Report", web:"Web", other:"Other"};
 const tag = t => '<span class="tag ' + (t||'report') + '">' + (TLAB[t]||t||'Report') + '</span>';
+// Visible source GRADE (primary/secondary/tertiary/quaternary) so the corpus shows how the bot
+// gears its queries: law → primary, scholarship → secondary, reports/news → tertiary, official
+// record/data (SoNA, Parliament, budget, compact) → quaternary.
+const _TIER_BADGE = {
+  primary:    ["1° PRIMARY",   "#7a2f2f", "#ffdada", "Primary — hard law (Constitution, statute, case, treaty)"],
+  secondary:  ["2° SECONDARY", "#2f4a7a", "#d6e2ff", "Secondary — books, articles, lectures (scholarship)"],
+  tertiary:   ["3° TERTIARY",  "#3a4658", "#c9d2df", "Tertiary — reports, policy papers, news, commentary"],
+  quaternary: ["4° OFFICIAL",  "#2f6b4a", "#c7f0d8", "Quaternary — official record / primary data (SoNA, Parliament, budget, compact, statistics)"],
+};
+function tierBadge(tier){
+  const m = _TIER_BADGE[tier]; if (!m) return "";
+  return "<span title='" + m[3] + "' style='font-size:9px;font-weight:700;background:" + m[1]
+    + ";color:" + m[2] + ";padding:1px 5px;border-radius:8px;margin-right:4px'>" + m[0] + "</span>";
+}
 
 let _statusHold = false;    // while true, the 2.5s poller leaves #status alone
 // Prominent floating banner. Mirrors upload/indexing progress to the top of the screen so
@@ -1379,14 +1393,19 @@ async function refresh() {
             + (isPin ? "" : "filter:grayscale(1);opacity:.4") + "' title='"
             + (isPin ? "Pinned — always included in answers &amp; Exam Coach. Click to unpin."
                      : "Pin: always include this document (forces it into context regardless of ranking).") + "'>📌</button>"
-          + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tag(d.type) + esc(d.name) + "</span>"
+          + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tierBadge(d.tier) + tag(d.type) + esc(d.name) + "</span>"
           + (canDelete
               ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
               : "")
           + "</div>";
       }).join("") : "none yet";
-  $("#mix").innerHTML = (r.mix && Object.keys(r.mix).length)
+  // grade summary FIRST (the source hierarchy the bot gears queries by), then the doctype mix
+  const _tmix = {}; (r.docs || []).forEach(d => { _tmix[d.tier] = (_tmix[d.tier] || 0) + 1; });
+  const _tierSummary = ["primary", "secondary", "tertiary", "quaternary"]
+    .filter(t => _tmix[t]).map(t => tierBadge(t) + _tmix[t]).join(" ");
+  const _typeMix = (r.mix && Object.keys(r.mix).length)
     ? Object.entries(r.mix).sort((a,b)=>b[1]-a[1]).map(([t,n]) => tag(t)+n).join(" ") : "";
+  $("#mix").innerHTML = [_tierSummary, _typeMix].filter(Boolean).join(" &nbsp;·&nbsp; ");
   // The 2.5s poller must NOT clobber a live upload/indexing message with the server's
   // 'idle' — that made uploads look like they went straight to idle. Hold while busy.
   if (!_statusHold)
