@@ -13740,6 +13740,7 @@ PAPER_TYPES = {
             {"k": "comparative", "t": "Comparative / empirical", "input": True, "g": "Bring in comparable jurisdictions or data ONLY where it genuinely strengthens the argument — how a similar country handles the same point, or a report/figure that bears on it. If it adds nothing, say the section is not needed."},
             {"k": "gaps", "t": "Gaps", "g": "Identify the specific gaps or weaknesses in the current law/framework that the analysis has exposed."},
             {"k": "reforms", "t": "Reform proposals", "input": True, "g": "Propose concrete, workable reforms that close the gaps — each tied to a gap you identified."},
+            {"k": "supporting", "t": "Supporting sources & data", "sweep": True, "g": "Sweep the corpus's NON-primary sources for everything that discusses or evidences the issues above — scholarship (secondary), reports/policy/news (tertiary), and the official record/data (quaternary: State of the Nation Address, Parliament/Hansard, budget & estimates, national energy compact, official statistics). Present each with what it says, attributed and dated. Do NOT restate the primary law; this section marshals the supporting evidence and figures."},
             {"k": "conclusion", "t": "Conclusion", "g": "Answer the research question directly and restate the thesis as now proven. No new material."},
         ],
     },
@@ -13773,6 +13774,7 @@ PAPER_TYPES = {
              "g": "Write the ethics section FROM THE AUTHOR'S ANSWERS. If there are no human participants, state that ethics approval is not required and why."},
             {"k": "analysis", "t": "Analysis & findings", "g": "Present and analyse the material/data against the framework, and set out the findings that answer the sub-questions. Ground every point."},
             {"k": "discussion", "t": "Discussion", "g": "Interpret the findings: what they mean for the research question, how they sit against the literature, and what the original contribution is."},
+            {"k": "supporting", "t": "Supporting sources & data", "sweep": True, "g": "Sweep the corpus's NON-primary sources for everything that discusses or evidences the study's issues — scholarship (secondary), reports/policy/news (tertiary), and the official record/data (quaternary: State of the Nation Address, Parliament/Hansard, budget & estimates, national energy compact, official statistics). Present each with what it says, attributed and dated. Do NOT restate the primary law; this section marshals the supporting evidence and figures."},
             {"k": "conclusion", "t": "Conclusions & recommendations", "input": True, "g": "State the conclusions that follow from the evidence, answer the main research question, and give concrete recommendations."},
             {"k": "limitations", "t": "Limitations & further research", "g": "State honestly the limitations of the study (scope, method, data) and directions for further research."},
         ],
@@ -13791,6 +13793,7 @@ def api_paper_types():
         out[key] = {"label": p["label"], "style": p["style"],
                     "stages": [{"k": s["k"], "t": s["t"], "kind": s.get("kind", "draft"),
                                 "input": bool(s.get("input") or s.get("kind") == "decide"),
+                                "sweep": bool(s.get("sweep")), "g": s.get("g", ""),
                                 "q": s.get("q", [])} for s in p["stages"]]}
     return jsonify({"types": out})
 

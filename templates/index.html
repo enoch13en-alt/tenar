@@ -2795,7 +2795,7 @@ async function setupPaperSections(ctype, topic) {
     // SCHOLARSHIP / COMPARATIVE / REPORTS anchors on the source map instead; a pure restatement
     // stage (conclusion, limitations) and the design/'decide' stages get neither.
     const LAW_ROLE = new Set(["problem", "question", "framework", "analysis", "gaps", "reforms", "discussion"]);
-    const SRC_ROLE = new Set(["problem", "question", "literature", "framework", "analysis", "comparative", "gaps", "reforms", "discussion"]);
+    const SRC_ROLE = new Set(["problem", "question", "literature", "framework", "analysis", "comparative", "gaps", "reforms", "discussion", "supporting"]);
     EXAM = { facts: [], assumptions: [], question: topic, focus: [], cost: 0,
       paperType: ctype, paperLabel: def.label, paperFramework: frameworkLaw, paperSources: frameworkSources,
       paperDirection: paperDirection,
@@ -2805,8 +2805,13 @@ async function setupPaperSections(ctype, topic) {
           n: i + 1, issue: s.t, why: s.g || "", weight: "core",
           law: (!decide && LAW_ROLE.has(s.k)) ? frameworkLaw : "",
           srcHint: (!decide && SRC_ROLE.has(s.k)) ? frameworkSources : "",
-          retrieveAs: (paperFocus && paperFocus[s.k]) ? paperFocus[s.k] : "",
-          _paperK: s.k, _paperInput: !!s.input, _paperDecide: decide, answer: null, sources: [], done: false };
+          retrieveAs: s.sweep
+            ? ("reports, policy papers, news, official record and data — State of the Nation Address, "
+               + "Parliament/Hansard, budget & estimates, national energy compact, official statistics — "
+               + "and scholarship that discuss or evidence this paper's issues: " + topic.slice(0, 200))
+            : ((paperFocus && paperFocus[s.k]) ? paperFocus[s.k] : ""),
+          _paperK: s.k, _paperInput: !!s.input, _paperDecide: decide, _sweep: !!s.sweep,
+          answer: null, sources: [], done: false };
       }) };
     renderExam();
     const inputN = EXAM.issues.filter(x => x._paperInput).length;
