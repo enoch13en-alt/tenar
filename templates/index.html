@@ -3671,13 +3671,17 @@ async function gatherIssue(i, force) {
     const _target = ((EXAM.paperType || it._sweep) && it.retrieveAs) ? (it.retrieveAs + ' — for the "' + (it.issue || '') + '" section') : (it.issue || '');
     // A SUPPORTING-SOURCES SWEEP gathers only the NON-primary tiers that DISCUSS the issues — not the law.
     const _lead = it._sweep
-      ? ('SUPPORTING-SOURCES SWEEP (data sheet only) — do NOT restate the primary law or provisions. '
-         + 'Collect ONLY the supporting sources that DISCUSS or EVIDENCE the issues, organised by tier: '
-         + 'SECONDARY scholarship (books/articles, attributed by author); TERTIARY reports/policy/news; '
-         + 'and QUATERNARY official record/data (State of the Nation Address, Parliament/Hansard, budget '
-         + '& estimates, national energy compact, official statistics) — the authoritative figures, '
-         + 'targets and government position. For each: what it says, ATTRIBUTED, with its DATE. Reach '
-         + 'especially for the official-record/data sources. The material to sweep for: "' + _target + '".')
+      ? ('Go DIRECTLY to the NON-PRIMARY sources in the materials and answer each question in order — '
+         + 'do NOT restate the primary law:\n'
+         + '1) SECONDARY — what do the books, journal articles and lectures in the materials ARGUE '
+         + 'about the issues above? Attribute each to its author/work, with pinpoint and date.\n'
+         + '2) TERTIARY — what do the reports, policy papers and news in the materials SHOW about the '
+         + 'issues above? Give each with its source and date.\n'
+         + '3) QUATERNARY — what do the OFFICIAL RECORDS AND DATA state: the State of the Nation '
+         + 'Address, Parliament/Hansard, the budget & estimates, the national energy compact, and '
+         + 'official statistics — the authoritative figures, targets and the government\'s stated '
+         + 'position? Give each with its source and date, and REACH ESPECIALLY for these.\n'
+         + 'Set out ONLY this supporting material (a data sheet, no analysis, no conclusion). Sweep for: "' + _target + '".')
       : ('GATHER THE LAW for this issue (data sheet only — collect the governing provisions verbatim, cases, comparative and secondary material; do NOT apply the law to the facts and do NOT conclude): "' + _target + '".');
     const gq = (exq ? ('In the context of this problem — "' + exq.slice(0, 12000) + '" —\n\n') : '')
       + _lead
