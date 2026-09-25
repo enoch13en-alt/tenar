@@ -1409,7 +1409,15 @@ async function refresh() {
         + (isPin ? "" : "filter:grayscale(1);opacity:.4") + "' title='"
         + (isPin ? "Pinned — always included in answers &amp; Exam Coach. Click to unpin."
                  : "Pin: always include this document (forces it into context regardless of ranking).") + "'>📌</button>"
-      + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tag(d.type) + esc(d.name) + "</span>"
+      + "<span style='flex:1" + (isPin ? ";color:#e6b84a;font-weight:600" : "") + "'>" + tag(d.type) + esc(d.name)
+        + (d.currency ? " <span style='font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;white-space:nowrap;"
+            + (d.currency.status === "repealed" ? "background:#fdeaea;color:#c53030" : "background:#fdf6e3;color:#b7791f") + "' title=\""
+            + esc((d.currency.status === "repealed" ? "Repealed / replaced — the bot applies the current law and cites this only as history."
+                                                    : "Amended — the bot applies the as-amended position; this copy may predate the amendment.")
+                  + (d.currency.current ? " Now governed by: " + d.currency.current + "." : "")
+                  + (d.currency.note ? " " + d.currency.note : "")) + "\">"
+            + (d.currency.status === "repealed" ? "✕ repealed" : "⚠ amended") + "</span>" : "")
+        + "</span>"
       + (canDelete
           ? "<button type='button' class='btn alt mini delSource' style='width:auto;padding:1px 7px;flex:none' title='Remove this source from the course (deletes its indexed text too)' data-file=\"" + esc(d.file) + "\" data-name=\"" + esc(d.name) + "\">🗑</button>"
           : "")

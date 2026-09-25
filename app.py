@@ -3048,6 +3048,64 @@ def save_doctypes():
     _write_json(DOCTYPES_FILE, DOCTYPES, ensure_ascii=False)
 
 
+# ---- LAW CURRENCY: judy-verified in-force / amended / repealed status, per course ----
+# Written by /api/corpus/refresh; read at answer/compile time so the bot APPLIES the current law
+# and only MENTIONS the superseded text in commentary — it never reasons under repealed/old law.
+LAW_CURRENCY = {}
+LAW_CURRENCY_FILE = os.path.join(DATA, "law_currency.json")
+
+
+def load_law_currency():
+    global LAW_CURRENCY
+    if os.path.exists(LAW_CURRENCY_FILE):
+        try:
+            LAW_CURRENCY = json.load(open(LAW_CURRENCY_FILE))
+        except Exception:
+            LAW_CURRENCY = {}
+
+
+def save_law_currency():
+    _write_json(LAW_CURRENCY_FILE, LAW_CURRENCY, ensure_ascii=False)
+
+
+def _currency_directive(course):
+    """A compact system-prompt block naming the AMENDED / REPEALED instruments this course holds (as
+    verified against the legal database), so the model applies the CURRENT law and flags the change in
+    commentary instead of silently applying the old text. Empty string if nothing flagged/checked."""
+    rec = LAW_CURRENCY.get(course) or {}
+    results = rec.get("results") or []
+    flagged = [r for r in results if isinstance(r, dict)
+               and str(r.get("status", "")).lower() in ("amended", "repealed")]
+    if not flagged:
+        return ""
+    lines = []
+    for r in flagged:
+        st = str(r.get("status")).lower()
+        inst = str(r.get("instrument") or "").strip()
+        cur = str(r.get("current") or "").strip()
+        note = str(r.get("note") or "").strip()
+        tag = "REPEALED / REPLACED" if st == "repealed" else "AMENDED"
+        line = f"- {inst} — {tag}."
+        if cur:
+            line += f" Now governed by: {cur}."
+        if note:
+            line += f" ({note})"
+        lines.append(line)
+    when = rec.get("ts", "")
+    return (
+        "LAW-CURRENCY STATUS (verified against the legal database" + (f", {when}" if when else "") + ") — "
+        "the corpus contains superseded copies of some instruments. You MUST reason under the CURRENT "
+        "law, not the old text:\n" + "\n".join(lines) + "\n"
+        "RULES: (1) NEVER state or apply a REPEALED/REPLACED instrument as the operative law — apply the "
+        "current instrument named above; if its text is not in the corpus, say the current instrument "
+        "governs and flag its text as ⚠ not yet in the corpus rather than quoting the old one as live. "
+        "(2) For an AMENDED instrument, apply the AS-AMENDED position; where the corpus copy is the "
+        "un-amended text, do not quote it as the current wording — note that it predates the amendment. "
+        "(3) You MAY cite the superseded text in COMMENTARY (legislative history, what changed and why, "
+        "before/after comparison) — clearly labelled as former/historical — but it must never carry the "
+        "operative rule. State the change plainly the first time the instrument is used.")
+
+
 def display_type(fname):
     return DOCTYPES.get(fname) or "report"
 
@@ -5637,6 +5695,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = system + "\n\n" + VERBATIM_PRIORITY   # law quoted word-for-word, in full, flagged if not
     if simple and mode != "cases" and fmt != "chat":
         system = system + "\n\n" + PLAIN_MODE   # short mode: simple, step-by-step, less dense
+    # judy-verified currency of THIS course's instruments — apply current law, flag the old in commentary
+    _cur_dir = _currency_directive(course)
+    if _cur_dir:
+        system = system + "\n\n" + _cur_dir
     if mode == "gather":
         # The gather is a DATA SHEET (collect law + cases + comparative + secondary), NOT an answer —
         # so append a gather-only scope note with NO IRAC/application/conclusion language (ISSUE_SCOPE
@@ -5688,6 +5750,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
             CONFIG["system_prompt"] + "\n\n" + CITATION_INTEGRITY + "\n\n"
             + DOCTRINAL_PRECISION + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n"
             + TEMPORAL_SUCCESSION + "\n\n"
+            + (_cur_dir + "\n\n" if _cur_dir else "") +
             "RULE-EXTRACTION STAGE — output ONLY the RULE for the stated issue, nothing else. "
             "From the passages provided, set out the governing provisions VERBATIM — the EXACT WORDS "
             "of each provision, quoted directly from the retrieved passage and placed in quotation "
@@ -7157,6 +7220,13 @@ def api_corpus_refresh():
             candidates.append({"title": title, "url": url, "why": why})
         else:
             mentions.append({"title": title, "why": why})
+    # persist so the answer engine can APPLY the current law and only MENTION the old text in
+    # commentary — the verdicts must outlive this one dashboard view.
+    try:
+        LAW_CURRENCY[course] = {"results": results, "ts": today}
+        save_law_currency()
+    except Exception:
+        app.logger.exception("could not persist law currency")
     return jsonify({"checked": prim, "results": results,
                     "candidates": candidates[:12], "mentions": mentions[:12]})
 
@@ -7403,9 +7473,21 @@ def api_docs():
     for f in files:
         t = display_type(f)
         mix[t] = mix.get(t, 0) + 1
+    # judy-verified currency (from the last "Check laws are current" run) — surface amended/repealed
+    # instruments so the flag persists on the dashboard, not just in the one-time report.
+    _cur = {}
+    for r in ((LAW_CURRENCY.get(course) or {}).get("results") or []):
+        if isinstance(r, dict):
+            st = str(r.get("status", "")).lower()
+            if st in ("amended", "repealed"):
+                _cur[str(r.get("instrument", "")).strip().lower()] = {
+                    "status": st, "current": str(r.get("current") or "").strip(),
+                    "note": str(r.get("note") or "").strip()[:300]}
     return jsonify({
-        "docs": [{"file": f, "name": display_name(f), "type": display_type(f),
-                  "tier": source_class(f)}                 # graded: primary/secondary/tertiary/quaternary
+        "docs": [dict({"file": f, "name": display_name(f), "type": display_type(f),
+                  "tier": source_class(f)},                 # graded: primary/secondary/tertiary/quaternary
+                  **({"currency": _cur[(display_name(f) or "").strip().lower()]}
+                     if (display_name(f) or "").strip().lower() in _cur else {}))
                  for f in files],
         "mix": mix,
         "chunks": len(INDEXES[course]["chunks"]),
@@ -15376,6 +15458,11 @@ def api_exam_assemble():
         system = system + "\n\n" + FORMATS[length]
     system = system + "\n\n" + VERBATIM_PRIORITY   # quoted law stays word-for-word in the final document
     system = system + "\n\n" + SOURCE_COVERAGE     # keep primary+secondary law, books, cases, comparative per issue
+    # judy-verified currency: apply the CURRENT law in the written document, mention any superseded
+    # text only as commentary/legislative history — never let the old instrument carry the rule.
+    _asm_cur = _currency_directive(course)
+    if _asm_cur:
+        system = system + "\n\n" + _asm_cur
     # RESEARCH-WRITING mode: the same gather/authority/audit pipeline, but the final document is a
     # special paper / dissertation (its sections are the 'issues'), not an exam answer.
     _asm_pdef = PAPER_TYPES.get(body.get("paper_type")) if body.get("paper_type") else None
@@ -16850,6 +16937,7 @@ def init_app():
     load_users()
     load_sources()
     load_doctypes()
+    load_law_currency()
     load_meta()
     load_weeks()
     _load_rule_cache()
