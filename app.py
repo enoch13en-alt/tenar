@@ -3125,7 +3125,13 @@ _PRIMARY_LAW_TYPES = {"constitution", "statute", "case", "treaty"}
 _TIER_SECONDARY_MARK = re.compile(
     r'(\benel\s*\d|\blecture\b|\bseminar\b|\bslides?\b|lecture notes|working paper|\bwp\s*\d|'
     r'\bdiis\b|\bet al\b|law review|\bjournal\b|\bquarterly\b|\bbulletin\b|university press|'
-    r'\bedn?\b|\bedition\b|textbook|treatise|handbook)', re.I)
+    r'\bedn?\b|\bedition\b|textbook|treatise|handbook|'
+    # ANALYTICAL-TITLE verbs/phrases that appear in COMMENTARY about a statute but NEVER in the
+    # statute's own title — so 'Repealing …: Navigating the Path From L.I. 2462 to L.I. 2501 and
+    # Beyond' is read as scholarship, not mistaken for the instrument because it names an L.I.
+    r'\bnavigating\b|\brethinking\b|\brevisited\b|\band beyond\b|\btowards?\b|\bcritique\b|'
+    r'\bcommentary\b|\bperspectives?\b|\bimplications\b|\blessons\b|\breflections?\b|'
+    r'the path from|\ba case for\b|an analysis\b|critical analysis)', re.I)
 _TIER_INSTRUMENT = re.compile(
     r'(\bconstitution\b|\bact\b[\s,]*(?:no\.?\s*\d+|\d{4})|\(act\s*\d+\)|\bregulations?\b|'
     r'\bl\.?\s?i\.?\s*\d+\b|legislative instrument|statutory instrument|\bdecree\b|\bordinance\b|'
