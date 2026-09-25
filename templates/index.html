@@ -3249,6 +3249,17 @@ async function auditCompiled() {
       body: JSON.stringify({issue: "the full memorandum", answer: cur, question: EXAM.question || ""})})).json();
     if (cb && cb.answer && cb.answer.trim()) { cur = cb.answer; calChanges = cb.changes || []; cal = calChanges.length; }
   } catch (e) { /* calibrate is best-effort too */ }
+  // ENSURE OSCOLA FOOTNOTES on the finished document — if it isn't already [n] + a Footnotes section
+  // (so the Word/PDF export renders real page-bottom footnotes), convert its inline citations now.
+  // Without this the finished work can export with NO footnotes when the compile cited inline.
+  try {
+    if (!(/\[\d{1,3}\]/.test(cur) && /##\s+Footnotes/i.test(cur))) {
+      progress('📑 Converting citations into OSCOLA footnotes (page-bottom on export)…');
+      const fr = await (await fetch("/api/oscola/footnote", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({text: cur})})).json();
+      if (fr && fr.converted && fr.changed !== false) cur = fr.converted;
+    }
+  } catch (e) { /* footnote conversion is best-effort — never block the document over it */ }
   EXAM.doc = cur; try { saveExam(); } catch (e) {}
   de.style.whiteSpace = "normal"; de.innerHTML = mdToHtml(EXAM.doc);
   // rebuild the export bar; keep our report the LAST element
