@@ -6658,6 +6658,19 @@ def _authority_connectors():
     return {"mcp_servers": servers, "tools": tools,
             "betas": ["mcp-client-2025-11-20"], "names": names}
 
+
+def _connectors_subset(conn, keep):
+    """Narrow a connector triple to only the named provider(s). Attaching just the ONE database an
+    operation needs (e.g. judy for Ghanaian law) keeps an unrelated/DOWN server — which would make
+    the whole beta.messages call 400 — out of the request. Returns the same {..} shape (possibly empty)."""
+    keep = set(keep)
+    idx = [i for i, n in enumerate(conn.get("names", [])) if n in keep]
+    return {"mcp_servers": [conn["mcp_servers"][i] for i in idx],
+            "tools": [conn["tools"][i] for i in idx],
+            "betas": conn.get("betas", ["mcp-client-2025-11-20"]),
+            "names": [conn["names"][i] for i in idx]}
+
+
 def _anthropic_timeout():
     """The SDK's timeout exception class (for catching a slow/interrupted request)."""
     import anthropic
@@ -6956,7 +6969,9 @@ def api_law_currency():
     if not insts:
         return jsonify({"results": []})
     c = _client()
-    conn = _authority_connectors()
+    # route to judy ONLY — it is authoritative for Ghanaian law, and attaching just it keeps a
+    # down/irrelevant server (e.g. EULEX) from 400-ing the whole call.
+    conn = _connectors_subset(_authority_connectors(), {"judy"})
     if not c or not conn["names"]:
         return jsonify({"no_db": True, "results": [
             {"instrument": i, "status": "unknown",
@@ -7054,7 +7069,9 @@ def api_corpus_refresh():
         return jsonify({"no_primary": True, "results": [], "candidates": [],
                         "note": "No primary-law documents in this course to check."})
     c = _client()
-    conn = _authority_connectors()
+    # route to judy ONLY (authoritative for Ghanaian law); this keeps a down/irrelevant MCP server
+    # from 400-ing the whole call, which is what happens if every connected DB is attached at once.
+    conn = _connectors_subset(_authority_connectors(), {"judy"})
     if not c or not conn["names"]:
         return jsonify({"no_db": True, "checked": prim, "candidates": [], "results": [
             {"instrument": i, "status": "unknown",
