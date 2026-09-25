@@ -9697,22 +9697,35 @@ def api_exam_reshape():
                 # WITHOUT streaming (the client shows a "condensing…" heartbeat); only the accepted
                 # final version is sent to the box. Stop when within tolerance, when a round stops
                 # reducing (diminishing returns), or after the round cap — whichever comes first.
-                cur = text
+                # FOOTNOTE-SAFE: split the footnotes OUT first, shorten only the BODY (keeping the [n]
+                # markers), then re-attach the ORIGINAL footnote text — so a shorten can never leave
+                # orphan superscripts with no notes (the 'superscripts but no footnotes' bug). The
+                # notes come from the original document, not from the model re-typing them.
+                _ob, _ofmap, _osec = _exam_pdf_parse(text)
+                cur = _ob if _ofmap else text
                 tol = int(target_words * 1.06)          # accept within ~6% of the target
                 for _round in range(6):
-                    if _round == 0:
+                    if _round == 0 and not _ofmap:
                         instr = instruction
+                    elif _round == 0:
+                        instr = ("Shorten this to about " + str(target_words) + " words (BODY text; "
+                                 "footnotes are handled separately). Remove elaboration, examples, "
+                                 "background, repetition and redundant sentences, and tighten the prose. "
+                                 "KEEP every legal rule VERBATIM, every citation/authority and all "
+                                 "conclusions. KEEP each in-text footnote marker '[n]' EXACTLY as it is, "
+                                 "with its ORIGINAL number — do NOT renumber them and do NOT add a "
+                                 "Footnotes section (that is re-attached afterwards). If you cut the "
+                                 "sentence a marker sits on, its marker simply goes with it. Output ONLY "
+                                 "the shortened text.")
                     else:
                         instr = ("Your current version is about " + str(_body_words(cur)) + " words — "
                                  "still LONGER than the target of about " + str(target_words) + " words. "
                                  "Cut it to about " + str(target_words) + " words: remove elaboration, "
                                  "examples, background, repetition and redundant sentences, and tighten "
                                  "the prose. KEEP every legal rule VERBATIM, every citation/authority and "
-                                 "all conclusions. KEEP EVERY [n] FOOTNOTE MARKER AND THE ENTIRE FOOTNOTES "
-                                 "SECTION — footnotes are citations, NOT commentary to cut; renumber them "
-                                 "sequentially if you merge sentences, but never drop one. The word target "
-                                 "is BODY TEXT ONLY and does NOT include footnotes, so do not delete "
-                                 "footnotes to hit it. Output ONLY the shortened document.")
+                                 "all conclusions. KEEP each in-text '[n]' marker with its ORIGINAL "
+                                 "number; do NOT renumber and do NOT add a Footnotes section. The word "
+                                 "target is BODY TEXT ONLY. Output ONLY the shortened text.")
                     prev_wc = _body_words(cur)
                     nxt = _run([{"role": "user", "content":
                                  "RESHAPE INSTRUCTION: " + instr + "\n\nDOCUMENT TO RESHAPE:\n\n" + cur}],
@@ -9723,7 +9736,10 @@ def api_exam_reshape():
                     # keep going while each round still removes a meaningful chunk toward the target.
                     if now_wc <= tol or now_wc >= int(prev_wc * 0.985):
                         break
-                q.put(cur)                               # send the accepted final version to the box
+                # deterministically rebuild [n] + '## Footnotes' from the ORIGINAL notes (drop only
+                # those whose markers were cut; renumber the survivors) and re-append back-matter.
+                final = _reattach_footnotes(cur, _ofmap, _osec) if _ofmap else cur
+                q.put(final)                             # send the accepted final version to the box
             q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd[0], 5),
                                                "total_usd": total_usd[0]}}))
         except Exception:
@@ -16427,6 +16443,36 @@ def _exam_pdf_parse(doc):
         else:
             sections.append((name, content))
     return body, fmap, sections
+
+
+def _reattach_footnotes(body, fmap, sections):
+    """After a BODY-ONLY reshape, rebuild a clean '[n]' + '## Footnotes' structure from the ORIGINAL
+    footnote text: keep only the notes whose markers still appear in the shortened body, renumber them
+    sequentially in order of appearance, rewrite the in-text markers to match, and re-append the
+    back-matter sections. Guarantees footnote TEXT is never lost to a shorten (the reported
+    'superscripts but no footnotes' bug), because the notes come from the original, not the model."""
+    body = re.split(r'(?m)^\s*={2,}\s*WORDS\s*={2,}.*$', body or "")[0].rstrip()   # drop the '=== WORDS ===' trailer
+    if not fmap:
+        # no footnotes to protect — just re-append any back-matter the parse split off
+        out = [body]
+        for name, content in (sections or []):
+            out.append("\n\n## " + name + "\n" + (content or "").strip())
+        return "\n".join(out)
+    order, seen = [], set()
+    for m in re.finditer(r'\[(\d{1,3})\]', body):
+        n = int(m.group(1))
+        if n in fmap and n not in seen:
+            seen.add(n); order.append(n)
+    remap = {old: i + 1 for i, old in enumerate(order)}
+    new_body = re.sub(r'\[(\d{1,3})\]',
+                      lambda mm: ("[%d]" % remap[int(mm.group(1))]) if int(mm.group(1)) in remap else mm.group(0),
+                      body)
+    parts = [new_body.rstrip()]
+    if order:
+        parts.append("\n\n## Footnotes\n" + "\n".join("%d. %s" % (remap[o], fmap[o]) for o in order))
+    for name, content in (sections or []):
+        parts.append("\n\n## " + name + "\n" + (content or "").strip())
+    return "\n".join(parts)
 
 
 _PDF_FONT = None
