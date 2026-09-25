@@ -9478,14 +9478,24 @@ RESHAPE_INSTRUCTION = (
     "introduce a statute, case, section number, date or figure that is not already in the "
     "document; if genuinely more law is needed, mark the exact spot with a '【FILL: what — where "
     "to find it】' placeholder rather than inventing it.\n"
-    "- WHEN CONDENSING, REDUCE DENSITY BY TIGHTENING PROSE, NOT BY CUTTING SUBSTANCE. First "
-    "identify the KEY ISSUES and everything MATERIAL to them — each distinct legal point, the "
+    "- WHEN CONDENSING, FIRST DROP NON-ESSENTIAL SCAFFOLDING SECTIONS WHOLE, THEN tighten the "
+    "prose that remains. Some sections are internal WORKING/QUALITY scaffolding, NOT part of the "
+    "finished paper — remove them entirely before you compress anything substantive: a STRESS-TEST "
+    "/ evaluation / self-assessment / 'testing the reasoning' section, a methodology or 'how this "
+    "was analysed' aside, meta-commentary about the answer itself, and any duplicated recap/summary "
+    "that merely repeats a section already present. Deleting these frees words for the substance and "
+    "is exactly the right first move. (Do NOT delete SUBSTANTIVE sections — the analysis, the "
+    "governing law, the comparative material, the gaps, the reform proposals, the conclusions — nor "
+    "the Bibliography / Tables of Cases and Legislation, nor a 'Supporting sources & data' section.)\n"
+    "- THEN REDUCE REMAINING DENSITY BY TIGHTENING PROSE, NOT BY CUTTING SUBSTANCE. "
+    "Identify the KEY ISSUES and everything MATERIAL to them — each distinct legal point, the "
     "governing authority, the decisive step of the reasoning, the live counterarguments and the "
     "conclusions — and PROTECT ALL OF IT. Get the reduction from HOW it is said, not WHAT is "
     "said: cut redundancy, repetition, throat-clearing, padding and over-explanation; merge "
     "overlapping sentences; make every sentence carry weight. You may compress the elaboration of "
-    "a SECONDARY/peripheral point, but you must NEVER delete a distinct legal point, an authority, "
-    "a counterargument, a hedge, or a conclusion to save words — relevant information stays. "
+    "a SECONDARY/peripheral point, but (scaffolding sections above excepted) you must NEVER delete a "
+    "distinct legal point, an authority, a counterargument, a hedge, or a conclusion to save words — "
+    "relevant substance stays. "
     "PRIORITISE: if space is tight, spend the words on the key issues and trim the least-central "
     "elaboration, never the material law or a holding. If the word target genuinely cannot be met "
     "without cutting substance, get as CLOSE as possible while keeping everything material, and on "
@@ -15448,6 +15458,9 @@ def api_exam_assemble():
             src_lines.append(line)
     src_text = "\n".join(src_lines)
 
+    # A research paper (special paper / dissertation) is not an exam answer — it does NOT carry a
+    # dedicated stress-test / self-evaluation section, so leave that module out for papers.
+    _stress_mod = "" if body.get("paper_type") else (STRESS_TEST + "\n\n")
     system = (
         CALC_AWARE + "\n\n"
         + CONFIG["system_prompt"] + "\n\n" + WRITING_STYLE + "\n\n" + DEPTH + "\n\n"
@@ -15456,7 +15469,7 @@ def api_exam_assemble():
         + CITATION_INTEGRITY + "\n\n" + PRIMARY_FIRST + "\n\n" + PRIMARY_LAW_ROUTING + "\n\n" + PRECISION_DISCIPLINE
         + "\n\n" + NO_OVERSTATEMENT + "\n\n" + QUALIFIED_REASONING + "\n\n" + APPLICATION_DISCIPLINE
         + "\n\n" + TEMPORAL_SUCCESSION + "\n\n" + RECENCY_PREFERENCE + "\n\n" + ARGUMENTATIVE_COMMITMENT
-        + "\n\n" + STRESS_TEST + "\n\n" + COVERAGE + "\n\n" + ECONOMY + "\n\n"
+        + "\n\n" + _stress_mod + COVERAGE + "\n\n" + ECONOMY + "\n\n"
         "ASSEMBLY TASK — apply ALL the rules above to the final document. The per-issue material you "
         "are given is GATHERED DATA — verified law (verbatim, with pinpoints), cases and sources, plus "
         "a one-line pointer per issue — NOT a finished analysis. YOUR JOB IS THE SUBSTANTIVE WRITING: "
@@ -15578,7 +15591,11 @@ def api_exam_assemble():
             "the heading and its gathered law/authorities as the substance. Keep the sections IN ORDER "
             "and make the whole read as ONE continuous " + _asm_pdef["label"] + ", flowing section to "
             "section and closing with the concluding section. "
-            "NO 'Issue 1 / Issue 2' labels and NO IRAC scaffolding. The AUTHOR'S OWN DECISIONS AND "
+            "NO 'Issue 1 / Issue 2' labels and NO IRAC scaffolding. Do NOT add a STRESS-TEST, "
+            "evaluation, self-assessment or 'testing the reasoning' section, and no meta-commentary "
+            "about the paper itself — a research paper carries none of that scaffolding; put any "
+            "critical evaluation INSIDE the analysis and the conclusion, not in a separate section. "
+            "The AUTHOR'S OWN DECISIONS AND "
             "POSITION (captured in the interview and shown as the student's views) are the SPINE: build "
             "the thesis, the analysis, the methodology/data/sampling/ethics (for a dissertation), the "
             "comparators and the reforms around THOSE choices, and state and defend them as the "
