@@ -791,6 +791,7 @@
     <label style="color:#aab4c6;font-size:12px;display:block" title="After shortening/polishing, if the document cites authorities inline (no [n] markers), convert them into proper OSCOLA footnotes — superscript markers + a numbered Footnotes section — so the result is a refined, OSCOLA-compliant document that exports with real page-bottom footnotes. Skipped automatically if the document is already footnoted.">
       <input type="checkbox" id="polishOscola" checked> 📑 Make the result OSCOLA-footnoted (superscript + page-bottom on export)
     </label>
+    <div id="polishRestore"></div>
     <div id="polishStatus" style="font-size:12px;color:#aab4c6;margin-top:8px"></div>
     <div id="polishAuditNote" style="font-size:11.5px;color:#8fb4e0;margin-top:4px"></div>
     <div id="polishOut"></div>
@@ -5686,7 +5687,7 @@ function mountReviewPanel(host, flags, verdict) {
 }
 
 // ---- polish my draft ----
-$("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; };
+$("#openPolish").onclick = () => { $("#polishModal").style.display = "flex"; offerPolishRestore(); };
 $("#polishClose").onclick = () => { $("#polishModal").style.display = "none"; };
 
 // ⚖️ Statutory interpretation — pick your line, argue it, pre-empt the counter-canon.
@@ -6003,6 +6004,9 @@ async function polishDraft() {
   try { meta = parts[1] ? JSON.parse(parts[1]) : {}; } catch (e) {}
   const dot = $("#pDot"); if (dot) dot.remove();
   if (meta.error) { $("#polishStatus").textContent = meta.error; return; }
+  // AUTOSAVE the result immediately (before the audit step) so a refresh, crash or misclick can't
+  // lose an un-exported shortened/polished work — it can be restored from the panel.
+  savePolishLast(out, (shorten ? "Shortened work" : "Polished draft"));
   docEl.style.whiteSpace = "normal"; docEl.innerHTML = mdToHtml(out);
   const wc = out.split(/\s+/).filter(Boolean).length;
   $("#polishStatus").textContent = (shorten ? ("Done · ~" + wc.toLocaleString() + " words. ") : "Done. ")
@@ -6086,7 +6090,41 @@ async function polishDraft() {
     btn.disabled = false; btn.textContent = "Polish / Shorten";
   }
   if ($("#docSpacing") && $("#polishSpacing")) $("#docSpacing").value = $("#polishSpacing").value;  // export at chosen spacing
+  savePolishLast(finalOut, finalTitle);   // keep the fully-processed (audited/footnoted) final version
   renderExportBar(docEl, finalOut, finalTitle, "");
+}
+
+// Autosave the last polished/shortened work to localStorage so an un-exported result survives a
+// refresh, crash or misclick. One slot (the most recent); restored from the panel.
+function savePolishLast(text, title) {
+  if (!text || !text.trim()) return;
+  try { localStorage.setItem("polishLast", JSON.stringify({text: text, title: title || "Saved work", t: Date.now()})); } catch (e) {}
+}
+function loadPolishLast() {
+  try { return JSON.parse(localStorage.getItem("polishLast") || "null"); } catch (e) { return null; }
+}
+function offerPolishRestore() {
+  const box = $("#polishRestore"); if (!box) return;
+  const saved = loadPolishLast();
+  const docEl = $("#polishDoc");
+  // only offer if there's a save AND nothing already shown in the output area
+  if (!saved || !saved.text || (docEl && docEl.innerText && docEl.innerText.trim())) { box.innerHTML = ""; return; }
+  const when = saved.t ? new Date(saved.t).toLocaleString() : "";
+  const wc = saved.text.split(/\s+/).filter(Boolean).length;
+  box.innerHTML = "<div style='background:#122; border:1px solid #2c6; border-radius:8px; padding:8px 10px; margin:6px 0; font-size:12px'>"
+    + "💾 A previous result is saved (<b>" + esc(saved.title || "work") + "</b>, ~" + wc.toLocaleString() + " words" + (when ? ", " + esc(when) : "") + "). "
+    + "<button class='btn' id='polishRestoreBtn' style='width:auto;padding:2px 10px;margin-left:6px'>Restore it</button></div>";
+  const b = $("#polishRestoreBtn");
+  if (b) b.onclick = () => {
+    const out = saved.text;
+    $("#polishOut").innerHTML = "<h4 style='margin:12px 0 4px'>" + esc(saved.title || "Restored work") + "</h4>"
+      + "<div id='polishDoc' style='white-space:normal'></div>";
+    const de = $("#polishDoc"); de.innerHTML = mdToHtml(out);
+    $("#polishStatus").textContent = "Restored ~" + out.split(/\s+/).filter(Boolean).length.toLocaleString() + " words.";
+    if ($("#docSpacing") && $("#polishSpacing")) $("#docSpacing").value = $("#polishSpacing").value;
+    renderExportBar(de, out, saved.title || "Restored work", "");
+    box.innerHTML = "";
+  };
 }
 $("#polishGo").onclick = polishDraft;
 // Convert INLINE citations → OSCOLA footnotes ([n] markers + a Footnotes section) so the export footnotes them.
