@@ -282,7 +282,9 @@
   <h2>Documents in this course</h2>
   <button class="btn gold" id="docHealth" title="Check which documents the bot can actually read, which it can only see partially (and why), and which are only summary/short versions.">🩺 What can the bot see?</button>
   <button class="btn gold" id="cleanHouse" title="Scan this course for DUPLICATE documents (same file under two names, or heavy verbatim overlap) and errors that hurt retrieval (unindexed / near-empty docs). Offers one-click delete/re-index to tidy up.">🧹 Clean house (duplicates & errors)</button>
+  <button class="btn gold" id="refreshCorpus" title="Send this course's primary-law documents to the connected legal database (judy.legal, authoritative for Ghanaian law) and check — as of today — which are still in force, amended, or repealed/replaced, and which new or replacing instruments should be added. New laws can be pulled straight into the corpus.">🔎 Check laws are current (judy)</button>
   <div id="mix"></div>
+  <div id="refreshOut" style="margin:8px 0"></div>
   <div id="healthOut" style="margin:8px 0"></div>
   <div id="hygieneOut" style="margin:8px 0"></div>
   <div id="docs">none yet</div>
@@ -1970,6 +1972,109 @@ async function runDocHealth() {
 }
 // 🧹 Clean house — scan for duplicate documents and source errors, with one-click fixes.
 $("#cleanHouse").onclick = runHygiene;
+
+// 🔎 Check laws are current — send the course's PRIMARY-law docs to the connected legal
+// database (judy for Ghana) and report in-force / amended / repealed status, plus any new
+// or replacing instruments to pull straight into the corpus.
+const _LAWSTAT = {
+  in_force: {ic: "✓", col: "#1f9d55", bg: "#eafaf0", lbl: "In force"},
+  amended:  {ic: "⚠", col: "#b7791f", bg: "#fdf6e3", lbl: "Amended (still in force, but changed)"},
+  repealed: {ic: "✕", col: "#c53030", bg: "#fdeaea", lbl: "Repealed / replaced — do not cite as current"},
+  unknown:  {ic: "?", col: "#5a6373", bg: "#f2f3f5", lbl: "Not confirmed"}
+};
+$("#refreshCorpus").onclick = runCorpusRefresh;
+async function runCorpusRefresh() {
+  const btn = $("#refreshCorpus"), out = $("#refreshOut");
+  const label = "🔎 Check laws are current (judy)";
+  btn.disabled = true; btn.textContent = "Checking with judy…";
+  out.innerHTML = '<span style="font-size:12px;color:#8b93a7">sending your primary-law documents to the legal database and checking each one — this can take a minute or two…</span>';
+  let r;
+  try {
+    r = await (await fetchT("/api/corpus/refresh", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({course: COURSE})}, 480000)).json();
+  } catch (e) {
+    out.innerHTML = "⚠️ couldn’t reach the database this time — click again in a moment.";
+    btn.disabled = false; btn.textContent = label; return;
+  }
+  btn.disabled = false; btn.textContent = label;
+  if (r.error) { out.innerHTML = "⚠️ " + esc(r.error); return; }
+  if (r.no_primary) { out.innerHTML = '<span style="font-size:12px;color:#8b93a7">No primary-law documents in this course to check.</span>'; return; }
+  if (r.no_db) {
+    out.innerHTML = '<div style="border:1px solid #e2b93b;background:#fdf6e3;border-radius:8px;padding:10px;font-size:12.5px;line-height:1.5">'
+      + '<b>No legal database connected.</b> Connect <b>judy.legal</b> (a legal-database connector) so the bot can verify whether these laws are still in force. '
+      + 'Until then their status can’t be confirmed automatically.</div>';
+    return;
+  }
+  const results = r.results || [], cands = r.candidates || [], mentions = r.mentions || [];
+  let html = '<div style="border:1px solid #d6dae2;border-radius:8px;padding:10px;font-size:12.5px;line-height:1.5">';
+  // headline counts
+  const nRep = results.filter(x => x.status === "repealed").length;
+  const nAmd = results.filter(x => x.status === "amended").length;
+  html += '<div style="font-weight:700;margin-bottom:6px">Currency check — ' + results.length + ' primary-law document' + (results.length === 1 ? "" : "s")
+        + (nRep ? ' · <span style="color:#c53030">' + nRep + ' repealed/replaced</span>' : "")
+        + (nAmd ? ' · <span style="color:#b7791f">' + nAmd + ' amended</span>' : "")
+        + '</div>';
+  // sort: problems first (repealed, amended), then unknown, then in force
+  const _ord = {repealed: 0, amended: 1, unknown: 2, in_force: 3};
+  results.slice().sort((a, b) => (_ord[a.status] ?? 9) - (_ord[b.status] ?? 9)).forEach(x => {
+    const s = _LAWSTAT[x.status] || _LAWSTAT.unknown;
+    html += '<div style="display:flex;gap:8px;align-items:flex-start;margin:5px 0;padding:6px 8px;border-radius:6px;background:' + s.bg + '">'
+      + '<span style="color:' + s.col + ';font-weight:700;font-size:14px;line-height:1.2">' + s.ic + '</span>'
+      + '<div><div style="font-weight:600">' + esc(x.instrument) + '</div>'
+      + '<div style="color:' + s.col + ';font-size:11.5px;font-weight:600">' + esc(s.lbl) + '</div>'
+      + (x.current ? '<div style="font-size:11.5px"><b>Now governed by:</b> ' + esc(x.current) + '</div>' : "")
+      + (x.note ? '<div style="font-size:11.5px;color:#4a5160">' + esc(x.note) + '</div>' : "")
+      + '</div></div>';
+  });
+  // candidates the user can pull in with one click
+  if (cands.length) {
+    html += '<div style="font-weight:700;margin:10px 0 4px">New / replacing laws to add — pull them into the corpus</div>';
+    cands.forEach((c, i) => {
+      html += '<label style="display:block;cursor:pointer;margin:3px 0;padding:5px 8px;border:1px solid #cfe3d0;background:#f3faf4;border-radius:6px;font-size:12px">'
+        + '<input type="checkbox" class="rcCand" data-i="' + i + '" checked> <b>' + esc(c.title) + '</b>'
+        + (c.why ? ' <span style="color:#4a5160">— ' + esc(c.why) + '</span>' : "")
+        + '<div style="font-size:11px;color:#7a8296;margin-left:20px;word-break:break-all">' + esc(c.url) + '</div></label>';
+    });
+    html += '<button class="btn gold" id="rcPull" style="margin-top:6px">⬇️ Pull selected into corpus</button>'
+          + '<div id="rcPullOut" style="font-size:12px;margin-top:6px"></div>';
+  }
+  // instruments mentioned by name but with no fetchable URL → surface, don't auto-fetch
+  if (mentions.length) {
+    html += '<div style="font-weight:700;margin:10px 0 4px">Also flagged (no direct source link — add manually)</div>';
+    mentions.forEach(m => {
+      html += '<div style="font-size:12px;margin:2px 0">• ' + esc(m.title)
+            + (m.why ? ' <span style="color:#4a5160">— ' + esc(m.why) + '</span>' : "") + '</div>';
+    });
+  }
+  html += '<div style="font-size:10.5px;color:#8b93a7;margin-top:8px">Verified against the connected legal database as of today. Confirm anything marked “Not confirmed” against the official source before relying on it.</div>';
+  html += '</div>';
+  out.innerHTML = html;
+  // wire the pull-in button (uses the same guarded fetch-and-index path as Legal updates)
+  const pull = $("#rcPull");
+  if (pull) pull.onclick = async () => {
+    const laws = [...document.querySelectorAll(".rcCand:checked")].map(cb => cands[+cb.dataset.i]).filter(Boolean);
+    const pout = $("#rcPullOut");
+    if (!laws.length) { pout.textContent = "Tick at least one law first."; return; }
+    pull.disabled = true; pull.textContent = "Fetching & indexing…";
+    pout.innerHTML = '<span style="color:#8b93a7">fetching each law’s text and adding it to the corpus…</span>';
+    try {
+      const rr = await (await fetchT("/api/updates/fetch", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({course: COURSE, laws})}, 300000)).json();
+      if (rr.error) { pout.innerHTML = "⚠️ " + esc(rr.error); pull.disabled = false; pull.textContent = "⬇️ Pull selected into corpus"; return; }
+      const rows = (rr.results || []).map(x =>
+        (x.ok ? '✅ ' : '⚠️ ') + esc(x.title) + (x.ok ? '' : ' — ' + esc(x.why || "couldn’t add"))).join("<br>");
+      pout.innerHTML = rows + '<div style="color:#8b93a7;font-size:11px;margin-top:4px">Added ' + (rr.added || 0)
+        + ' — indexing runs in the background; they’ll be searchable shortly.</div>';
+      pull.textContent = "Done";
+      refresh();   // redraw the corpus (tier folders) with the newly-added laws
+    } catch (e) {
+      pout.innerHTML = "⚠️ couldn’t fetch them this time — try again.";
+      pull.disabled = false; pull.textContent = "⬇️ Pull selected into corpus";
+    }
+  };
+}
 
 // --- Ask a document: entry-point retired (the floating dock's 🎯 Pin a doc covers this). ---
 $("#docChatClose").onclick = () => { $("#docChatModal").style.display = "none"; };

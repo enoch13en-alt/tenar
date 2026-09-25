@@ -6943,6 +6943,207 @@ def api_mcp_dbg():
     return jsonify({"last_auth_err": app.config.get("_last_auth_err")})
 
 
+@app.route("/api/law/currency", methods=["POST"])
+def api_law_currency():
+    """IN-FORCE CHECK — before the work relies on an instrument, ask the connected legal database(s)
+    (judy.legal is authoritative for Ghanaian law) whether each is still in force, or has been
+    amended / repealed / replaced, as of today. Returns a per-instrument verdict so a repealed law
+    (e.g. an L.I. whose parent Act was replaced) is caught before it is cited as current."""
+    if current_user() is None:
+        return jsonify({"auth": True, "error": "login required"}), 401
+    body = request.json or {}
+    insts = [str(x).strip() for x in (body.get("instruments") or []) if str(x).strip()][:20]
+    if not insts:
+        return jsonify({"results": []})
+    c = _client()
+    conn = _authority_connectors()
+    if not c or not conn["names"]:
+        return jsonify({"no_db": True, "results": [
+            {"instrument": i, "status": "unknown",
+             "note": "No legal database connected — connect judy.legal to verify.", "current": ""}
+            for i in insts]})
+    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
+    today = datetime.date.today().isoformat()
+    system = (
+        "You verify whether legislation is IN FORCE. Use the connected legal database(s) — judy.legal "
+        "is AUTHORITATIVE for GHANAIAN law — and, only as a fallback for non-African instruments, web "
+        "search. For EACH instrument listed, determine its status AS OF TODAY (" + today + "): is it "
+        "currently in force, has it been AMENDED, or has it been REPEALED / REVOKED / REPLACED, and if "
+        "so BY WHAT instrument and WHEN. Pay special attention to SUBSIDIARY legislation (L.I./"
+        "Regulations) whose PARENT Act may since have been replaced. Return STRICT JSON — an ARRAY of "
+        "{\"instrument\":\"<as given>\", \"status\":\"in_force\"|\"amended\"|\"repealed\"|\"unknown\", "
+        "\"current\":\"<the instrument that now governs if repealed/replaced, else empty>\", "
+        "\"note\":\"<one short line: what the source shows, naming the amending/repealing instrument "
+        "and date if any>\"}. Base each verdict ONLY on what the database/search actually shows; if you "
+        "cannot confirm, use \"unknown\" — NEVER guess a repeal or a survival. No prose, no fences.")
+    user = "Check the in-force status, as of today, of each of these instruments:\n- " + "\n- ".join(insts)
+    import concurrent.futures as _cf
+    ex = _cf.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = ex.submit(lambda: c.with_options(max_retries=0, timeout=300).beta.messages.create(
+            model=AUDIT_MODEL, max_tokens=3000, system=system,
+            messages=[{"role": "user", "content": user}],
+            tools=list(conn["tools"]) + web, mcp_servers=conn["mcp_servers"], betas=conn["betas"]))
+        resp = fut.result(timeout=330)
+        try:
+            record_cost(resp, AUDIT_MODEL)
+        except Exception:
+            pass
+        txt = (_text_of(resp) or "").strip()
+        m = re.search(r"\[.*\]", txt, re.S)          # take the JSON array even amid tool narration
+        data = json.loads(m.group(0)) if m else (_parse_json(txt) if txt else [])
+        if isinstance(data, dict):
+            data = data.get("results") or data.get("instruments") or []
+    except Exception as e:
+        app.logger.exception("law currency check failed")
+        app.config["_last_auth_err"] = repr(e)[:300]
+        return jsonify({"results": [{"instrument": i, "status": "unknown",
+            "note": "Couldn't reach the database this time — try again.", "current": ""} for i in insts]})
+    finally:
+        ex.shutdown(wait=False)
+    by = {}
+    for it in (data or []):
+        if isinstance(it, dict) and (it.get("instrument") or "").strip():
+            by[(it["instrument"]).strip().lower()] = {
+                "instrument": str(it.get("instrument")).strip(),
+                "status": (str(it.get("status") or "unknown").strip().lower()
+                           if str(it.get("status") or "").strip().lower() in ("in_force", "amended", "repealed", "unknown") else "unknown"),
+                "current": str(it.get("current") or "").strip(),
+                "note": str(it.get("note") or "").strip()[:400]}
+    results = []
+    for i in insts:
+        results.append(by.get(i.strip().lower(), {"instrument": i, "status": "unknown",
+            "current": "", "note": "Not confirmed by the database."}))
+    return jsonify({"results": results})
+
+
+@app.route("/api/corpus/refresh", methods=["POST"])
+def api_corpus_refresh():
+    """KEEP THE CORPUS FRESH — take the PRIMARY-law documents this course already holds, send that
+    list to the connected legal database (judy.legal is authoritative for Ghanaian law), and ask,
+    as of today, which are still in force / amended / repealed / replaced, AND which NEW or replacing
+    instruments should be pulled into the corpus (with an official source URL where the database or
+    a web search can supply one). Returns a status report plus a list of pull-in candidates; the
+    actual fetch-and-index is done by /api/updates/fetch so ingestion stays one guarded path."""
+    if current_user() is None:
+        return jsonify({"auth": True, "error": "login required"}), 401
+    body = request.json or {}
+    course = safe_course(body.get("course", ""))
+    if is_matter(course):
+        if not owns_matter(current_user(), course):
+            return jsonify({"error": "That matter isn't yours."}), 403
+    elif not (current_user() or {}).get("is_admin"):
+        return jsonify({"error": "Only an admin can refresh a shared course."}), 403
+    ensure_loaded(course)
+    files = sorted(course_pdfs(course))
+    ensure_types(files)
+    # the instruments to verify = the PRIMARY-tier documents (statutes, L.I.s, the Constitution,
+    # cases). Reports/scholarship/data don't get an "in force" verdict, so we skip them.
+    prim = []
+    seen = set()
+    for f in files:
+        if source_class(f) != "primary":
+            continue
+        nm = (display_name(f) or f).strip()
+        key = nm.lower()
+        if nm and key not in seen:
+            seen.add(key)
+            prim.append(nm)
+    prim = prim[:30]
+    if not prim:
+        return jsonify({"no_primary": True, "results": [], "candidates": [],
+                        "note": "No primary-law documents in this course to check."})
+    c = _client()
+    conn = _authority_connectors()
+    if not c or not conn["names"]:
+        return jsonify({"no_db": True, "checked": prim, "candidates": [], "results": [
+            {"instrument": i, "status": "unknown",
+             "note": "No legal database connected — connect judy.legal to verify.", "current": ""}
+            for i in prim]})
+    web = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
+    today = datetime.date.today().isoformat()
+    system = (
+        "You keep a legal research corpus CURRENT. You are given the PRIMARY-law documents a corpus "
+        "already holds. Use the connected legal database(s) — judy.legal is AUTHORITATIVE for GHANAIAN "
+        "law — and, only as a fallback, web search.\n\n"
+        "DO TWO THINGS, as of today (" + today + "):\n"
+        "1) STATUS: for EACH listed instrument, say whether it is currently in force, has been AMENDED, "
+        "or has been REPEALED / REVOKED / REPLACED, naming the amending/repealing instrument and its "
+        "date. Watch SUBSIDIARY legislation (L.I./Regulations) whose PARENT Act may have been replaced.\n"
+        "2) NEW & REPLACEMENT instruments to ADD: list any instrument that SHOULD now be in the corpus "
+        "but is not evident in the list — a statute or L.I. that repealed/replaced/amended one of these, "
+        "or a newer principal enactment on the same subject. For each, give an official SOURCE URL where "
+        "its text can be fetched if you can find one (an official gazette, the parliament/ministry site, "
+        "or a stable public copy); leave url empty if you cannot find a real one — NEVER invent a URL.\n\n"
+        "Return STRICT JSON, no prose, no fences:\n"
+        "{\"results\":[{\"instrument\":\"<as given>\",\"status\":\"in_force\"|\"amended\"|\"repealed\"|"
+        "\"unknown\",\"current\":\"<the instrument that now governs if repealed/replaced, else empty>\","
+        "\"note\":\"<one short line naming the amending/repealing instrument and date, or what the "
+        "source shows>\"}],"
+        "\"candidates\":[{\"title\":\"<full short title, year and number of the new/replacing "
+        "instrument>\",\"url\":\"<official source URL or empty>\",\"why\":\"<one line: what it "
+        "repeals/replaces/adds>\"}]}\n\n"
+        "Base every verdict ONLY on what the database/search actually shows; if you cannot confirm, use "
+        "\"unknown\" and do NOT list a candidate. Never guess a repeal, a survival, or a URL.")
+    user = ("These are the PRIMARY-law documents in the corpus for the course '" + course + "'. Verify "
+            "their status and identify what to add:\n- " + "\n- ".join(prim))
+    import concurrent.futures as _cf
+    ex = _cf.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = ex.submit(lambda: c.with_options(max_retries=0, timeout=420).beta.messages.create(
+            model=AUDIT_MODEL, max_tokens=5000, system=system,
+            messages=[{"role": "user", "content": user}],
+            tools=list(conn["tools"]) + web, mcp_servers=conn["mcp_servers"], betas=conn["betas"]))
+        resp = fut.result(timeout=450)
+        try:
+            record_cost(resp, AUDIT_MODEL)
+        except Exception:
+            pass
+        txt = (_text_of(resp) or "").strip()
+        obj = _first_json_obj(txt) or {}
+        raw_results = obj.get("results") or []
+        raw_cands = obj.get("candidates") or []
+    except Exception as e:
+        app.logger.exception("corpus refresh check failed")
+        app.config["_last_auth_err"] = repr(e)[:300]
+        return jsonify({"checked": prim, "candidates": [], "results": [
+            {"instrument": i, "status": "unknown", "current": "",
+             "note": "Couldn't reach the database this time — try again."} for i in prim]})
+    finally:
+        ex.shutdown(wait=False)
+    ALLOWED = ("in_force", "amended", "repealed", "unknown")
+    by = {}
+    for it in raw_results:
+        if isinstance(it, dict) and (it.get("instrument") or "").strip():
+            st = str(it.get("status") or "unknown").strip().lower()
+            by[(it["instrument"]).strip().lower()] = {
+                "instrument": str(it.get("instrument")).strip(),
+                "status": st if st in ALLOWED else "unknown",
+                "current": str(it.get("current") or "").strip(),
+                "note": str(it.get("note") or "").strip()[:400]}
+    results = [by.get(i.strip().lower(), {"instrument": i, "status": "unknown",
+               "current": "", "note": "Not confirmed by the database."}) for i in prim]
+    # candidates the user can pull in with one click. Keep only ones with a real http(s) URL —
+    # a title with no fetchable source can't be ingested, so we surface it as a note, not a button.
+    have = set(seen)
+    candidates, mentions = [], []
+    for cnd in raw_cands:
+        if not isinstance(cnd, dict):
+            continue
+        title = str(cnd.get("title") or "").strip()[:160]
+        url = str(cnd.get("url") or "").strip()
+        why = str(cnd.get("why") or "").strip()[:300]
+        if not title or title.lower() in have:
+            continue
+        have.add(title.lower())
+        if re.match(r"^https?://", url):
+            candidates.append({"title": title, "url": url, "why": why})
+        else:
+            mentions.append({"title": title, "why": why})
+    return jsonify({"checked": prim, "results": results,
+                    "candidates": candidates[:12], "mentions": mentions[:12]})
+
+
 # ---- DECOUPLED authority job (so a multi-minute live pass never blocks the gather) ----------
 # The gather returns its corpus data sheet FAST; the frontend then starts this background job and
 # polls it, splicing the statutes/cases/comparative in when ready. Runs on gevent's REAL threadpool
