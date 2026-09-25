@@ -9696,8 +9696,8 @@ def api_exam_reshape():
                 # final version is sent to the box. Stop when within tolerance, when a round stops
                 # reducing (diminishing returns), or after the round cap — whichever comes first.
                 cur = text
-                tol = int(target_words * 1.12)          # accept within ~12% of the target
-                for _round in range(3):
+                tol = int(target_words * 1.06)          # accept within ~6% of the target
+                for _round in range(6):
                     if _round == 0:
                         instr = instruction
                     else:
@@ -9714,8 +9714,10 @@ def api_exam_reshape():
                                stream_out=False)
                     cur = (nxt or cur).strip()
                     now_wc = _body_words(cur)
-                    if now_wc <= tol or now_wc >= int(prev_wc * 0.97):
-                        break                            # landed it, or it isn't shrinking further
+                    # stop only when we've LANDED it, or a round genuinely stops shrinking (<1.5% cut) —
+                    # keep going while each round still removes a meaningful chunk toward the target.
+                    if now_wc <= tol or now_wc >= int(prev_wc * 0.985):
+                        break
                 q.put(cur)                               # send the accepted final version to the box
             q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd[0], 5),
                                                "total_usd": total_usd[0]}}))
@@ -15401,9 +15403,14 @@ def api_exam_assemble():
     # word_limit win, "12 pages" silently becomes 12000 words (~43 pages) — the bug this fixes. Convert
     # pages→words at the real spacing + font size (a 14pt page holds fewer words than 11pt).
     if page_limit:
-        base = 280 if line_spacing >= 2 else 350 if line_spacing >= 1.5 else 500 if line_spacing else 350
-        wpp = max(120, int(base * (12.0 / font_size) ** 2))
-        word_limit = page_limit * wpp
+        # REALISTIC words/page for a footnoted, heading-broken academic page (a plain-prose 280/page is
+        # too high once footnotes and headings eat vertical space), scaled by font size. And a paper has
+        # non-body pages — title, abstract, contents, bibliography, tables — so RESERVE a few pages of
+        # overhead: the word target is body-only, but the reader counts the WHOLE document's pages.
+        base = 240 if line_spacing >= 2 else 300 if line_spacing >= 1.5 else 430 if line_spacing else 300
+        wpp = max(110, int(base * (12.0 / font_size) ** 2))
+        overhead = 3 if _asm_pdef_early else 0
+        word_limit = max(1, page_limit - overhead) * wpp
     # SAFETY NET: if NEITHER a page nor a word target was given, fall back to the paper type's standard
     # body length so a research paper always builds to a sensible size.
     if _asm_pdef_early and not word_limit:

@@ -5962,8 +5962,11 @@ async function polishDraft() {
   if (tgt > 0) {
     if (unit === "pages") {
       const sp = parseFloat($("#polishSpacing").value) || 1.5;
-      const wpp = sp >= 2 ? 280 : sp >= 1.5 ? 350 : 500;   // matches the compile page→word conversion
-      words = tgt * wpp;
+      // realistic body words per page for a footnoted, heading-broken page (matches the compile),
+      // and reserve ~2 pages for footnotes / front & back matter so the WHOLE document lands near
+      // the page target rather than overshooting (a plain-prose 280/page rendered ~18pp for 12).
+      const wpp = sp >= 2 ? 240 : sp >= 1.5 ? 300 : 430;
+      words = Math.max(1, tgt - 2) * wpp;
     } else { words = tgt; }
   }
   const shorten = words > 0;
