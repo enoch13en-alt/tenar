@@ -5319,7 +5319,33 @@ function renderExportBar(afterEl, doc, wordName, defaultTitle) {
     e.target.textContent = "Copied ✓";
     setTimeout(() => e.target.textContent = "Copy document", 1500);
   };
-  box.querySelector(".bWord").onclick = () => downloadDocx(doc, val("title") || wordName);
+  box.querySelector(".bWord").onclick = async (e) => {
+    // "Just download" but GUARANTEE footnotes: if this document doesn't already have [n] markers + a
+    // Footnotes section, run ONE quick OSCOLA pass to build page-bottom footnotes from its citations
+    // (far shorter than a re-shorten), then download. No-op if it's already footnoted, or if there are
+    // no citations to footnote (then it downloads as-is).
+    const b = e.target, orig = b.textContent;
+    let out = doc, converted = false;
+    try {
+      const hasMarks = /\[\d{1,3}\]/.test(out);
+      const hasNotes = /(?:^|\n)\s*#{0,4}\s*Footnotes\b/i.test(out);
+      if (!(hasMarks && hasNotes)) {
+        b.disabled = true; b.textContent = "Adding footnotes…";
+        const fr = await (await fetch("/api/oscola/footnote", {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: out})})).json();
+        if (fr && fr.converted && fr.changed !== false) { out = fr.converted; converted = true; }
+      }
+    } catch (_) {}
+    b.disabled = false; b.textContent = orig;
+    downloadDocx(out, val("title") || wordName);
+    if (converted) {   // persist + re-render so the footnoted version is now THE document (PDF too)
+      if (typeof EXAM !== "undefined" && EXAM && EXAM.doc === doc) { EXAM.doc = out; try { saveExam(); } catch (_) {} }
+      try { savePolishLast(out, val("title") || wordName); } catch (_) {}
+      afterEl.innerHTML = mdToHtml(out);
+      box.remove();
+      renderExportBar(afterEl, out, wordName, defaultTitle);
+    }
+  };
   const pdfEl = box.querySelector(".bPdf");
   if (pdfEl) pdfEl.onclick = async e => {
     const meta = {
