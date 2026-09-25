@@ -9486,7 +9486,9 @@ RESHAPE_INSTRUCTION = (
     "that merely repeats a section already present. Deleting these frees words for the substance and "
     "is exactly the right first move. (Do NOT delete SUBSTANTIVE sections — the analysis, the "
     "governing law, the comparative material, the gaps, the reform proposals, the conclusions — nor "
-    "the Bibliography / Tables of Cases and Legislation, nor a 'Supporting sources & data' section.)\n"
+    "the Bibliography / Tables of Cases and Legislation, nor a 'Supporting sources & data' section. "
+    "And footnotes are NOT scaffolding: KEEP every [n] footnote marker and the entire Footnotes "
+    "section — never drop a footnote to save words.)\n"
     "- THEN REDUCE REMAINING DENSITY BY TIGHTENING PROSE, NOT BY CUTTING SUBSTANCE. "
     "Identify the KEY ISSUES and everything MATERIAL to them — each distinct legal point, the "
     "governing authority, the decisive step of the reasoning, the live counterarguments and the "
@@ -9706,8 +9708,11 @@ def api_exam_reshape():
                                  "Cut it to about " + str(target_words) + " words: remove elaboration, "
                                  "examples, background, repetition and redundant sentences, and tighten "
                                  "the prose. KEEP every legal rule VERBATIM, every citation/authority and "
-                                 "all conclusions — cut commentary, not law. Output ONLY the shortened "
-                                 "document.")
+                                 "all conclusions. KEEP EVERY [n] FOOTNOTE MARKER AND THE ENTIRE FOOTNOTES "
+                                 "SECTION — footnotes are citations, NOT commentary to cut; renumber them "
+                                 "sequentially if you merge sentences, but never drop one. The word target "
+                                 "is BODY TEXT ONLY and does NOT include footnotes, so do not delete "
+                                 "footnotes to hit it. Output ONLY the shortened document.")
                     prev_wc = _body_words(cur)
                     nxt = _run([{"role": "user", "content":
                                  "RESHAPE INSTRUCTION: " + instr + "\n\nDOCUMENT TO RESHAPE:\n\n" + cur}],
