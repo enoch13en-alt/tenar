@@ -5699,6 +5699,7 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
     _cur_dir = _currency_directive(course)
     if _cur_dir:
         system = system + "\n\n" + _cur_dir
+    siblings_note = ""   # per-issue "issue N of M" note, kept OUT of the cached system prompt
     if mode == "gather":
         # The gather is a DATA SHEET (collect law + cases + comparative + secondary), NOT an answer —
         # so append a gather-only scope note with NO IRAC/application/conclusion language (ISSUE_SCOPE
@@ -5714,8 +5715,12 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         system = system + "\n\n" + RECENCY_PREFERENCE  # prefer the most recent on-point source
         if siblings and isinstance(siblings, list):
             n = (issue_index + 1) if isinstance(issue_index, int) else "?"
-            system = system + (
-                "\n\nTHE FULL ISSUE SET (you are answering ONLY issue " + str(n) + " of "
+            # This block names the CURRENT issue number, which changes every issue. Keeping it OUT of
+            # the cached system prompt (it goes into the user content below) lets the large, stable
+            # gather-writer system prompt actually cache-HIT across issues 2..N instead of re-writing
+            # the whole prefix at 1.25x every issue.
+            siblings_note = (
+                "THE FULL ISSUE SET (you are answering ONLY issue " + str(n) + " of "
                 + str(len(siblings)) + "):\n" + "\n".join(str(s) for s in siblings[:25])
                 + "\nResolve ONLY your own issue. Any matter that plainly belongs to another issue "
                 "listed above — even if this issue's wording brushes against it — is resolved THERE; "
@@ -5830,6 +5835,10 @@ def answer_question(course, question, include_web=True, fmt="essay", max_out=800
         except Exception:
             pass          # extraction failed → writer still works from the passages directly
     # ---- PHASE 2: WRITE THE ANSWER -----------------------------------------------------
+    # The per-issue "issue N of M" note rides in the USER content (not the cached system prompt), so
+    # the big writer system prompt stays byte-identical across issues and caches at 0.1x from issue 2.
+    if siblings_note:
+        content = list(content) + [{"type": "text", "text": siblings_note}]
     kwargs = dict(model=primary_model,
                   max_tokens=max_out,
                   messages=[{"role": "user", "content": content}])
