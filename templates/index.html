@@ -569,8 +569,9 @@
             <option value="guide">🧭 Research guide (where to look &amp; why)</option>
           </select>
         </label>
-        <label title="Target word count for the synthesised document. Leave blank for no limit.">Words:
-          <input type="number" id="wordLimit" placeholder="none" min="100" step="50" style="width:74px;display:inline-block">
+        <label title="Target word count for the synthesised document. Leave blank for no limit. If you set Pages instead, Pages wins.">Words:
+          <input type="number" id="wordLimit" placeholder="none" min="100" step="50" style="width:74px;display:inline-block"
+                 oninput="var p=document.getElementById('pageLimit'); if(this.value){p.value='';p.disabled=true;p.style.opacity=.5;}else{p.disabled=false;p.style.opacity=1;}">
         </label>
         <label title="Whether footnotes count toward the word limit — lecturers differ.">
           <select id="fnCount" style="width:auto;display:inline-block">
@@ -578,8 +579,9 @@
             <option value="count">footnotes counted</option>
           </select>
         </label>
-        <label title="Approximate page limit. Pages depend on font/size/spacing, so this is converted to a word target for writing.">Pages:
-          <input type="number" id="pageLimit" placeholder="none" min="1" step="1" style="width:56px;display:inline-block">
+        <label title="Approximate page limit. Pages depend on font/size/spacing, so this is converted to a word target for writing. If set, Pages OVERRIDES Words.">Pages:
+          <input type="number" id="pageLimit" placeholder="none" min="1" step="1" style="width:56px;display:inline-block"
+                 oninput="var w=document.getElementById('wordLimit'); if(this.value){w.value='';w.disabled=true;w.style.opacity=.5;}else{w.disabled=false;w.style.opacity=1;}">
         </label>
         <label title="Font for the exported Word/PDF document.">Font:
           <select id="docFont" style="width:auto;display:inline-block">
@@ -4851,7 +4853,8 @@ async function compileExam(finalize) {
         question: EXAM.question, facts: EXAM.facts, length: $("#examLen").value,
         paper_type: EXAM.paperType || "",
         paper_direction: EXAM.paperDirection || null,
-        word_limit: parseInt(($("#wordLimit")||{}).value) || 0,
+        // page count wins: if a page target is set, don't also send the (auto-pre-filled) word limit
+        word_limit: ((parseInt(($("#pageLimit")||{}).value) || 0) ? 0 : (parseInt(($("#wordLimit")||{}).value) || 0)),
         page_limit: parseInt(($("#pageLimit")||{}).value) || 0,
         line_spacing: parseFloat(($("#docSpacing")||{}).value) || 0,
         font_size: parseInt(($("#docFontSize")||{}).value) || 0,

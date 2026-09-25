@@ -15326,23 +15326,27 @@ def api_exam_assemble():
     footnotes_inclusive = bool(body.get("footnotes_inclusive"))
     line_spacing = float(body.get("line_spacing") or 0)
     font_size = int(body.get("font_size") or 0) or 12
-    # convert a page target to a word target — words/page depend on spacing AND font size (a 14pt
-    # page holds far fewer words than 11pt), so scale by (12/size)^2. The reshape loop then lands it.
-    if not word_limit and page_limit:
-        base = 280 if line_spacing >= 2 else 350 if line_spacing >= 1.5 else 500 if line_spacing else 350
-        wpp = max(120, int(base * (12.0 / font_size) ** 2))
-        word_limit = page_limit * wpp
-    # SAFETY NET: a research paper always has a length target even if the field was left empty (e.g. a
-    # session set up before the defaults landed) — fall back to the paper type's standard body length,
-    # and default to double-spacing / footnotes-excluded so the compile is built to the right size.
+    # Apply the paper-type DEFAULTS FIRST (spacing / footnotes), so the page→word conversion below
+    # uses the SAME spacing the document will actually be exported at.
     _asm_pdef_early = PAPER_TYPES.get(body.get("paper_type")) if body.get("paper_type") else None
-    if _asm_pdef_early and not word_limit:
+    if _asm_pdef_early:
         _dd = _asm_pdef_early.get("defaults", {})
-        word_limit = int(_dd.get("word_limit") or 0)
         if not line_spacing:
             line_spacing = float(_dd.get("line_spacing") or 2.0)
         if "footnotes_inclusive" not in body:
             footnotes_inclusive = bool(_dd.get("footnotes_inclusive"))
+    # An explicitly-entered PAGE count GOVERNS and overrides any word target: the word-limit field is
+    # pre-filled from the paper-type default (e.g. dissertation 12000), so if we let a stale pre-filled
+    # word_limit win, "12 pages" silently becomes 12000 words (~43 pages) — the bug this fixes. Convert
+    # pages→words at the real spacing + font size (a 14pt page holds fewer words than 11pt).
+    if page_limit:
+        base = 280 if line_spacing >= 2 else 350 if line_spacing >= 1.5 else 500 if line_spacing else 350
+        wpp = max(120, int(base * (12.0 / font_size) ** 2))
+        word_limit = page_limit * wpp
+    # SAFETY NET: if NEITHER a page nor a word target was given, fall back to the paper type's standard
+    # body length so a research paper always builds to a sensible size.
+    if _asm_pdef_early and not word_limit:
+        word_limit = int((_asm_pdef_early.get("defaults") or {}).get("word_limit") or 0)
     c = _client()
     if not c:
         return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 400
@@ -15934,16 +15938,44 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
         ref = OxmlElement('w:footnoteReference'); ref.set(qn('w:id'), str(uid)); run._r.append(ref)
         built.append((uid, fmap[src_n]))
 
+    _LIST_RE = re.compile(r'^\s*([-*+]\s+|\d+[.)]\s+)')
+    _HR_RE = re.compile(r'^([-*_]\s*){3,}$')
+
     def render_block(txt, small=False):
         lines = (txt or "").split("\n")
+        buf = []
+
+        def emit(text):
+            text = (text or "").strip()
+            if not text:
+                return
+            p = d.add_paragraph()
+            for seg, bold, ital in _md_runs(text):
+                for part in mark_re.split(seg):
+                    if not part:
+                        continue
+                    mk = re.fullmatch(r"\[(\d{1,3})\]", part)
+                    if mk and int(mk.group(1)) in fmap:
+                        add_fn_ref(p, int(mk.group(1)))
+                    else:
+                        r = p.add_run(part); r.bold, r.italic = bold, ital
+                        if small:
+                            r.font.size = Pt(notes_pt)
+
+        def flush():
+            if buf:
+                emit(" ".join(buf)); buf.clear()
+
         i = 0
         while i < len(lines):
             line = lines[i].rstrip()
             if not line.strip():
+                flush()
                 i += 1
                 continue
             # markdown pipe-table → real Word table (computation schedules in calc answers)
             if '|' in line and i + 1 < len(lines) and _TBL_SEP.match(lines[i + 1].strip()):
+                flush()
                 headers = _tbl_split_row(line)
                 rows, j = [], i + 2
                 while j < len(lines):
@@ -15957,22 +15989,21 @@ def _docx_with_footnotes(body, fmap, sections, title, font, font_size, line_spac
                 continue
             m = re.match(r"^(#{1,4})\s+(.*)", line)
             if m:
+                flush()
                 d.add_heading(m.group(2).strip(), level=min(len(m.group(1)), 4))
                 i += 1
                 continue
-            p = d.add_paragraph()
-            for seg, bold, ital in _md_runs(line):
-                for part in mark_re.split(seg):
-                    if not part:
-                        continue
-                    mk = re.fullmatch(r"\[(\d{1,3})\]", part)
-                    if mk and int(mk.group(1)) in fmap:
-                        add_fn_ref(p, int(mk.group(1)))
-                    else:
-                        r = p.add_run(part); r.bold, r.italic = bold, ital
-                        if small:
-                            r.font.size = Pt(notes_pt)
+            # Back-matter (small=bibliography/tables), list items and horizontal rules stay ONE PER LINE.
+            # Ordinary body prose is COALESCED: a single newline is a soft break within the paragraph,
+            # only a BLANK line ends it — so a sentence never gets split across two paragraphs.
+            if small or _LIST_RE.match(line) or _HR_RE.match(line):
+                flush()
+                emit(line)
+                i += 1
+                continue
+            buf.append(line)
             i += 1
+        flush()
 
     render_block(body)
     for name, content in (sections or []):
@@ -16130,14 +16161,43 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
     # tolerate one space before the marker (see _docx_with_footnotes) so spaced [n] still superscripts
     _mark = re.compile(r"(?<=\S)[ \t]?(\[\d{1,3}\])")
     _lines = text.split("\n")
+    _list_re = re.compile(r'^\s*([-*+]\s+|\d+[.)]\s+)')
+    _hr_re = re.compile(r'^([-*_]\s*){3,}$')
+    _buf = []
+
+    def _emit(line_text):
+        line_text = (line_text or "").strip()
+        if not line_text:
+            return
+        p = d.add_paragraph()
+        for seg, bold, ital in _md_runs(line_text):
+            # split each segment on attached footnote markers [n] so they become superscript runs
+            parts = [seg] if in_notes else _mark.split(seg)
+            for part in parts:
+                if not part:
+                    continue
+                mk = None if in_notes else re.fullmatch(r"\[(\d{1,3})\]", part)
+                r = p.add_run(mk.group(1) if mk else part)
+                r.bold, r.italic = bold, ital
+                if mk:
+                    r.font.superscript = True
+                elif in_notes:
+                    r.font.size = Pt(notes_pt)
+
+    def _flush():
+        if _buf:
+            _emit(" ".join(_buf)); _buf.clear()
+
     _i = 0
     while _i < len(_lines):
         line = _lines[_i].rstrip()
         if not line.strip():
+            _flush()
             _i += 1
             continue
         # markdown pipe-table → real Word table (header row + |---| separator + body rows)
         if not in_notes and '|' in line and _i + 1 < len(_lines) and _TBL_SEP.match(_lines[_i + 1].strip()):
+            _flush()
             headers = _tbl_split_row(line)
             rows, j = [], _i + 2
             while j < len(_lines):
@@ -16151,27 +16211,23 @@ def _md_to_docx(text, title, font="", font_size=0, line_spacing=0):
             continue
         m = re.match(r"^(#{1,4})\s+(.*)", line)
         if m:
+            _flush()
             head = m.group(2).strip()
             if _note_head.match(head):
                 in_notes = True
             d.add_heading(head, level=min(len(m.group(1)), 4))
             _i += 1
             continue
-        p = d.add_paragraph()
-        for seg, bold, ital in _md_runs(line):
-            # split each segment on attached footnote markers [n] so they become superscript runs
-            parts = [seg] if in_notes else _mark.split(seg)
-            for part in parts:
-                if not part:
-                    continue
-                mk = None if in_notes else re.fullmatch(r"\[(\d{1,3})\]", part)
-                r = p.add_run(mk.group(1) if mk else part)
-                r.bold, r.italic = bold, ital
-                if mk:
-                    r.font.superscript = True
-                elif in_notes:
-                    r.font.size = Pt(notes_pt)
+        # In notes/back-matter each line is its own entry; list items and rules stand alone; ordinary
+        # body prose is coalesced so a single newline is a soft break, not a mid-sentence paragraph split.
+        if in_notes or _list_re.match(line) or _hr_re.match(line):
+            _flush()
+            _emit(line)
+            _i += 1
+            continue
+        _buf.append(line)
         _i += 1
+    _flush()
     bio = io.BytesIO()
     d.save(bio)
     bio.seek(0)
