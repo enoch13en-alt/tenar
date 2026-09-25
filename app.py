@@ -9632,33 +9632,84 @@ def api_exam_reshape():
     messages = [{"role": "user", "content":
                  "RESHAPE INSTRUCTION: " + instruction + "\n\nDOCUMENT TO RESHAPE:\n\n" + text}]
 
+    # If the instruction carries a WORD TARGET (a shorten), we must LAND it: a single pass reliably
+    # under-cuts a big reduction (12k→7k and stops). Parse the target so the worker can measure the
+    # result and cut again until it's within tolerance.
+    _mt = re.search(r'(\d[\d,]{1,7})\s*words?', instruction, re.I)
+    target_words = int(_mt.group(1).replace(",", "")) if _mt else 0
+
+    def _body_words(t):
+        """Word count the target applies to — body only unless footnotes are counted."""
+        if not fn_count:
+            mm = re.search(r'(?im)^\s*#{0,4}\s*(foot ?notes|bibliography|table of)\b', t or "")
+            t = (t or "")[:mm.start()] if mm else (t or "")
+        return len(re.findall(r'\S+', t or ""))
+
     q = queue.Queue()
     _DONE = object()
 
     @copy_current_request_context
     def _worker():
-        pieces, this_usd, total_usd = [], 0.0, None
-        try:
-            for _round in range(4):
+        this_usd, total_usd = [0.0], [None]
+
+        def _run(msgs, stream_out):
+            """One full generation (with max_tokens continuation). Streams deltas to the client only
+            if stream_out; returns the assembled text."""
+            parts = []
+            for _leg in range(4):
                 with c.messages.stream(model=ANSWER_MODEL, max_tokens=16000,
                                        thinking={"type": "adaptive"},
-                                       system=cached_sys, messages=messages) as s:
+                                       system=cached_sys, messages=msgs) as s:
                     for delta in s.text_stream:
-                        q.put(delta)
+                        if stream_out:
+                            q.put(delta)
                     resp = s.get_final_message()
                 cost = record_cost(resp, ANSWER_MODEL)
-                this_usd += cost.get("this_usd", 0) or 0
-                total_usd = cost.get("total_usd", total_usd)
-                pieces.append(_text_of(resp))
+                this_usd[0] += cost.get("this_usd", 0) or 0
+                total_usd[0] = cost.get("total_usd", total_usd[0])
+                parts.append(_text_of(resp))
                 if getattr(resp, "stop_reason", None) != "max_tokens":
                     break
-                messages.append({"role": "assistant", "content": resp.content})
-                messages.append({"role": "user", "content":
+                msgs.append({"role": "assistant", "content": resp.content})
+                msgs.append({"role": "user", "content":
                     "Continue EXACTLY where you stopped, mid-sentence if needed; "
                     "do not repeat anything already written."})
-            q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd, 5),
-                                               "total_usd": total_usd}}))
-        except Exception as e:
+            return "".join(parts)
+
+        try:
+            if not target_words:
+                # No word target (expand / re-style / directional) — stream the single pass as before.
+                _run(list(messages), stream_out=True)
+            else:
+                # WORD TARGET — iterate until the result actually lands near it. Intermediate cuts run
+                # WITHOUT streaming (the client shows a "condensing…" heartbeat); only the accepted
+                # final version is sent to the box. Stop when within tolerance, when a round stops
+                # reducing (diminishing returns), or after the round cap — whichever comes first.
+                cur = text
+                tol = int(target_words * 1.12)          # accept within ~12% of the target
+                for _round in range(3):
+                    if _round == 0:
+                        instr = instruction
+                    else:
+                        instr = ("Your current version is about " + str(_body_words(cur)) + " words — "
+                                 "still LONGER than the target of about " + str(target_words) + " words. "
+                                 "Cut it to about " + str(target_words) + " words: remove elaboration, "
+                                 "examples, background, repetition and redundant sentences, and tighten "
+                                 "the prose. KEEP every legal rule VERBATIM, every citation/authority and "
+                                 "all conclusions — cut commentary, not law. Output ONLY the shortened "
+                                 "document.")
+                    prev_wc = _body_words(cur)
+                    nxt = _run([{"role": "user", "content":
+                                 "RESHAPE INSTRUCTION: " + instr + "\n\nDOCUMENT TO RESHAPE:\n\n" + cur}],
+                               stream_out=False)
+                    cur = (nxt or cur).strip()
+                    now_wc = _body_words(cur)
+                    if now_wc <= tol or now_wc >= int(prev_wc * 0.97):
+                        break                            # landed it, or it isn't shrinking further
+                q.put(cur)                               # send the accepted final version to the box
+            q.put(DELIM + json.dumps({"cost": {"this_usd": round(this_usd[0], 5),
+                                               "total_usd": total_usd[0]}}))
+        except Exception:
             app.logger.exception("reshape stream error")
             q.put(DELIM + json.dumps({"error": "The reshape pass failed partway — please try again."}))
         finally:
